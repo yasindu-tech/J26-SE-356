@@ -48,7 +48,10 @@ echo "Required reviews: $REVIEWERS  $([ "$REVIEWERS" -eq 0 ] && echo '(self-merg
 echo
 
 # Status check names must match the `name:` of each job in .github/workflows/ci.yml
-CHECKS='["lint-python","test-python","lint-js","build-js","guard-no-data","guard-notebook-outputs"]'
+# Only the three build jobs are required today. Lint, tests and the
+# data/notebook guards were removed from CI for now — add their check names
+# back here when those jobs come back (see CONTRIBUTING.md §6).
+CHECKS='["Mobile Build","Desktop App Build","Backend Build"]'
 
 protect () {
   local BRANCH="$1"

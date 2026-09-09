@@ -218,8 +218,12 @@ both `main` and `develop`:
     any path you own)*
 - ✅ Require status checks to pass before merging
   - ✅ Require branches to be up to date before merging
-  - Select: `lint-python`, `test-python`, `lint-js`, `build-js`,
-    `guard-no-data`, `guard-notebook-outputs`
+  - Select: `Mobile Build`, `Desktop App Build`, `Backend Build`
+  - **Only these three run today.** Lint, tests, and the data/notebook-output
+    guards were deliberately dropped from CI for now — they'll come back as
+    separate jobs (and get added to this list) once there's real app code and
+    model code to check. Until then, review PRs for section 3/4 compliance
+    by eye — see the "Reviewing" checklist below.
 - ✅ Require conversation resolution before merging
 - ✅ Block force pushes
 - ✅ Restrict deletions

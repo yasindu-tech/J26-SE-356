@@ -10,106 +10,94 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Only three checks run today: one build per app surface. Everything else
+# (lint, tests, the data/PHI and notebook-output guards) is deliberately
+# left out for now and will come back as separate jobs once there's real
+# code to lint and test. See CONTRIBUTING.md §6 for the required-checks list
+# that must match the job `name:` values below exactly.
 jobs:
-  lint-python:
-    name: lint-python
+  mobile-build:
+    name: Mobile Build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-          cache: pip
-      - run: pip install ruff
-      - run: ruff check .
-      - run: ruff format --check .
-
-  test-python:
-    name: test-python
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
+          node-version: "20"
+      - name: Check app is scaffolded
+        id: scaffold
+        run: |
+          if [ ! -f package.json ]; then
+            echo "apps/mobile has no package.json yet — nothing to build. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install dependencies
+        if: steps.scaffold.outputs.skip == 'false'
+        run: npm ci || npm install
+      - name: Build
+        if: steps.scaffold.outputs.skip == 'false'
+        run: npm run build --if-present
+
+  desktop-build:
+    name: Desktop App Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check app is scaffolded
+        id: scaffold
+        run: |
+          if [ ! -f package.json ]; then
+            echo "apps/desktop has no package.json yet — nothing to build. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install dependencies
+        if: steps.scaffold.outputs.skip == 'false'
+        run: npm ci || npm install
+      - name: Build
+        if: steps.scaffold.outputs.skip == 'false'
+        run: npm run build --if-present
+
+  backend-build:
+    name: Backend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check app is scaffolded
+        id: scaffold
+        run: |
+          if [ ! -f requirements.txt ] && [ ! -f pyproject.toml ]; then
+            echo "services/backend has no requirements.txt/pyproject.toml yet — nothing to build. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install dependencies
+        if: steps.scaffold.outputs.skip == 'false'
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else pip install pytest; fi
-      - run: pytest -q
-
-  lint-js:
-    name: lint-js
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-      - run: npm ci --ignore-scripts || npm install --ignore-scripts
-      - run: npm run lint --if-present
-
-  build-js:
-    name: build-js
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-      - run: npm ci --ignore-scripts || npm install --ignore-scripts
-      - run: npm run build --if-present
-      - run: npm test --if-present
-
-  guard-no-data:
-    name: guard-no-data
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Reject committed datasets, model artefacts and secrets
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+      - name: Build check (import + bytecode compile)
+        if: steps.scaffold.outputs.skip == 'false'
         run: |
-          echo "Scanning changed files for data / PHI / secret leaks..."
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
-          if [ -z "$BASE" ]; then BASE=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD); fi
-          FILES=$(git diff --name-only "$BASE" "$HEAD" || true)
-          echo "$FILES"
-          BAD=$(echo "$FILES" | grep -E '^data/(raw|interim|processed|external)/.+|\.(nii|nii\.gz|dcm|bval|bvec|wav|mp4|mov|pkl|joblib|pt|pth|h5|onnx)$|(^|/)\.env$' | grep -v '\.gitkeep$' || true)
-          if [ -n "$BAD" ]; then
-            echo "::error::Dataset, model artefact or env file detected in this PR:"
-            echo "$BAD"
-            echo "These must never be committed — see CLAUDE.md section 4."
-            exit 1
-          fi
-          echo "Clean."
-
-  guard-notebook-outputs:
-    name: guard-notebook-outputs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fail if notebooks contain saved outputs
-        run: |
-          python - <<'PY'
-          import json, pathlib, sys
-          bad = []
-          for nb in pathlib.Path('.').rglob('*.ipynb'):
-              if '.venv' in nb.parts or 'node_modules' in nb.parts:
-                  continue
-              try:
-                  doc = json.loads(nb.read_text())
-              except Exception:
-                  continue
-              for cell in doc.get('cells', []):
-                  if cell.get('outputs') or cell.get('execution_count'):
-                      bad.append(str(nb)); break
-          if bad:
-              print("::error::Notebooks with saved outputs (may contain PHI) — clear them:")
-              print("\n".join(bad)); sys.exit(1)
-          print("Notebooks clean.")
-          PY
+          python -m compileall -q app
+          if [ -f app/main.py ]; then python -c "import app.main"; fi

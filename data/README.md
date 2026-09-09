@@ -8,8 +8,10 @@ external/    External validation cohorts (NTUA, BrainLat)
 ```
 
 ## Rules
-- **Nothing here is ever committed.** `.gitignore` blocks it; the
-  `guard-no-data` CI job blocks it again. Both are deliberate.
+- **Nothing here is ever committed.** `.gitignore` blocks it. A `guard-no-data`
+  CI job that blocks it again on the server side is temporarily out of CI (see
+  CONTRIBUTING.md §6) — it'll be re-added, but until then `.gitignore` is the
+  only automated line of defence, so double-check `git status` before pushing.
 - PPMI, NTUA, BrainLat and UCI-470 are all under **data use agreements**. Each
   team member requests access under their own DUA. Do not redistribute
   downloads, including to each other, outside the agreement's terms.
