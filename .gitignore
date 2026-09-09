@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# Data — NOTHING from data/ is ever committed.
+# PPMI, NTUA, BrainLat and UCI-470 are all governed by data use agreements.
+# Committing a single scan or subject-level CSV is a DUA violation.
+# ---------------------------------------------------------------------------
+data/**/*
+!data/**/
+!data/README.md
+!data/**/.gitkeep
+*.nii
+*.nii.gz
+*.dcm
+*.DICOM
+*.bval
+*.bvec
+*.wav
+*.mp4
+*.mov
+
+# Model artefacts
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.h5
+models/**/artifacts/
+models/**/checkpoints/
+mlruns/
+wandb/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+build/
+out/
+.expo/
+*.tsbuildinfo
+.eslintcache
+
+# Electron build output
+apps/desktop/release/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

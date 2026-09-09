@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-python:
+    name: lint-python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test-python:
+    name: test-python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; else pip install pytest; fi
+      - run: pytest -q
+
+  lint-js:
+    name: lint-js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci --ignore-scripts || npm install --ignore-scripts
+      - run: npm run lint --if-present
+
+  build-js:
+    name: build-js
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci --ignore-scripts || npm install --ignore-scripts
+      - run: npm run build --if-present
+      - run: npm test --if-present
+
+  guard-no-data:
+    name: guard-no-data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject committed datasets, model artefacts and secrets
+        run: |
+          echo "Scanning changed files for data / PHI / secret leaks..."
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          if [ -z "$BASE" ]; then BASE=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD); fi
+          FILES=$(git diff --name-only "$BASE" "$HEAD" || true)
+          echo "$FILES"
+          BAD=$(echo "$FILES" | grep -E '^data/(raw|interim|processed|external)/.+|\.(nii|nii\.gz|dcm|bval|bvec|wav|mp4|mov|pkl|joblib|pt|pth|h5|onnx)$|(^|/)\.env$' | grep -v '\.gitkeep$' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Dataset, model artefact or env file detected in this PR:"
+            echo "$BAD"
+            echo "These must never be committed — see CLAUDE.md section 4."
+            exit 1
+          fi
+          echo "Clean."
+
+  guard-notebook-outputs:
+    name: guard-notebook-outputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if notebooks contain saved outputs
+        run: |
+          python - <<'PY'
+          import json, pathlib, sys
+          bad = []
+          for nb in pathlib.Path('.').rglob('*.ipynb'):
+              if '.venv' in nb.parts or 'node_modules' in nb.parts:
+                  continue
+              try:
+                  doc = json.loads(nb.read_text())
+              except Exception:
+                  continue
+              for cell in doc.get('cells', []):
+                  if cell.get('outputs') or cell.get('execution_count'):
+                      bad.append(str(nb)); break
+          if bad:
+              print("::error::Notebooks with saved outputs (may contain PHI) — clear them:")
+              print("\n".join(bad)); sys.exit(1)
+          print("Notebooks clean.")
+          PY

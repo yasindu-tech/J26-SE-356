@@ -1,0 +1,25 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  conventional-title:
+    name: conventional-title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title follows Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Title: $TITLE"
+          PATTERN='^(feat|fix|docs|test|refactor|perf|chore|ci)(\((mri|gait|voice|tapping|fusion|mobile|desktop|backend|shared|docs|ci|repo)\))?!?: .+'
+          if ! echo "$TITLE" | grep -Eq "$PATTERN"; then
+            echo "::error::PR title must follow Conventional Commits."
+            echo "  e.g. feat(mri): fit neuroCombat inside the training fold"
+            echo "  types:  feat fix docs test refactor perf chore ci"
+            echo "  scopes: mri gait voice tapping fusion mobile desktop backend shared docs ci repo"
+            exit 1
+          fi
+          echo "OK"

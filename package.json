@@ -1,0 +1,23 @@
+{
+  "name": "pd-xai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Explainable Multimodal AI for Early Parkinson's Detection — J26-SE-356",
+  "workspaces": [
+    "apps/mobile",
+    "apps/desktop",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run start --workspace apps/mobile",
+    "dev:desktop": "npm run dev --workspace apps/desktop",
+    "dev:backend": "uvicorn app.main:app --reload --port 8000 --app-dir services/backend",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  }
+}

@@ -1,0 +1,39 @@
+# CODEOWNERS — J26-SE-356
+#
+# Auto-requests the right reviewer. Combined with "Require review from Code
+# Owners" in branch protection, this makes module ownership enforceable.
+#
+# ⚠️ Replace the placeholder GitHub usernames below with real handles before
+#    enabling "Require review from Code Owners" — an unmatched username silently
+#    matches nobody and the rule becomes a no-op.
+#
+#   @yasindu-tech        D.G.Y. Sulochana  IT23267718  (MRI, team lead)
+#   @<fernando-handle>   Fernando W.S.N.J. IT23259102  (gait)
+#   @<ricky-handle>      Ricky H.P.C.      IT23294134  (voice)
+#   @<weerasinghe-handle> Weerasinghe P.N.M. IT23247918 (tapping)
+
+# Default — team lead reviews anything not otherwise owned
+*                           @yasindu-tech
+
+# Per-module ownership
+/models/mri/                @yasindu-tech
+/models/gait/               @<fernando-handle>
+/models/voice/              @<ricky-handle>
+/models/tapping/            @<weerasinghe-handle>
+
+# Shared surfaces — everyone depends on these, lead must review
+/models/common/             @yasindu-tech
+/models/fusion/             @yasindu-tech
+/services/backend/          @yasindu-tech
+/packages/shared/           @yasindu-tech
+
+# Apps
+/apps/mobile/               @yasindu-tech
+/apps/desktop/              @yasindu-tech
+
+# Repo governance — protect the rules themselves from casual edits
+/CLAUDE.md                  @yasindu-tech
+/CONTRIBUTING.md            @yasindu-tech
+/README.md                  @yasindu-tech
+/.github/                   @yasindu-tech
+/.gitignore                 @yasindu-tech
