@@ -7,8 +7,11 @@ work-in-progress can break somebody else's demo the night before a review.
 
 > ### 🔒 Nobody commits directly to `main` or `develop`. Ever. Including the repo owner.
 > Both branches are protected on GitHub. Direct pushes are **rejected by the
-> server**, not by convention. All changes arrive via pull request with at least
-> one approving review.
+> server**, not by convention. Every change arrives via a pull request into
+> `develop`.
+>
+> You **may merge your own PR** once CI is green — you don't need to wait for a
+> teammate. The PR requirement stays; the approval requirement doesn't.
 
 ---
 
@@ -127,14 +130,40 @@ pulled your branch, merge instead.
 
 | Rule | Value |
 |---|---|
-| Target branch | `develop` (only `release/*` and `hotfix/*` target `main`) |
-| Approvals required | **1** (2 for `models/common`, `models/fusion`, `services/backend`, `packages/shared`) |
-| Stale approvals | Dismissed automatically when new commits are pushed |
-| CI | Must pass — merging is blocked otherwise |
+| Target branch | **`develop`** (only `release/*` and `hotfix/*` target `main`) |
+| Approvals required | **0** — self-merge is allowed |
+| CI | **Must pass** — merging is blocked otherwise. This is the real gate. |
 | Conversations | All resolved before merge |
 | Merge method | **Squash and merge**, so `develop` history stays one-commit-per-PR |
 | Branch deletion | Automatic after merge |
-| Self-approval | Not permitted |
+| Direct pushes to `main`/`develop` | **Rejected by GitHub**, for everyone including the owner |
+
+### On self-merge
+
+**You can merge your own PR once CI is green.** You do not need to wait for a
+teammate. With four people on different modules and different schedules,
+blocking on peer review would cost more than it catches.
+
+One technical note, because it surprises people: **GitHub does not allow you to
+approve your own pull request** — the Approve button is disabled on PRs you
+authored. There is no "allow self-approval" setting. So required approvals is
+set to **0**; any value ≥ 1 would make self-merge impossible regardless of what
+else is configured.
+
+**What still protects you with 0 approvals:**
+
+- A PR is still required — nobody pushes to `main` or `develop` directly
+- CI must pass: lint, tests, and the guards that reject committed datasets,
+  model artefacts, `.env` files and un-cleared notebook outputs
+- Conversations must be resolved
+- No force pushes, no branch deletion
+- The PR template's research-integrity checklist — **you tick it yourself, so
+  tick it honestly.** That checklist is the thing standing between us and a
+  leaky pipeline in the final report.
+
+**Still ask for a review when it matters** — anything touching
+`models/common/`, `models/fusion/`, `services/backend/` or `packages/shared/`
+affects all four of us. Self-merge is permission, not encouragement.
 
 ### Size
 
@@ -182,12 +211,15 @@ this is configured, "don't push to main" is only a promise.
 both `main` and `develop`:
 
 - ✅ Require a pull request before merging
-  - ✅ Require approvals: **1**
-  - ✅ Dismiss stale pull request approvals when new commits are pushed
-  - ✅ Require review from Code Owners
+  - **Require approvals: `0`** ← this is what permits self-merge. GitHub
+    disables the Approve button on your own PR, so any value ≥ 1 means you can
+    never merge your own work.
+  - ❌ Require review from Code Owners *(off — it would re-block self-merge on
+    any path you own)*
 - ✅ Require status checks to pass before merging
   - ✅ Require branches to be up to date before merging
-  - Select: `lint-python`, `test-python`, `lint-js`, `build-js`
+  - Select: `lint-python`, `test-python`, `lint-js`, `build-js`,
+    `guard-no-data`, `guard-notebook-outputs`
 - ✅ Require conversation resolution before merging
 - ✅ Block force pushes
 - ✅ Restrict deletions
@@ -195,8 +227,19 @@ both `main` and `develop`:
   (including the repo owner) can still push straight to `main`, and the rule
   is decorative.
 
+With approvals at 0, **CI is the gate**. Keep the status checks required — they
+are now the only automated thing standing between a bad commit and `develop`.
+
 Also under **Settings → General → Pull Requests**: enable *Allow squash
 merging* only, and *Automatically delete head branches*.
 
 If you have the GitHub CLI authenticated, `scripts/setup-branch-protection.sh`
-applies all of the above for both branches in one go.
+applies all of the above for both branches in one go:
+
+```bash
+./scripts/setup-branch-protection.sh              # self-merge allowed (default)
+REVIEWERS=1 ./scripts/setup-branch-protection.sh  # require a second person
+```
+
+**CODEOWNERS is still useful with approvals at 0** — it auto-requests the right
+reviewer so the owner of a module sees the PR, it just doesn't block the merge.

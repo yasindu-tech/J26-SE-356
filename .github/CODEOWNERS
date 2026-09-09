@@ -1,11 +1,15 @@
 # CODEOWNERS — J26-SE-356
 #
-# Auto-requests the right reviewer. Combined with "Require review from Code
-# Owners" in branch protection, this makes module ownership enforceable.
+# Auto-requests the right reviewer when a PR touches someone's module.
 #
-# ⚠️ Replace the placeholder GitHub usernames below with real handles before
-#    enabling "Require review from Code Owners" — an unmatched username silently
-#    matches nobody and the rule becomes a no-op.
+# NOTE: "Require review from Code Owners" is intentionally OFF in our branch
+# protection, because self-merge is allowed (see CONTRIBUTING.md §4). So this
+# file *notifies* the right person — it does not block the merge. That is the
+# intended behaviour: the module owner sees the PR, the author isn't stuck
+# waiting.
+#
+# ⚠️ Replace the placeholder GitHub usernames below with real handles. An
+#    unmatched username silently matches nobody, so the owner never gets asked.
 #
 #   @yasindu-tech        D.G.Y. Sulochana  IT23267718  (MRI, team lead)
 #   @<fernando-handle>   Fernando W.S.N.J. IT23259102  (gait)

@@ -11,17 +11,40 @@
 #   ./scripts/setup-branch-protection.sh
 #
 # Re-running is safe — it overwrites the rules with the same values.
+#
+# ---------------------------------------------------------------------------
+# SELF-MERGE IS ALLOWED (deliberate choice for a 4-person team)
+#
+# REVIEWERS defaults to 0. This means you can merge your own PR once CI is
+# green, without waiting for a teammate.
+#
+# Why 0 and not 1: **GitHub does not let you approve your own pull request.**
+# The Approve button is disabled on PRs you authored. So any value >= 1 makes
+# self-merge impossible no matter what else is configured — there is no
+# "allow self-approval" switch to turn on.
+#
+# What still protects the branch with REVIEWERS=0:
+#   - a PR is still REQUIRED (no direct pushes to main/develop, for anyone)
+#   - CI must pass before the merge button turns green
+#   - conversations must be resolved
+#   - no force pushes, no branch deletion
+#   - enforce_admins=true, so the above applies to the repo owner too
+#
+# If you later want true peer review, set REVIEWERS=1 and accept that every PR
+# then needs a second person:
+#   REVIEWERS=1 ./scripts/setup-branch-protection.sh
+# ---------------------------------------------------------------------------
 
 set -euo pipefail
 
 REPO="${REPO:-yasindu-tech/J26-SE-356}"
-REVIEWERS="${REVIEWERS:-1}"
+REVIEWERS="${REVIEWERS:-0}"
 
 command -v gh >/dev/null 2>&1 || { echo "error: gh CLI not found — https://cli.github.com"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "error: not authenticated — run 'gh auth login'"; exit 1; }
 
-echo "Repo:            $REPO"
-echo "Required reviews: $REVIEWERS"
+echo "Repo:             $REPO"
+echo "Required reviews: $REVIEWERS  $([ "$REVIEWERS" -eq 0 ] && echo '(self-merge allowed — CI still gates)' || echo '(a second person must approve)')"
 echo
 
 # Status check names must match the `name:` of each job in .github/workflows/ci.yml
@@ -49,8 +72,8 @@ protect () {
   "required_pull_request_reviews": {
     "required_approving_review_count": $REVIEWERS,
     "dismiss_stale_reviews": true,
-    "require_code_owner_reviews": true,
-    "require_last_push_approval": true
+    "require_code_owner_reviews": false,
+    "require_last_push_approval": false
   },
   "restrictions": null,
   "required_linear_history": true,
@@ -81,5 +104,10 @@ echo "  ✓ squash-only merges, auto-delete merged branches"
 echo
 echo "Done. Verify at: https://github.com/$REPO/settings/branches"
 echo
-echo "Note: 'enforce_admins: true' means the rules apply to the repo owner too."
-echo "That is deliberate — see CONTRIBUTING.md section 6."
+echo "What this means in practice:"
+echo "  • You CANNOT push directly to main or develop — not even as the owner"
+echo "    ('enforce_admins: true' is deliberate)."
+if [ "$REVIEWERS" -eq 0 ]; then
+echo "  • You CAN merge your own PR, once CI is green and threads are resolved."
+fi
+echo "  • Every change goes through a PR into develop. See CONTRIBUTING.md."

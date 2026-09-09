@@ -178,8 +178,14 @@ must widen honestly when inputs are missing.
 - `feature/<module>/<short-description>` — your working branches.
 
 **Never commit directly to `main` or `develop`.** Both are protected; direct
-pushes are rejected. Everything goes through a pull request with at least one
-approving review.
+pushes are rejected by GitHub for everyone, including the repo owner. Everything
+goes through a pull request **into `develop`**.
+
+**Self-merge is allowed** — you may merge your own PR once CI is green, without
+waiting for a teammate. Required approvals is set to 0 deliberately (GitHub
+disables the Approve button on your own PR, so any higher value would make
+self-merge impossible). This means **CI and the PR checklist are the only
+automated gates** — tick the research-integrity checklist honestly.
 
 ### Commits
 
