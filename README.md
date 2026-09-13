@@ -148,9 +148,10 @@ git push -u origin feature/mri/combat-in-fold
 # open a PR into develop
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) for the full branching model, commit
-conventions and review requirements, and [CLAUDE.md](./CLAUDE.md) for the
-research-integrity rules that PRs are reviewed against.
+See [CLAUDE.md §5](./CLAUDE.md) for the branching and commit conventions, and
+the rest of CLAUDE.md §3 for the research-integrity rules that PRs are
+reviewed against. Ask Claude to "raise a PR" and the `open-pr` skill will
+branch, fill the template and stage it correctly.
 
 ---
 

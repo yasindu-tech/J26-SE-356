@@ -171,7 +171,11 @@ must widen honestly when inputs are missing.
 
 ## 5. Working conventions
 
-### Branching — see CONTRIBUTING.md for the full policy
+### Branching
+
+Full naming conventions, PR rules and release process are encoded in the
+`open-pr` Claude skill — ask Claude to "raise a PR" and it applies them. The
+short version, for anyone working by hand:
 
 - `main` — protected, release-ready. PR only.
 - `develop` — protected, integration branch. PR only.

@@ -13,8 +13,8 @@ concurrency:
 # Only three checks run today: one build per app surface. Everything else
 # (lint, tests, the data/PHI and notebook-output guards) is deliberately
 # left out for now and will come back as separate jobs once there's real
-# code to lint and test. See CONTRIBUTING.md §6 for the required-checks list
-# that must match the job `name:` values below exactly.
+# code to lint and test. See scripts/setup-branch-protection.sh for the
+# required-checks list, which must match the job `name:` values below exactly.
 jobs:
   mobile-build:
     name: Mobile Build

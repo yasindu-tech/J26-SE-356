@@ -3,10 +3,10 @@
 # Auto-requests the right reviewer when a PR touches someone's module.
 #
 # NOTE: "Require review from Code Owners" is intentionally OFF in our branch
-# protection, because self-merge is allowed (see CONTRIBUTING.md §4). So this
-# file *notifies* the right person — it does not block the merge. That is the
-# intended behaviour: the module owner sees the PR, the author isn't stuck
-# waiting.
+# protection, because self-merge is allowed (see CLAUDE.md §5, and the
+# open-pr Claude skill for the full PR workflow). So this file *notifies* the
+# right person — it does not block the merge. That is the intended behaviour:
+# the module owner sees the PR, the author isn't stuck waiting.
 #
 # ⚠️ Replace the placeholder GitHub usernames below with real handles. An
 #    unmatched username silently matches nobody, so the owner never gets asked.
@@ -37,7 +37,6 @@
 
 # Repo governance — protect the rules themselves from casual edits
 /CLAUDE.md                  @yasindu-tech
-/CONTRIBUTING.md            @yasindu-tech
 /README.md                  @yasindu-tech
 /.github/                   @yasindu-tech
 /.gitignore                 @yasindu-tech
