@@ -50,7 +50,7 @@ echo
 # Status check names must match the `name:` of each job in .github/workflows/ci.yml
 # Only the three build jobs are required today. Lint, tests and the
 # data/notebook guards were removed from CI for now — add their check names
-# back here when those jobs come back (see CONTRIBUTING.md §6).
+# back here when those jobs come back (see .github/workflows/ci.yml).
 CHECKS='["Mobile Build","Desktop App Build","Backend Build"]'
 
 protect () {
@@ -113,4 +113,5 @@ echo "    ('enforce_admins: true' is deliberate)."
 if [ "$REVIEWERS" -eq 0 ]; then
 echo "  • You CAN merge your own PR, once CI is green and threads are resolved."
 fi
-echo "  • Every change goes through a PR into develop. See CONTRIBUTING.md."
+echo "  • Every change goes through a PR into develop. See CLAUDE.md §5, or"
+echo "    ask Claude to 'raise a PR' — the open-pr skill handles the rest."
