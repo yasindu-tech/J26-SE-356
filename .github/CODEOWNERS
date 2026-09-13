@@ -12,12 +12,21 @@
 #    unmatched username silently matches nobody, so the owner never gets asked.
 #
 #   @yasindu-tech        D.G.Y. Sulochana  IT23267718  (MRI, team lead)
+#   @nethal17            Nethal            —           (reviewer, every PR)
 #   @<fernando-handle>   Fernando W.S.N.J. IT23259102  (gait)
 #   @<ricky-handle>      Ricky H.P.C.      IT23294134  (voice)
 #   @<weerasinghe-handle> Weerasinghe P.N.M. IT23247918 (tapping)
+#
+# @nethal17 and @yasindu-tech are on the catch-all (`*`) below, so both are
+# auto-requested as reviewers on every PR that touches any file — which is
+# effectively all of them. GitHub automatically skips whichever of the two
+# is the PR's own author, so this doesn't need per-author branching logic.
+# For this to actually fire, @nethal17 needs at least write access to the
+# repo — add as a collaborator under Settings → Collaborators if not done
+# already, or GitHub silently can't request the review.
 
-# Default — team lead reviews anything not otherwise owned
-*                           @yasindu-tech
+# Default — team lead and Nethal review anything not otherwise owned
+*                           @yasindu-tech @nethal17
 
 # Per-module ownership
 /models/mri/                @yasindu-tech

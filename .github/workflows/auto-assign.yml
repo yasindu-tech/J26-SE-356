@@ -1,0 +1,32 @@
+name: Auto-assign PR
+
+# Every PR gets yasindu-tech as its assignee, no matter who opens it —
+# including yasindu-tech's own PRs. This is a separate GitHub concept from
+# reviewers: the assignee is "who's driving this PR to done", the reviewers
+# (handled by CODEOWNERS, see .github/CODEOWNERS) are "who needs to look at
+# it". Self-assignment is fine on GitHub even though self-*review* isn't —
+# see CONTRIBUTING history / CLAUDE.md §5 for why self-merge with 0 required
+# approvals is the deliberate policy here.
+#
+# This runs server-side on GitHub regardless of whether the PR was opened
+# via the web UI, `gh pr create`, or anything else — it doesn't depend on
+# who has `gh` installed or authenticated locally.
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign:
+    name: Assign to team lead
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add yasindu-tech as assignee
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR_NUMBER" --add-assignee yasindu-tech
