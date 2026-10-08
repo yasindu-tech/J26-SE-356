@@ -8,7 +8,7 @@ Set B was chosen after set A failed. Both are reported, and neither replaces the
 ## Pass mark
 
 - Plan: person found in >= 90% of all frames, and >= 2 gait cycles in the world ankle trace.
-- Added by Claude (owner to confirm): cycles are counted on **clean frames** only, meaning the
+- Confirmed on 2026-10-08: cycles are counted on **clean frames** only, meaning the
   person is found and >= 80% of the 10 leg landmarks are visible, and the clip needs >= 3 s of
   clean frames. Reason: MediaPipe can "find" a person while seeing almost no legs, and the ankle
   traces in those frames produce false steps. The 80% and 3 s values were chosen before these
@@ -86,4 +86,5 @@ Plots and JSON are in `models/gait/artifacts/check_c_setA` and `check_c_setB` (g
 
 ## Open decisions
 
-- [ ] Plan owner confirms the clean-frame rule (80% leg visibility, 3 s) as part of Check C.
+- [x] Plan owner confirms the clean-frame rule (80% leg visibility, 3 s) as part of Check C.
+  Confirmed by Nethal on 2026-10-08.
