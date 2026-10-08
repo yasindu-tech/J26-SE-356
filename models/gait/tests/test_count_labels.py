@@ -149,7 +149,7 @@ def test_cli_end_to_end_on_a_tiny_dataset(
 
     for name, cohort in cfg.cohorts.items():
         (tmp_path / "h36m" / name).mkdir(parents=True)
-        np.savez(tmp_path / "h36m" / name / cohort.world_file, **{"s1__w1": np.zeros((30, 17, 3))})
+        np.savez(tmp_path / "h36m" / name / cohort.world_file, s1__w1=np.zeros((30, 17, 3)))
         with (tmp_path / cohort.label_file).open("wb") as f:
             pickle.dump(labels_of({"s1": {"w1": 1}}), f)
     assert main(["--data-dir", str(tmp_path)]) == 0
