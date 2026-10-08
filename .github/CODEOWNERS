@@ -11,10 +11,10 @@
 # ⚠️ Replace the placeholder GitHub usernames below with real handles. An
 #    unmatched username silently matches nobody, so the owner never gets asked.
 #
-#   @yasindu-tech        D.G.Y. Sulochana  IT23267718  (MRI, team lead)
-#   @nethal17   Fernando W.S.N.J. IT23259102  (gait)
-#   @<ricky-handle>      Ricky H.P.C.      IT23294134  (voice)
-#   @<weerasinghe-handle> Weerasinghe P.N.M. IT23247918 (tapping)
+#   @yasindu-tech       D.G.Y. Sulochana  IT23267718  (MRI, team lead)
+#   @nethal17           Fernando W.S.N.J. IT23259102  (gait)
+#   @Ricca20            Ricky H.P.C.      IT23294134  (voice)
+#   @Naduliweerasinghe  Weerasinghe P.N.M. IT23247918 (tapping)
 #
 # @nethal17 and @yasindu-tech are on the catch-all (`*`) below, so both are
 # auto-requested as reviewers on every PR that touches any file — which is
@@ -30,8 +30,8 @@
 # Per-module ownership
 /models/mri/                @yasindu-tech
 /models/gait/               @nethal17
-/models/voice/              @<ricky-handle>
-/models/tapping/            @<weerasinghe-handle>
+/models/voice/              @Ricca20
+/models/tapping/            @Naduliweerasinghe
 
 # Shared surfaces — everyone depends on these, lead must review
 /models/common/             @yasindu-tech
