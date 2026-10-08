@@ -1,0 +1,72 @@
+# CARE-PD h36m world-coordinate format — GAIT-07 (Check A)
+#
+# What this file records: how to read the CARE-PD `h36m_3d_world_floorXZZplus_*`
+# files. Every value below was checked on 8 Oct 2026 against the real files by
+# models/gait/src/check_carepd_format.py (see that script for the evidence).
+# fps comes from CARE-PD's own const/const.py (DATASET_FPS); the .npz files do
+# not store fps.
+#
+# Source of the h36m files: Borealis dataset doi:10.5683/SP3/TWIKMK, version 1.3
+# (the folders were removed from versions 2.0+). Files stay local: data/ is
+# git-ignored.
+
+[skeleton]
+format = "h36m"
+# Index = position in the (frames, 17, 3) array.
+joint_order = [
+  "pelvis", "right_hip", "right_knee", "right_ankle",
+  "left_hip", "left_knee", "left_ankle",
+  "spine", "thorax", "neck", "head",
+  "left_shoulder", "left_elbow", "left_wrist",
+  "right_shoulder", "right_elbow", "right_wrist",
+]
+
+[coordinates]
+units = "metres"
+up_axis = "+y"          # floor is y = 0, head is above ankles
+forward_axis = "+z"     # walkers move towards +z
+lateral_axis = "+x"     # +x is the subject's LEFT (left hip x > right hip x)
+floor_y = 0.0
+
+# Thresholds used by the check. Chosen from the observed ranges across all
+# 6,066 entries in the four cohorts, with margin; see the script output.
+[checks]
+n_sample_walks = 5              # per cohort
+min_frames = 30                 # CARE-PD drops walks shorter than this
+unit_bounds_height_m = [0.5, 2.5]   # per walk; only catches mm/cm vs m mistakes
+cohort_median_height_m = [1.3, 1.7]
+floor_tolerance_m = 0.05
+min_hip_separation_m = 0.05
+min_fraction_pass = 0.95        # cohort-level: share of walks that must satisfy each rule
+
+# Severity label (CLAUDE.md §3.1: UPDRS is allowed ONLY as a label).
+[labels]
+field = "UPDRS_GAIT"
+# raw score -> class used by the model (2 and 3 are merged: "2-3")
+class_map = { 0 = 0, 1 = 1, 2 = 2, 3 = 2 }
+
+# The four CARE-PD cohorts that have UPDRS gait labels.
+[cohorts.3DGait]
+fps = 30
+world_file = "h36m_3d_world_floorXZZplus_30f_or_longer.npz"
+label_file = "3DGait.pkl"
+has_down_copies = false
+
+[cohorts.T-SDU-PD]
+fps = 30
+# This cohort only ships the slope-corrected world file.
+world_file = "h36m_3d_world_floorXZZplus_30f_or_longer_slopeCorrected.npz"
+label_file = "T-SDU-PD.pkl"
+has_down_copies = false
+
+[cohorts.BMCLab]
+fps = 30                # recorded at 150 fps, stored downsampled to 30
+world_file = "h36m_3d_world_floorXZZplus_30f_or_longer.npz"
+label_file = "BMCLab.pkl"
+has_down_copies = true  # each walk appears 5 times: ..._down0 to ..._down4
+
+[cohorts.PD-GaM]
+fps = 25
+world_file = "h36m_3d_world_floorXZZplus_30f_or_longer.npz"
+label_file = "PD-GaM.pkl"
+has_down_copies = false
