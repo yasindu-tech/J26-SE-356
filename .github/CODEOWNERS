@@ -12,8 +12,7 @@
 #    unmatched username silently matches nobody, so the owner never gets asked.
 #
 #   @yasindu-tech        D.G.Y. Sulochana  IT23267718  (MRI, team lead)
-#   @nethal17            Nethal            —           (reviewer, every PR)
-#   @<fernando-handle>   Fernando W.S.N.J. IT23259102  (gait)
+#   @nethal17   Fernando W.S.N.J. IT23259102  (gait)
 #   @<ricky-handle>      Ricky H.P.C.      IT23294134  (voice)
 #   @<weerasinghe-handle> Weerasinghe P.N.M. IT23247918 (tapping)
 #
@@ -30,7 +29,7 @@
 
 # Per-module ownership
 /models/mri/                @yasindu-tech
-/models/gait/               @<fernando-handle>
+/models/gait/               @nethal17
 /models/voice/              @<ricky-handle>
 /models/tapping/            @<weerasinghe-handle>
 
