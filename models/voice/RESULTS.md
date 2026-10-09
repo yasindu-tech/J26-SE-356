@@ -165,3 +165,4 @@ shuffled labels exceeds 0.55 (CLAUDE.md section 3.2).
   not on a single run.
 - 10 permutations are enough for a leak gate, not for a precise permutation
   p-value (the smallest possible would be 1/11).
+
