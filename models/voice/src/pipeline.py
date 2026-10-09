@@ -14,6 +14,10 @@ leakage audit (VOICE-14) compares against:
   sit on both sides of a split.
 
 The honest setting is ``selection="infold", split="subject"`` (variant B).
+
+``model="lightgbm"`` swaps the L1 logistic regression for LightGBM (decision D4)
+behind the same scaler and in-fold selector; the baseline ladder (VOICE-15)
+uses it as its top rung.
 """
 
 from __future__ import annotations
@@ -38,9 +42,11 @@ N_OUTER = 5
 N_INNER = 3
 K_GRID = (10, 25, 50, 100)
 C_GRID = (0.05, 0.1, 0.5)
+LEAVES_GRID = (4, 8)  # LightGBM num_leaves; small trees for 252 people
 
 Selection = Literal["infold", "leaky"]
 Split = Literal["subject", "row"]
+Model = Literal["l1_logistic", "lightgbm"]
 ScoreFunc = Callable[[np.ndarray, np.ndarray], object]
 
 SCORE_FUNCS: dict[str, ScoreFunc] = {
@@ -51,7 +57,7 @@ SCORE_FUNCS: dict[str, ScoreFunc] = {
 
 class CVResult(NamedTuple):
     proba: np.ndarray  # out-of-fold PD probability, one per row
-    best_params: list[dict[str, float]]  # inner-CV choice of k and C, per outer fold
+    best_params: list[dict[str, float]]  # inner-CV choice of k and C (or leaves), per fold
 
 
 class TopKByRanking(BaseEstimator, TransformerMixin):
@@ -80,23 +86,44 @@ def _feature_scores(score_func: ScoreFunc, X: np.ndarray, y: np.ndarray) -> np.n
     return np.nan_to_num(np.asarray(scores, dtype=float), nan=-np.inf)
 
 
+def _model(model: Model, seed: int) -> BaseEstimator:
+    if model == "l1_logistic":
+        return LogisticRegression(
+            l1_ratio=1.0,  # pure L1 (scikit-learn >= 1.8 deprecates penalty="l1")
+            solver="liblinear",
+            class_weight="balanced",
+            max_iter=1000,
+            random_state=seed,
+        )
+    from lightgbm import LGBMClassifier  # imported here so the L1 path does not need it
+
+    return LGBMClassifier(
+        n_estimators=200,
+        learning_rate=0.05,
+        min_child_samples=10,
+        class_weight="balanced",
+        random_state=seed,
+        deterministic=True,
+        n_jobs=1,  # GridSearchCV already runs fits in parallel
+        verbose=-1,
+    )
+
+
 def build_pipeline(
-    score_func: ScoreFunc, ranking: np.ndarray | None = None, seed: int = SEED
+    score_func: ScoreFunc,
+    ranking: np.ndarray | None = None,
+    seed: int = SEED,
+    model: Model = "l1_logistic",
 ) -> Pipeline:
-    """Scaler -> selector -> L1 logistic regression (balanced class weights).
+    """Scaler -> selector -> model (balanced class weights).
 
     With ``ranking`` the selector uses that precomputed (leaky) ranking; without
     it, SelectKBest scores features on whatever data the pipeline is fitted on.
     """
     selector = SelectKBest(score_func) if ranking is None else TopKByRanking(ranking=ranking)
-    model = LogisticRegression(
-        l1_ratio=1.0,  # pure L1 (scikit-learn >= 1.8 deprecates penalty="l1")
-        solver="liblinear",
-        class_weight="balanced",
-        max_iter=1000,
-        random_state=seed,
+    return Pipeline(
+        [("scale", StandardScaler()), ("select", selector), ("model", _model(model, seed))]
     )
-    return Pipeline([("scale", StandardScaler()), ("select", selector), ("model", model)])
 
 
 def _folds(
@@ -120,8 +147,12 @@ def nested_cv_predict(
     c_grid: Sequence[float] = C_GRID,
     seed: int = SEED,
     n_jobs: int = -1,
+    model: Model = "l1_logistic",
+    leaves_grid: Sequence[int] = LEAVES_GRID,
 ) -> CVResult:
     """Out-of-fold probabilities for every row, with k and C tuned in an inner CV.
+
+    For ``model="lightgbm"`` the inner CV tunes k and ``num_leaves`` instead of C.
 
     The inner CV uses the same split type as the outer one (by person for
     ``split="subject"``), so tuning never sees the outer test fold either.
@@ -130,6 +161,8 @@ def nested_cv_predict(
         raise ValueError(f"selection must be 'infold' or 'leaky', got {selection!r}")
     if split not in ("subject", "row"):
         raise ValueError(f"split must be 'subject' or 'row', got {split!r}")
+    if model not in ("l1_logistic", "lightgbm"):
+        raise ValueError(f"model must be 'l1_logistic' or 'lightgbm', got {model!r}")
     contract.validate_features(X.columns)
 
     X_arr = X.to_numpy(dtype=float)
@@ -141,13 +174,19 @@ def nested_cv_predict(
         # Deliberately leaky: features are scored on every row, test folds included.
         ranking = np.argsort(-_feature_scores(score_func, X_arr, y), kind="stable")
 
+    grid: dict[str, list[float]] = {"select__k": list(k_grid)}
+    if model == "l1_logistic":
+        grid["model__C"] = list(c_grid)
+    else:
+        grid["model__num_leaves"] = list(leaves_grid)
+
     proba = np.full(len(y), np.nan)
     best_params: list[dict[str, float]] = []
     for train, test in _folds(y, groups, split, n_splits, seed):
         inner = _folds(y[train], groups[train], split, N_INNER, seed)
         search = GridSearchCV(
-            build_pipeline(score_func, ranking, seed),
-            {"select__k": list(k_grid), "model__C": list(c_grid)},
+            build_pipeline(score_func, ranking, seed, model),
+            grid,
             scoring="roc_auc",
             cv=inner,
             n_jobs=n_jobs,
