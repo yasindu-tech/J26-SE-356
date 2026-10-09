@@ -98,3 +98,24 @@ def test_sensitivity_specificity() -> None:
         np.array([1, 1, 0, 0]), np.array([0.9, 0.1, 0.2, 0.8])
     )
     assert (sens, spec) == (0.5, 0.5)
+
+
+def test_ppv_metric_ignores_the_research_set_prevalence() -> None:
+    # sens 0.75, spec 0.75 on a 4 PD / 4 healthy sample. PPV must use the 1% screening
+    # prevalence: 0.75*0.01 / (0.75*0.01 + 0.25*0.99) = 0.0294, not the sample's 0.75.
+    y = np.array([1, 1, 1, 1, 0, 0, 0, 0])
+    scores = np.array([0.9, 0.8, 0.7, 0.1, 0.2, 0.3, 0.4, 0.9])
+    ppv = metrics.ppv_metric(0.01)(y, scores)
+    assert ppv == pytest.approx(0.0294, abs=1e-4)
+    assert ppv != pytest.approx(0.75, abs=0.1)
+
+
+def test_ppv_metric_bootstraps_at_person_level() -> None:
+    labels = [1] * 20 + [0] * 20
+    rows = [[0.9, 0.8, 0.7]] * 18 + [[0.1, 0.2, 0.3]] * 2 + [[0.1, 0.2, 0.2]] * 18 + [[0.9] * 3] * 2
+    y, s, g = three_rows_each(labels, rows)
+    est = metrics.bootstrap_ci(y, s, g, metrics.ppv_metric(0.05), n_boot=200)
+    # sens 0.9, spec 0.9 at 5% prevalence: 0.045 / (0.045 + 0.095) = 0.3214
+    assert est.value == pytest.approx(0.3214, abs=1e-4)
+    # A resample with no false positives has PPV 1, so the upper bound may reach 1.
+    assert est.lower < est.value < est.upper <= 1

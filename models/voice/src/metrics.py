@@ -69,6 +69,27 @@ def ppv_at_prevalence(sensitivity: float, specificity: float, prevalence: float)
     return float(true_pos / (true_pos + false_pos)) if true_pos + false_pos else 0.0
 
 
+def sensitivity(y: np.ndarray, scores: np.ndarray, threshold: float = 0.5) -> float:
+    return sensitivity_specificity(y, scores, threshold)[0]
+
+
+def specificity(y: np.ndarray, scores: np.ndarray, threshold: float = 0.5) -> float:
+    return sensitivity_specificity(y, scores, threshold)[1]
+
+
+def ppv_metric(prevalence: float, threshold: float = 0.5) -> Metric:
+    """A metric for ``bootstrap_ci``: PPV at ``prevalence`` from the sample's sens and spec.
+
+    The research set's own PD fraction (75% in UCI-470) is never used: sens and
+    spec are measured on the sample, then re-weighted to the screening prevalence.
+    """
+
+    def ppv(y: np.ndarray, scores: np.ndarray) -> float:
+        return ppv_at_prevalence(*sensitivity_specificity(y, scores, threshold), prevalence)
+
+    return ppv
+
+
 def _bootstrap_indices(y_person: np.ndarray, n_boot: int, seed: int) -> list[np.ndarray]:
     """Resampled person indices. Draws containing only one class are skipped (AUC undefined)."""
     rng = np.random.default_rng(seed)

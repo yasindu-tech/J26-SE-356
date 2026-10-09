@@ -63,3 +63,71 @@ Python 3.11.17, scikit-learn 1.9.1.
   to the result.
 - One dataset, one recording protocol, people already diagnosed. These numbers
   are not evidence of early detection.
+
+## Baseline ladder and screening PPV (VOICE-15)
+
+Reproduce (about 1.5 minutes on an M-series MacBook; outputs go to the
+gitignored `models/voice/artifacts/`):
+
+```bash
+python models/voice/src/baseline_ladder.py
+```
+
+Same people, folds, seed, scorer and bootstrap as the leakage audit, so every
+rung is compared on the same resampled people. The L1 rung *is* variant B and
+reproduces it exactly. Gender is a model input only in `sex_only` (decision D7).
+The best single feature is chosen on each training fold alone. LightGBM uses the
+same scaler and in-fold selector, with k and `num_leaves` ∈ {4, 8} tuned in the
+inner CV. Threshold is a fixed 0.5 on balanced-class-weight probabilities, never
+tuned on test people. LightGBM 4.7.0.
+
+| Rung | AUC [95% CI] | Balanced accuracy [95% CI] | Sensitivity | Specificity |
+|---|---|---|---|---|
+| sex_only | 0.565 [0.487, 0.648] | 0.605 [0.538, 0.675] | 0.569 [0.500, 0.642] | 0.641 [0.526, 0.750] |
+| best_single_feature | 0.740 [0.664, 0.810] | 0.650 [0.580, 0.716] | 0.628 [0.556, 0.698] | 0.672 [0.553, 0.785] |
+| l1_logistic_all | 0.812 [0.743, 0.874] | 0.745 [0.675, 0.804] | 0.723 [0.658, 0.787] | 0.766 [0.656, 0.869] |
+| **lightgbm_all** | **0.877 [0.825, 0.923]** | **0.778 [0.715, 0.834]** | 0.931 [0.892, 0.966] | 0.625 [0.500, 0.733] |
+
+| Rung | PPV at 1% [95% CI] | PPV at 2% [95% CI] | PPV at 5% [95% CI] |
+|---|---|---|---|
+| sex_only | 0.016 [0.012, 0.023] | 0.031 [0.023, 0.046] | 0.077 [0.058, 0.110] |
+| best_single_feature | 0.019 [0.014, 0.029] | 0.038 [0.027, 0.057] | 0.091 [0.067, 0.135] |
+| l1_logistic_all | 0.030 [0.020, 0.054] | 0.059 [0.040, 0.103] | 0.140 [0.098, 0.229] |
+| lightgbm_all | 0.025 [0.018, 0.034] | 0.048 [0.036, 0.067] | 0.116 [0.089, 0.155] |
+
+| Paired AUC difference (same resampled people) | Value [95% CI] | CI above 0? |
+|---|---|---|
+| best_single_feature − sex_only | +0.175 [+0.078, +0.277] | yes |
+| l1_logistic_all − sex_only | +0.247 [+0.155, +0.339] | yes |
+| lightgbm_all − sex_only | +0.312 [+0.229, +0.397] | yes |
+| l1_logistic_all − best_single_feature | +0.072 [+0.003, +0.139] | yes |
+| lightgbm_all − best_single_feature | +0.137 [+0.068, +0.205] | yes |
+| lightgbm_all − l1_logistic_all | +0.065 [+0.030, +0.106] | yes |
+
+### What it says
+
+- Every rung beats every rung below it on AUC. The honest LightGBM model is the
+  best ranker (0.877), +0.065 over the L1 model.
+- **Sex alone carries little.** Its AUC CI includes 0.5, so the sex–class
+  correlation in UCI-470 is not what drives the full models.
+- **One feature gets most of the way.** A single in-fold-chosen feature reaches
+  0.740; the L1 model's margin over it is small (+0.072, lower bound +0.003).
+- **Screening PPV is low for every rung.** At 1% prevalence, about 3 in 100
+  people flagged by the best rung would have PD; at 5%, about 14 in 100. Output
+  from this module can only prioritise a referral; it cannot confirm anything.
+- **Higher AUC did not give higher PPV.** At the fixed 0.5 threshold LightGBM
+  trades specificity (0.625) for sensitivity (0.931), and PPV at low prevalence
+  depends mostly on specificity. L1 has the higher point PPV; the CIs overlap.
+
+### Caveats
+
+- The best single feature was not stable: `std_delta_delta_log_energy` (2 folds),
+  `tqwt_entropy_log_dec_12` (2) and `std_delta_log_energy` (1).
+- LightGBM chose the top of both grids (k = 100, `num_leaves` = 8) in all 5
+  folds; L1 chose k = 100 in 4 of 5. Grids were fixed in advance and not widened
+  after seeing the result.
+- PPV assumes the sensitivity and specificity measured here transfer to a
+  screening population. They come from people already diagnosed versus healthy
+  controls, so real-world PPV is likely lower still.
+- The 0.5 threshold is one operating point. A screening threshold would have to
+  be chosen in-fold or on the D3 hold-out, never on these test people.
