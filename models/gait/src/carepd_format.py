@@ -64,10 +64,13 @@ class Labels(BaseModel):
 
 
 class Cohort(BaseModel):
-    fps: int
+    fps: int  # frame rate of the h36m world file: what every time calculation must use
     world_file: str
     label_file: str
     has_down_copies: bool
+    # Frame rate written in the label file's ``fps`` field, when it is known to differ from
+    # ``fps`` (BMCLab: 150 recorded, stored at 30). None means "the same as fps".
+    label_fps: int | None = None
 
 
 class FormatConfig(BaseModel):
