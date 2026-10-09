@@ -165,3 +165,64 @@ shuffled labels exceeds 0.55 (CLAUDE.md section 3.2).
   not on a single run.
 - 10 permutations are enough for a leak gate, not for a precise permutation
   p-value (the smallest possible would be 1/11).
+
+## Sex-fairness breakdown (VOICE-17) — exploratory
+
+Reproduce (about 1.5 minutes on an M-series MacBook; outputs go to the
+gitignored `models/voice/artifacts/`):
+
+```bash
+python models/voice/src/sex_fairness.py
+```
+
+The honest models (same runs, folds and seed as the ladder) broken down by sex
+code. Gender is **not** a model input (D7); it only splits the results. Each
+group is bootstrapped on its own people; gaps are sex code 1 minus sex code 0,
+with a stratified bootstrap CI. Threshold 0.5. The male/female meaning of the
+codes is ⚠️ UNVERIFIED (not documented in the vault), so codes are reported as is.
+**UCI-470 has no age column, so the age-band breakdown in the proposal cannot be
+done on this dataset.**
+
+| Group | People | PD | Healthy |
+|---|---|---|---|
+| sex code 0 | 122 | 81 | 41 |
+| sex code 1 | 130 | 107 | 23 |
+
+**L1 logistic** (overall AUC 0.812 [0.743, 0.874])
+
+| Group | AUC | Balanced accuracy | Sensitivity | Specificity |
+|---|---|---|---|---|
+| sex code 0 | 0.820 [0.729, 0.898] | 0.736 [0.652, 0.807] | 0.667 [0.554, 0.756] | 0.805 [0.681, 0.917] |
+| sex code 1 | 0.786 [0.671, 0.883] | 0.731 [0.624, 0.831] | 0.766 [0.685, 0.838] | 0.696 [0.500, 0.870] |
+| gap (1 − 0) | −0.034 [−0.180, +0.097] | – | +0.100 [−0.026, +0.230] | −0.109 [−0.350, +0.104] |
+
+**LightGBM** (overall AUC 0.877 [0.825, 0.923])
+
+| Group | AUC | Balanced accuracy | Sensitivity | Specificity |
+|---|---|---|---|---|
+| sex code 0 | 0.878 [0.803, 0.938] | 0.810 [0.731, 0.886] | 0.889 [0.813, 0.947] | 0.732 [0.600, 0.865] |
+| sex code 1 | 0.866 [0.788, 0.933] | 0.699 [0.602, 0.807] | 0.963 [0.920, 0.991] | **0.435 [0.250, 0.650]** |
+| gap (1 − 0) | −0.012 [−0.115, +0.086] | – | +0.074 [+0.007, +0.153] | **−0.297 [−0.538, −0.037]** |
+
+### What it says
+
+- **Not driven by sex.** Within each sex both models still rank PD above healthy
+  (every within-sex AUC CI is well above 0.5), so the sex–class correlation is
+  not what the models learned.
+- **Ranking is equal across sexes.** No AUC gap is distinguishable from zero for
+  either model.
+- **LightGBM's operating point is not equal.** At the 0.5 threshold it flags
+  about 57% of healthy people with sex code 1 against about 27% with sex code 0
+  (specificity 0.435 vs 0.732; gap CI excludes zero). The likely cause is that
+  sex code 1 is 82% PD in this dataset, so the model's scores sit higher for
+  that group. L1 shows the same direction but its gap CI includes zero.
+- So equal AUC does **not** mean equal treatment: a single threshold would refer
+  healthy people of one sex code far more often. Any screening threshold must
+  be checked per sex before use.
+
+### Caveats
+
+- Exploratory: 122 and 130 people, and sex code 1 has only **23 healthy
+  people**, so its specificity CI is very wide.
+- Performance comes from people already diagnosed versus healthy controls; it
+  says nothing about early-stage fairness.
