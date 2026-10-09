@@ -221,6 +221,11 @@ def nested_cv_predict(
         ranking = np.argsort(-_feature_scores(score_func, X_arr, y), kind="stable")
 
     grid = param_grid(model, k_grid, c_grid, leaves_grid)
+    grid: dict[str, list[float]] = {"select__k": list(k_grid)}
+    if model == "l1_logistic":
+        grid["model__C"] = list(c_grid)
+    else:
+        grid["model__num_leaves"] = list(leaves_grid)
 
     proba = np.full(len(y), np.nan)
     best_params: list[dict[str, float]] = []
