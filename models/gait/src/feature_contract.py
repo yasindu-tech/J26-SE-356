@@ -10,6 +10,11 @@ every ``fit()``:
 
     check_feature_contract(list(X.columns), label_name="UPDRS_GAIT")
 
+Names that look like a label column (``score``, ``severity``, ``label``, ``target``, ``y``,
+``UPDRS_GAIT``) are always rejected as inputs, because the CARE-PD loader carries the label in
+``Walk.score`` and ``Walk.severity``. Pass more label names with ``label_name`` (one name or a
+list).
+
 It raises ``FeatureContractError`` listing every offending name and the rule it breaks. This is
 a name check, a tripwire: it stops careless mistakes (the label or a clinical field left in the
 feature table) but cannot see a banned value hidden under an innocent column name.
@@ -55,7 +60,15 @@ _SUBSTRINGS: tuple[tuple[str, str], ...] = (
 
 # Whole words that are banned on their own.
 _WORDS: dict[str, str] = {
+    "hy": R_HY,
     "medication": R_MEDICATION,
+    "med": R_MEDICATION,
+    "medicated": R_MEDICATION,
+    "medicine": R_MEDICATION,
+    "medicines": R_MEDICATION,
+    "drug": R_MEDICATION,
+    "drugs": R_MEDICATION,
+    "led": R_MEDICATION,
     "medications": R_MEDICATION,
     "meds": R_MEDICATION,
     "ledd": R_MEDICATION,
@@ -68,7 +81,12 @@ _WORDS: dict[str, str] = {
     "ratings": R_CLINICIAN,
     "impression": R_CLINICIAN,
     "spect": R_DAT_QSM,
+    "sbr": R_DAT_QSM,
 }
+# Plain "on" and "off" are not banned on their own: gait terms such as toe_off_time use them.
+
+# Whole names that are label columns in this module (compared after removing separators).
+LABEL_LIKE_NAMES = ("score", "severity", "severity_class", "label", "target", "y", "UPDRS_GAIT")
 
 # Word sequences that are banned only when the words are next to each other.
 _SEQUENCES: tuple[tuple[tuple[str, ...], str], ...] = (
@@ -128,13 +146,26 @@ def _rule_for(name: str) -> str | None:
     return None
 
 
-def find_violations(input_names: Iterable[str], label_name: str | None = None) -> list[Violation]:
+def _label_keys(label_name: str | Iterable[str] | None) -> set[str]:
+    extra = (
+        []
+        if label_name is None
+        else [label_name]
+        if isinstance(label_name, str)
+        else list(label_name)
+    )
+    return {_compact(n) for n in (*LABEL_LIKE_NAMES, *extra) if n}
+
+
+def find_violations(
+    input_names: Iterable[str], label_name: str | Iterable[str] | None = None
+) -> list[Violation]:
     """Every input name that breaks the contract, in the order given, each listed once."""
     names = list(input_names)
     bad_types = [n for n in names if not isinstance(n, str)]
     if bad_types:
         raise TypeError(f"input names must be strings, got {bad_types[:3]!r}")
-    label_key = _compact(label_name) if label_name else None
+    label_keys = _label_keys(label_name)
     found: list[Violation] = []
     seen: set[str] = set()
     for name in names:
@@ -142,18 +173,21 @@ def find_violations(input_names: Iterable[str], label_name: str | None = None) -
             continue
         seen.add(name)
         rule = _rule_for(name)
-        if rule is None and label_key and _compact(name) == label_key:
+        if rule is None and _compact(name) in label_keys:
             rule = R_LABEL
         if rule is not None:
             found.append(Violation(name, rule))
     return found
 
 
-def check_feature_contract(input_names: Iterable[str], label_name: str | None = None) -> None:
+def check_feature_contract(
+    input_names: Iterable[str], label_name: str | Iterable[str] | None = None
+) -> None:
     """Raise ``FeatureContractError`` if any input is banned; call this before every ``fit()``.
 
     ``input_names`` are the columns the model will train on. ``label_name`` is the target
-    column; passing it as an input is also a violation. An empty input list raises
+    column (or several); passing it, or any name in ``LABEL_LIKE_NAMES``, as an input is also
+    a violation. An empty input list raises
     ``ValueError`` because there is nothing to fit.
     """
     names = list(input_names)
@@ -167,7 +201,7 @@ def check_feature_contract(input_names: Iterable[str], label_name: str | None = 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Feature contract check (GAIT-10, Check D)")
     parser.add_argument("names", nargs="+", help="model input names to check")
-    parser.add_argument("--label", default=None, help="label column name")
+    parser.add_argument("--label", action="append", default=None, help="label column name")
     args = parser.parse_args(argv)
     try:
         check_feature_contract(args.names, args.label)

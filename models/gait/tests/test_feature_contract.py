@@ -43,6 +43,13 @@ GOOD = ["stride_time_cv", "step_width_mean", "cadence", "gait_speed", "knee_angl
         ("DaTscan_sbr", R_DAT_QSM),
         ("dat_spect_ratio", R_DAT_QSM),
         ("qsm_putamen", R_DAT_QSM),
+        ("HY", R_HY),
+        ("med_state", R_MEDICATION),
+        ("medState", R_MEDICATION),
+        ("medicated", R_MEDICATION),
+        ("drug_dose", R_MEDICATION),
+        ("LED", R_MEDICATION),
+        ("DaT_SBR", R_DAT_QSM),
     ],
 )
 def test_banned_input_fails(name: str, rule: str) -> None:
@@ -64,6 +71,20 @@ def test_label_column_as_input_fails() -> None:
     assert err.value.violations[0].rule == R_LABEL
 
 
+@pytest.mark.parametrize("name", ["score", "severity", "Severity-Class", "label", "target", "y"])
+def test_label_like_names_fail_without_naming_the_label(name: str) -> None:
+    # The CARE-PD loader carries the label in Walk.score and Walk.severity.
+    with pytest.raises(FeatureContractError) as err:
+        check_feature_contract([*GOOD, name])
+    assert err.value.violations[0].rule == R_LABEL
+
+
+def test_several_label_names_can_be_given() -> None:
+    with pytest.raises(FeatureContractError) as err:
+        check_feature_contract([*GOOD, "gait_class"], label_name=["UPDRS_GAIT", "gait_class"])
+    assert err.value.violations[0].name == "gait_class"
+
+
 def test_updrs_label_passed_as_input_fails_even_without_naming_the_label() -> None:
     with pytest.raises(FeatureContractError):
         check_feature_contract([*GOOD, "UPDRS_GAIT"])
@@ -75,7 +96,19 @@ def test_clean_inputs_pass() -> None:
 
 
 @pytest.mark.parametrize(
-    "name", ["median_filter", "data_quality", "height_ratio", "on_floor_time", "step_rate", "hip_y"]
+    "name",
+    [
+        "median_filter",
+        "data_quality",
+        "height_ratio",
+        "on_floor_time",
+        "step_rate",
+        "hip_y",
+        "toe_off_time",
+        "heel_on_ratio",
+        "stride_score_cv",
+        "medial_lateral_sway",
+    ],
 )
 def test_harmless_names_are_not_flagged(name: str) -> None:
     check_feature_contract([name])

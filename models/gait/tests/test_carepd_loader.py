@@ -309,4 +309,6 @@ def test_real_data_reproduces_the_gait08_counts(cfg: FormatConfig) -> None:
     assert len(walks) == 2950  # usable walks counted in GAIT-08
     merged = class_counts(walks)
     assert [merged[c].walks for c in (0, 1, 2)] == [1244, 1071, 635]
+    assert [merged[c].subjects for c in (0, 1, 2)] == [62, 75, 51]
+    assert len({w.group for w in walks}) == 110
     assert all(w.joints.shape[1:] == (17, 3) for w in walks)

@@ -11,9 +11,10 @@ detection is poor try ``--follow`` (a crop that follows the walker) or
 hash, never by file name. Plots and a results file go to ``models/gait/artifacts/check_c``
 (git-ignored); no video frames are saved.
 
-Pass mark (the plan's suggestion): person found in at least 90% of frames and at least 2 gait
-cycles in the world ankle trace. Exit code 0 = all clips pass, 1 = a clip failed,
-2 = a file is missing.
+Pass mark: person found in at least 90% of frames (the plan's suggestion), at least 3 s of
+clean frames (person found and at least 80% of leg landmarks visible; confirmed by the plan
+owner on 2026-10-08) and at least 2 gait cycles in the world ankle trace, counted on clean
+frames only. Exit code 0 = all clips pass, 1 = a clip failed, 2 = a file is missing.
 
 The heavy model runs on the CPU; allow roughly a minute or two per clip.
 """
