@@ -131,3 +131,38 @@ tuned on test people. LightGBM 4.7.0.
   controls, so real-world PPV is likely lower still.
 - The 0.5 threshold is one operating point. A screening threshold would have to
   be chosen in-fold or on the D3 hold-out, never on these test people.
+
+## Label-permutation control (VOICE-16)
+
+Reproduce (about 10.5 minutes on an M-series MacBook; output goes to the
+gitignored `models/voice/artifacts/`):
+
+```bash
+python models/voice/src/permutation_control.py
+```
+
+Labels are shuffled between people (each person keeps one label for all 3
+recordings; 188 PD / 64 healthy kept), then the honest pipeline (in-fold
+selection, person-level split, same grids and seed as above) is re-run. 10
+permutations per model. The gate fails the run if the mean person-level AUC on
+shuffled labels exceeds 0.55 (CLAUDE.md section 3.2).
+
+| Model | Mean AUC on shuffled labels (n=10) | SD | Max | Gate (mean <= 0.55) | Real-label AUC |
+|---|---|---|---|---|---|
+| l1_logistic | 0.511 | 0.057 | 0.623 | pass | 0.812 |
+| lightgbm | 0.506 | 0.058 | 0.604 | pass | 0.877 |
+
+### What it says
+
+- With the labels shuffled, both honest models score at chance. No route from
+  test people into training was found.
+- The real-label AUCs (0.812, 0.877) lie well above every one of the 20
+  shuffled runs (highest 0.623).
+
+### Caveats
+
+- One shuffle alone reached 0.623, which is why the gate is on the mean of 10,
+  not on a single run.
+- 10 permutations are enough for a leak gate, not for a precise permutation
+  p-value (the smallest possible would be 1/11).
+
