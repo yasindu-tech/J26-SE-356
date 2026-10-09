@@ -1,0 +1,30 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  conventional-title:
+    name: conventional-title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title follows allowed format
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "Title: $TITLE"
+          SCOPE='(mri|gait|voice|tapping|fusion|mobile|desktop|backend|shared|docs|ci|repo)'
+          CONVENTIONAL_PATTERN="^(feat|fix|docs|test|refactor|perf|chore|ci)(\\($SCOPE\\))?!?: .+"
+          BRANCH_TITLE_PATTERN="^(feature|fix|docs|test|refactor|perf|chore|ci)/$SCOPE/.+"
+
+          if ! echo "$TITLE" | grep -Eq "$CONVENTIONAL_PATTERN" && \
+             ! echo "$TITLE" | grep -Eiq "$BRANCH_TITLE_PATTERN"; then
+            echo "::error::PR title must follow Conventional Commits or feature/<scope>/<summary>."
+            echo "  e.g. feat(mri): fit neuroCombat inside the training fold"
+            echo "  or   feature/mri/fit neuroCombat inside the training fold"
+            echo "  types:  feat|feature fix docs test refactor perf chore ci"
+            echo "  scopes: mri gait voice tapping fusion mobile desktop backend shared docs ci repo"
+            exit 1
+          fi
+          echo "OK"
