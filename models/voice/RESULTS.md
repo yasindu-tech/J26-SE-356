@@ -226,3 +226,43 @@ done on this dataset.**
   people**, so its specificity CI is very wide.
 - Performance comes from people already diagnosed versus healthy controls; it
   says nothing about early-stage fairness.
+
+## `predict_voice()` and demo (VOICE-18)
+
+Reproduce (about 1.5 minutes; outputs go to the gitignored
+`models/voice/artifacts/`: `demo_results.json`, `model_card.json`,
+`voice_bundle.joblib`):
+
+```bash
+python models/voice/src/demo_voice.py                 # L1 logistic (default)
+python models/voice/src/demo_voice.py --model lightgbm
+```
+
+Trained on the D3 training people only (201 people); the 51 hold-out people
+(38 PD / 13 healthy) were never used in training, tuning or calibration. Chosen
+k = 100, C = 0.1. Platt calibration with balanced class weights on out-of-fold
+training scores; CI from a 50-model bootstrap ensemble over training people;
+SHAP top 5 in log-odds (exact for the linear model).
+
+| Hold-out check (51 people) | Value [95% CI] |
+|---|---|
+| AUC | 0.818 [0.651, 0.950] |
+| Balanced accuracy | 0.727 [0.588, 0.864] |
+| Sensitivity | 0.684 [0.525, 0.824] |
+| Specificity | 0.769 [0.538, 1.000] |
+| PPV at 1% / 2% / 5% | 0.029 / 0.057 / 0.135 |
+
+The hold-out AUC agrees with the 5-fold CV evidence (0.812), but with 13
+healthy people its CIs are very wide (the PPV upper bounds reach 1.0 when a
+resample has no false positives). It is a sanity check, not the headline.
+
+### Caveats
+
+- The training-set sex-fairness note shows a specificity gap for **L1 as well**
+  (0.85 vs 0.50 at the 0.5 threshold; gap CI −0.61 to −0.09). In the 5-fold CV
+  over all people the L1 gap CI included zero, so the threshold issue is not
+  LightGBM-only; it needs a per-sex check before any screening threshold is set.
+- Calibrated probabilities assume a 50/50 prior. They are not the chance that
+  a screened person has PD; use the PPV table for that.
+- The quality gate checks the feature row only. PP1 has no audio, so recording
+  quality (clipping, noise, length) is not checked yet.
