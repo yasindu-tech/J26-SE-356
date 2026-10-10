@@ -7,9 +7,10 @@ from pathlib import Path
 import check_heel_strikes as chs
 import numpy as np
 import pytest
-from carepd_format import L_ANKLE, PELVIS, R_ANKLE, load_config
+from carepd_format import L_ANKLE, L_HIP, PELVIS, R_ANKLE, R_HIP, load_config
 from carepd_loader import Walk
 from preprocess import (
+    ankle_forward,
     centre_on_pelvis,
     detect_foot,
     detect_heel_strikes,
@@ -38,25 +39,50 @@ def swing_height(t: np.ndarray, first_swing: float, stride: float = STRIDE_S, am
     return h, np.array([x for x in landings if x <= t[-1]])
 
 
+def foot_progress(t: np.ndarray, first_swing: float, stride: float, step: float) -> np.ndarray:
+    """Forward position of a foot on the floor: still in stance, moving ``step`` in each swing."""
+    z = np.zeros_like(t)
+    start = first_swing
+    done = 0
+    while start < t[-1] + stride:
+        u = np.clip((t - start) / SWING_S, 0, 1)
+        z += np.where(t >= start, step * (1 - np.cos(np.pi * u)) / 2, 0.0)
+        done += 1
+        start += stride
+    return z
+
+
 def make_walk(
     fps: float = 30,
     seconds: float = 6.0,
     stride: float = STRIDE_S,
     amp: float = AMP_M,
     bob: float = 0.02,
+    stride_len: float = 1.2,
 ):
-    """A walk of 17 joints: pelvis moving forward and bobbing, ankles swinging in turn."""
+    """A walk of 17 joints: pelvis moving forward and bobbing, feet swinging forward in turn.
+
+    h36m convention: y up, walking towards +z, +x is the subject's left. ``stride_len`` 0 gives
+    stepping on the spot (feet lift but nobody travels).
+    """
     t = np.arange(int(round(seconds * fps))) / fps
     joints = np.zeros((t.size, 17, 3))
     pelvis_y = 0.95 + bob * np.cos(4 * np.pi * t / stride)  # highest around mid-stance
+    pelvis_z = stride_len / stride * t
     joints[:, :, 1] = pelvis_y[:, None]
-    joints[:, :, 2] = 1.1 * t[:, None]  # forward along +z
+    joints[:, :, 2] = pelvis_z[:, None]
     joints[:, PELVIS, 1] = pelvis_y
+    joints[:, L_HIP, 0], joints[:, R_HIP, 0] = 0.1, -0.1
     left_h, left_land = swing_height(t, 0.3, stride, amp)
     right_h, right_land = swing_height(t, 0.3 + stride / 2, stride, amp)
     joints[:, L_ANKLE, 1] = left_h
     joints[:, R_ANKLE, 1] = right_h
     joints[:, L_ANKLE, 0], joints[:, R_ANKLE, 0] = 0.1, -0.1
+    # each foot lands about half a stride ahead of where the pelvis was when it lifted off
+    joints[:, L_ANKLE, 2] = foot_progress(t, 0.3, stride, stride_len) - 0.3 * stride_len
+    joints[:, R_ANKLE, 2] = (
+        foot_progress(t, 0.3 + stride / 2, stride, stride_len) + 0.2 * stride_len
+    )
     return joints, left_land, right_land
 
 
@@ -135,7 +161,7 @@ def test_small_noise_adds_no_strikes() -> None:
 
 
 def test_standing_still_has_no_strikes() -> None:
-    joints, _, _ = make_walk(amp=0.0, bob=0.0)  # standing: no swing and no pelvis bob
+    joints, _, _ = make_walk(amp=0.0, bob=0.0, stride_len=0.0)  # standing: nothing moves
     assert detect_foot(rel_left_ankle(joints, 30), 30).strikes.size == 0
 
 
@@ -182,6 +208,42 @@ def test_both_feet_and_stride_times() -> None:
     assert hs.left.strikes.size >= 5 and hs.right.strikes.size >= 5
     np.testing.assert_allclose(np.median(hs.all_stride_times()), STRIDE_S, atol=1 / 30)
     assert hs.method == "onset"
+
+
+# --------------------------------------------------------------------------- one landing per swing
+def test_forward_points_the_way_the_hips_face() -> None:
+    joints, _, _ = make_walk(seconds=4.0)
+    left, right = ankle_forward(preprocess(joints, 30))
+    # walking towards +z: during its first swing (0.3-0.7 s) the left foot moves well ahead
+    # relative to the pelvis, and during the following stance it falls behind again
+    assert left[21] - left[9] > 0.3
+    assert left[40] < left[21]
+    turned = joints.copy()
+    turned[:, :, [0, 2]] = joints[:, :, [2, 0]] * np.array([1, -1])  # rotate the walk 90 degrees
+    l2, _ = ankle_forward(preprocess(turned, 30))
+    np.testing.assert_allclose(l2, left, atol=1e-6)  # follows the body, not the room
+
+
+def test_forward_needs_two_distinct_hips() -> None:
+    joints, _, _ = make_walk(seconds=4.0)
+    joints[:, L_HIP] = joints[:, R_HIP]
+    with pytest.raises(ValueError, match="hip"):
+        ankle_forward(preprocess(joints, 30))
+
+
+def test_a_dip_in_mid_swing_is_not_a_second_landing() -> None:
+    fps = 30
+    t = np.arange(150) / fps
+    h, _ = swing_height(t, 0.3, stride=1.6)
+    # a short extra dip of 3 cm inside each swing, as seen in severe walks
+    for start in np.arange(0.3, t[-1], 1.6):
+        mid = (t > start + 0.12) & (t < start + 0.22)
+        h[mid] -= 0.08 * np.sin(np.pi * (t[mid] - start - 0.12) / 0.1)
+    fwd = foot_progress(t, 0.3, 1.6, 0.8) - 0.5 * t  # forward in swing, back in stance
+    with_check = detect_foot(h, fps, forward=fwd).strikes
+    without = detect_foot(h, fps).strikes
+    assert without.size > with_check.size  # the mid-swing dips were counted as landings
+    assert np.all(np.diff(with_check) > 1.2 * fps)  # now one landing per stride
 
 
 # --------------------------------------------------------------------------- command line
