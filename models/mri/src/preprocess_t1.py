@@ -18,7 +18,7 @@ Needs: FSL (``fast``, optionally ``bet``), the SynthStrip Docker wrapper script,
 and the Python packages ``antspyx`` and ``nibabel``.
 
 Usage (from the repo root, with the venv active):
-    python models/mri/src/preprocess_t1.py --subject 100890
+    python models/mri/src/preprocess_t1.py --subject <patno>
     python models/mri/src/preprocess_t1.py --limit 3
     python models/mri/src/preprocess_t1.py --synthstrip ~/synthstrip-docker
 """

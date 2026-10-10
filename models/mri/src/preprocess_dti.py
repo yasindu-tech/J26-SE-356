@@ -23,7 +23,7 @@ with the reason, never zeros.
 Needs: FSL (bet, eddy), Python packages antspyx, dipy, nibabel.
 
 Usage (from the repo root, venv active):
-    python models/mri/src/preprocess_dti.py --subject 100890
+    python models/mri/src/preprocess_dti.py --subject <patno>
     python models/mri/src/preprocess_dti.py --limit 3
 """
 
