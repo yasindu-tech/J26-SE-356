@@ -115,3 +115,31 @@ def test_equalised_copy_fails_loudly(tmp_path: Path) -> None:
 def test_field_strength_one_spelling() -> None:
     assert convert_dicom.field_strength("3") == convert_dicom.field_strength("3.0") == "3"
     assert convert_dicom.field_strength("") == ""
+
+
+def test_scanner_adc_map_is_removed_and_dti_passes(tmp_path: Path) -> None:
+    write_nifti(tmp_path / "s_I3.nii.gz", (8, 8, 8, 2))
+    write_nifti(tmp_path / "s_I3_ADC.nii.gz", (8, 8, 8))
+    (tmp_path / "s_I3.bval").write_text("0 1000\n")
+    (tmp_path / "s_I3.bvec").write_text("0 1\n0 0\n0 0\n")
+    removed = convert_dicom.remove_scanner_derived(tmp_path, "s_I3")
+    assert removed == ["s_I3_ADC.nii.gz"]
+    assert convert_dicom.check_output(tmp_path, "s_I3")[0] == "dti"
+
+
+def test_raw_scan_is_not_mistaken_for_derived(tmp_path: Path) -> None:
+    write_nifti(tmp_path / "s_I4.nii.gz", (8, 8, 8))
+    assert convert_dicom.remove_scanner_derived(tmp_path, "s_I4") == []
+    assert (tmp_path / "s_I4.nii.gz").exists()
+
+
+def test_b0_only_diffusion_scan_is_labelled(tmp_path: Path) -> None:
+    write_nifti(tmp_path / "s_I5.nii.gz", (8, 8, 8), voxel=2.0)
+    kind = convert_dicom.check_output(tmp_path, "s_I5", series_name="DTI_revB0_AP")[0]
+    assert kind == "dti_b0_only"
+
+
+def test_non_diffusion_4d_without_bval_still_fails(tmp_path: Path) -> None:
+    write_nifti(tmp_path / "s_I6.nii.gz", (8, 8, 8, 3))
+    with pytest.raises(ValueError, match="3D"):
+        convert_dicom.check_output(tmp_path, "s_I6", series_name="MPRAGE")
