@@ -166,3 +166,103 @@ shuffled labels exceeds 0.55 (CLAUDE.md section 3.2).
 - 10 permutations are enough for a leak gate, not for a precise permutation
   p-value (the smallest possible would be 1/11).
 
+## Sex-fairness breakdown (VOICE-17) — exploratory
+
+Reproduce (about 1.5 minutes on an M-series MacBook; outputs go to the
+gitignored `models/voice/artifacts/`):
+
+```bash
+python models/voice/src/sex_fairness.py
+```
+
+The honest models (same runs, folds and seed as the ladder) broken down by sex
+code. Gender is **not** a model input (D7); it only splits the results. Each
+group is bootstrapped on its own people; gaps are sex code 1 minus sex code 0,
+with a stratified bootstrap CI. Threshold 0.5. The male/female meaning of the
+codes is ⚠️ UNVERIFIED (not documented in the vault), so codes are reported as is.
+**UCI-470 has no age column, so the age-band breakdown in the proposal cannot be
+done on this dataset.**
+
+| Group | People | PD | Healthy |
+|---|---|---|---|
+| sex code 0 | 122 | 81 | 41 |
+| sex code 1 | 130 | 107 | 23 |
+
+**L1 logistic** (overall AUC 0.812 [0.743, 0.874])
+
+| Group | AUC | Balanced accuracy | Sensitivity | Specificity |
+|---|---|---|---|---|
+| sex code 0 | 0.820 [0.729, 0.898] | 0.736 [0.652, 0.807] | 0.667 [0.554, 0.756] | 0.805 [0.681, 0.917] |
+| sex code 1 | 0.786 [0.671, 0.883] | 0.731 [0.624, 0.831] | 0.766 [0.685, 0.838] | 0.696 [0.500, 0.870] |
+| gap (1 − 0) | −0.034 [−0.180, +0.097] | – | +0.100 [−0.026, +0.230] | −0.109 [−0.350, +0.104] |
+
+**LightGBM** (overall AUC 0.877 [0.825, 0.923])
+
+| Group | AUC | Balanced accuracy | Sensitivity | Specificity |
+|---|---|---|---|---|
+| sex code 0 | 0.878 [0.803, 0.938] | 0.810 [0.731, 0.886] | 0.889 [0.813, 0.947] | 0.732 [0.600, 0.865] |
+| sex code 1 | 0.866 [0.788, 0.933] | 0.699 [0.602, 0.807] | 0.963 [0.920, 0.991] | **0.435 [0.250, 0.650]** |
+| gap (1 − 0) | −0.012 [−0.115, +0.086] | – | +0.074 [+0.007, +0.153] | **−0.297 [−0.538, −0.037]** |
+
+### What it says
+
+- **Not driven by sex.** Within each sex both models still rank PD above healthy
+  (every within-sex AUC CI is well above 0.5), so the sex–class correlation is
+  not what the models learned.
+- **Ranking is equal across sexes.** No AUC gap is distinguishable from zero for
+  either model.
+- **LightGBM's operating point is not equal.** At the 0.5 threshold it flags
+  about 57% of healthy people with sex code 1 against about 27% with sex code 0
+  (specificity 0.435 vs 0.732; gap CI excludes zero). The likely cause is that
+  sex code 1 is 82% PD in this dataset, so the model's scores sit higher for
+  that group. L1 shows the same direction but its gap CI includes zero.
+- So equal AUC does **not** mean equal treatment: a single threshold would refer
+  healthy people of one sex code far more often. Any screening threshold must
+  be checked per sex before use.
+
+### Caveats
+
+- Exploratory: 122 and 130 people, and sex code 1 has only **23 healthy
+  people**, so its specificity CI is very wide.
+- Performance comes from people already diagnosed versus healthy controls; it
+  says nothing about early-stage fairness.
+
+## `predict_voice()` and demo (VOICE-18)
+
+Reproduce (about 1.5 minutes; outputs go to the gitignored
+`models/voice/artifacts/`: `demo_results.json`, `model_card.json`,
+`voice_bundle.joblib`):
+
+```bash
+python models/voice/src/demo_voice.py                 # L1 logistic (default)
+python models/voice/src/demo_voice.py --model lightgbm
+```
+
+Trained on the D3 training people only (201 people); the 51 hold-out people
+(38 PD / 13 healthy) were never used in training, tuning or calibration. Chosen
+k = 100, C = 0.1. Platt calibration with balanced class weights on out-of-fold
+training scores; CI from a 50-model bootstrap ensemble over training people;
+SHAP top 5 in log-odds (exact for the linear model).
+
+| Hold-out check (51 people) | Value [95% CI] |
+|---|---|
+| AUC | 0.818 [0.651, 0.950] |
+| Balanced accuracy | 0.727 [0.588, 0.864] |
+| Sensitivity | 0.684 [0.525, 0.824] |
+| Specificity | 0.769 [0.538, 1.000] |
+| PPV at 1% / 2% / 5% | 0.029 / 0.057 / 0.135 |
+
+The hold-out AUC agrees with the 5-fold CV evidence (0.812), but with 13
+healthy people its CIs are very wide (the PPV upper bounds reach 1.0 when a
+resample has no false positives). It is a sanity check, not the headline.
+
+### Caveats
+
+- The training-set sex-fairness note shows a specificity gap for **L1 as well**
+  (0.85 vs 0.50 at the 0.5 threshold; gap CI −0.61 to −0.09). In the 5-fold CV
+  over all people the L1 gap CI included zero, so the threshold issue is not
+  LightGBM-only; it needs a per-sex check before any screening threshold is set.
+- Calibrated probabilities assume a 50/50 prior. They are not the chance that
+  a screened person has PD; use the PPV table for that.
+- The quality gate checks the feature row only. PP1 has no audio, so recording
+  quality (clipping, noise, length) is not checked yet.
