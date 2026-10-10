@@ -135,6 +135,52 @@ def _folds(
     return list(cv.split(np.zeros(len(y)), y))
 
 
+def param_grid(
+    model: Model,
+    k_grid: Sequence[int] = K_GRID,
+    c_grid: Sequence[float] = C_GRID,
+    leaves_grid: Sequence[int] = LEAVES_GRID,
+) -> dict[str, list[float]]:
+    """The inner-CV search grid for ``model``."""
+    grid: dict[str, list[float]] = {"select__k": list(k_grid)}
+    if model == "l1_logistic":
+        grid["model__C"] = list(c_grid)
+    else:
+        grid["model__num_leaves"] = list(leaves_grid)
+    return grid
+
+
+def fit_tuned(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    groups: np.ndarray,
+    model: Model = "l1_logistic",
+    score: str | ScoreFunc = "mutual_info",
+    k_grid: Sequence[int] = K_GRID,
+    c_grid: Sequence[float] = C_GRID,
+    leaves_grid: Sequence[int] = LEAVES_GRID,
+    seed: int = SEED,
+    n_jobs: int = -1,
+) -> tuple[Pipeline, dict[str, float]]:
+    """Tune k and C (or leaves) by person-level CV on ALL given rows, then refit on them.
+
+    For training a final model only. Never call this on rows that will later be
+    used to report performance: use ``nested_cv_predict`` for that.
+    """
+    contract.validate_features(X.columns)
+    y, groups = np.asarray(y), np.asarray(groups)
+    score_func = SCORE_FUNCS[score] if isinstance(score, str) else score
+    search = GridSearchCV(
+        build_pipeline(score_func, None, seed, model),
+        param_grid(model, k_grid, c_grid, leaves_grid),
+        scoring="roc_auc",
+        cv=_folds(y, groups, "subject", N_INNER, seed),
+        n_jobs=n_jobs,
+    )
+    search.fit(X.to_numpy(dtype=float), y)
+    return search.best_estimator_, search.best_params_
+
+
 def nested_cv_predict(
     X: pd.DataFrame,
     y: np.ndarray,
@@ -174,6 +220,7 @@ def nested_cv_predict(
         # Deliberately leaky: features are scored on every row, test folds included.
         ranking = np.argsort(-_feature_scores(score_func, X_arr, y), kind="stable")
 
+    grid = param_grid(model, k_grid, c_grid, leaves_grid)
     grid: dict[str, list[float]] = {"select__k": list(k_grid)}
     if model == "l1_logistic":
         grid["model__C"] = list(c_grid)
