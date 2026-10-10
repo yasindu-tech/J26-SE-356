@@ -18,7 +18,7 @@ Needs: FSL (``fast``, optionally ``bet``), the SynthStrip Docker wrapper script,
 and the Python packages ``antspyx`` and ``nibabel``.
 
 Usage (from the repo root, with the venv active):
-    python models/mri/src/preprocess_t1.py --subject 100890
+    python models/mri/src/preprocess_t1.py --subject <patno>
     python models/mri/src/preprocess_t1.py --limit 3
     python models/mri/src/preprocess_t1.py --synthstrip ~/synthstrip-docker
 """
@@ -36,6 +36,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pandas as pd
+from progress import NullRecorder, RunRecorder
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TABLE_IN = REPO_ROOT / "data" / "interim" / "mri_conversion_table.csv"
@@ -70,6 +71,7 @@ class T1Config:
     skullstrip: str = "synthstrip"  # "synthstrip" or "bet"
     synthstrip_script: Path = Path.home() / "synthstrip-docker"
     fast_command: str = "fast"
+    keep_intermediates: bool = False  # False: delete big in-between files once a person passes
     bet_command: str = "bet"
 
 
@@ -248,11 +250,20 @@ def save_qc_image(mni: Path, seg: Path, dst: Path) -> None:
 # ---------------------------------------------------------------- the pipeline
 
 
+T1_STEP_KEYS = ["n4", "skull", "align", "tissue", "qc"]
+
+
 def preprocess_t1(
-    nifti: Path, subject_id: str, out_root: Path, config: T1Config | None = None, redo: bool = False
+    nifti: Path,
+    subject_id: str,
+    out_root: Path,
+    config: T1Config | None = None,
+    redo: bool = False,
+    recorder: RunRecorder | NullRecorder | None = None,
 ) -> T1Result:
     """Run the four steps on one T1 scan. Never raises for a bad scan: returns a failed result."""
     config = config or T1Config()
+    rec = recorder or NullRecorder()
     result = T1Result(subject_id=subject_id, input_nifti=str(nifti), skullstrip=config.skullstrip)
     out = out_root / subject_id
     try:
@@ -268,33 +279,80 @@ def preprocess_t1(
         tdir = out / "transforms"
         qc = out / f"{subject_id}_qc.png"
 
-        if redo or not n4.exists():
-            n4_correct(nifti, n4)
-        if redo or not (brain.exists() and mask.exists()):
-            skull_strip(n4, brain, mask, config)
-        result.brain_mask_ml = mask_volume_ml(mask)
-        check_mask_volume(result.brain_mask_ml)
+        # Finished earlier and cleaned up: reuse kept results instead of redoing N4/skull-strip.
+        finished = not redo and final_outputs_exist(out, subject_id)
+        with rec.step(subject_id, "n4"):
+            if not finished and (redo or not n4.exists()):
+                n4_correct(nifti, n4)
+        with rec.step(subject_id, "skull"):
+            if not finished and (redo or not (brain.exists() and mask.exists())):
+                skull_strip(n4, brain, mask, config)
+            result.brain_mask_ml = mask_volume_ml(mask)
+            check_mask_volume(result.brain_mask_ml)
 
-        if redo or not mni.exists() or not any(tdir.glob("*")):
-            register_to_template(brain, config.template, mni, tdir, subject_id)
-        result.template_correlation = template_correlation(mni, config.template)
-        check_template_correlation(result.template_correlation)
+        with rec.step(subject_id, "align"):
+            if redo or not mni.exists() or not any(tdir.glob("*")):
+                register_to_template(brain, config.template, mni, tdir, subject_id)
+            result.template_correlation = template_correlation(mni, config.template)
+            check_template_correlation(result.template_correlation)
 
         seg = seg_prefix.with_name(seg_prefix.name + "_seg.nii.gz")
-        if redo or not seg.exists():
-            seg = segment(mni, seg_prefix, config)
-        result.csf_ml_mni, result.grey_ml_mni, result.white_ml_mni = tissue_volumes_ml(seg)
-        save_qc_image(mni, seg, qc)
+        with rec.step(subject_id, "tissue"):
+            if redo or not seg.exists():
+                seg = segment(mni, seg_prefix, config)
+            result.csf_ml_mni, result.grey_ml_mni, result.white_ml_mni = tissue_volumes_ml(seg)
+        with rec.step(subject_id, "qc"):
+            save_qc_image(mni, seg, qc)
 
         result.mni_brain, result.tissue_seg = _rel(mni), _rel(seg)
         result.transform_dir, result.qc_image = _rel(tdir), _rel(qc)
         result.status = "ok"
+        if not config.keep_intermediates:
+            remove_intermediates(out, subject_id)
     except StepError as exc:
         result.reason = str(exc)
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         result.reason = f"{type(exc).__name__}: {exc}"
     log.info("subject %s -> %s %s", pseudonym(subject_id), result.status, result.reason)
     return result
+
+
+# Kept per person after a successful run; everything else is deleted unless
+# --keep-intermediates. Feature extraction needs the aligned brain, tissue maps and mask.
+KEEP_SUFFIXES = (
+    "_n4_brain_mask.nii.gz",
+    "_mni.nii.gz",
+    "_fast_seg.nii.gz",
+    "_fast_pve_0.nii.gz",
+    "_fast_pve_1.nii.gz",
+    "_fast_pve_2.nii.gz",
+    "_qc.png",
+)
+FINAL_SUFFIXES = ("_n4_brain_mask.nii.gz", "_mni.nii.gz", "_fast_seg.nii.gz")
+
+
+def final_outputs_exist(out: Path, stem: str) -> bool:
+    """True when this person's results are complete (with or without in-between files)."""
+    tdir = out / "transforms"
+    files_ok = all((out / f"{stem}{sfx}").exists() for sfx in FINAL_SUFFIXES)
+    return files_ok and tdir.is_dir() and any(tdir.iterdir())
+
+
+def remove_intermediates(out: Path, stem: str) -> int:
+    """Delete in-between files (N4 image, unmasked brain copy...). Returns bytes freed."""
+    freed = 0
+    for f in out.iterdir():
+        if f.is_file() and f.name.startswith(stem) and not f.name.endswith(KEEP_SUFFIXES):
+            freed += f.stat().st_size
+            f.unlink()
+    # Non-linear warp fields are ~70 MB each. The aligned images are already saved and
+    # features are measured on them, so only the small affine files are kept.
+    tdir = out / "transforms"
+    if tdir.is_dir():
+        for f in tdir.glob("*_warp.nii.gz"):
+            freed += f.stat().st_size
+            f.unlink()
+    return freed
 
 
 def _rel(path: Path) -> str:
@@ -337,11 +395,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--template", type=Path, default=default_template())
     ap.add_argument("--redo", action="store_true", help="recompute steps even if outputs exist")
+    ap.add_argument("--events-url", help="also send progress events to this dashboard URL")
+    ap.add_argument(
+        "--keep-intermediates",
+        action="store_true",
+        help="keep big in-between files (N4 image etc.) instead of deleting them",
+    )
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     config = T1Config(
-        template=args.template, skullstrip=args.skullstrip, synthstrip_script=args.synthstrip
+        template=args.template,
+        skullstrip=args.skullstrip,
+        synthstrip_script=args.synthstrip,
+        keep_intermediates=args.keep_intermediates,
     )
 
     inputs = t1_inputs(args.table)
@@ -353,9 +420,23 @@ def main(argv: list[str] | None = None) -> int:
         log.error("no T1 scans selected from %s", args.table)
         return 2
 
-    results = [
-        preprocess_t1(nifti, subject, args.out, config, args.redo) for subject, nifti in inputs
-    ]
+    rec = RunRecorder("t1", [s for s, _ in inputs], T1_STEP_KEYS, events_url=args.events_url)
+    print(f"run events: {_rel(rec.path)}  (watch live: python models/mri/src/pipeline_monitor.py)")
+    results = []
+    for subject, nifti in inputs:
+        rec.subject_start(subject)
+        r = preprocess_t1(nifti, subject, args.out, config, args.redo, recorder=rec)
+        rec.subject_end(
+            subject,
+            r.status,
+            r.reason,
+            metrics={
+                "brain_mask_ml": r.brain_mask_ml,
+                "template_correlation": r.template_correlation,
+            },
+        )
+        results.append(r)
+    rec.run_end()
     table = pd.DataFrame([asdict(r) for r in results])
     args.results.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(args.results, index=False)
