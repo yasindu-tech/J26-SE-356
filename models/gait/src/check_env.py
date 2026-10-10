@@ -62,7 +62,9 @@ def check_pose_model() -> bool:
 
 def main() -> int:
     print(f"Python {sys.version.split()[0]}")
-    if sys.version_info < (3, 11):
+    # Kept on purpose: this script is the first thing a teammate runs, so it
+    # should say "wrong Python" in plain words rather than fail later.
+    if sys.version_info < (3, 11):  # noqa: UP036
         print("  FAIL  Python 3.11 or newer is required (see pyproject.toml)")
         return 1
     print("Packages:")
