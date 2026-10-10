@@ -141,3 +141,31 @@ def paired_bootstrap_difference(
     ]
     lower, upper = np.percentile(diffs, [2.5, 97.5])
     return Estimate(metric(y_p, a_p) - metric(y_p, b_p), float(lower), float(upper))
+
+
+def group_bootstrap_difference(
+    y: np.ndarray,
+    scores: np.ndarray,
+    groups: np.ndarray,
+    in_b: np.ndarray,
+    metric: Metric = auc,
+    n_boot: int = N_BOOT,
+    seed: int = SEED,
+) -> Estimate:
+    """metric(group B) - metric(group A) with a 95% CI, for two disjoint groups of people.
+
+    ``in_b`` is a row-level boolean mask (True = group B). The groups share no
+    people, so each is resampled on its own (a stratified bootstrap); a paired
+    bootstrap would be wrong here.
+    """
+    in_b = np.asarray(in_b, dtype=bool)
+    y_a, s_a = person_scores(y[~in_b], scores[~in_b], groups[~in_b])
+    y_b, s_b = person_scores(y[in_b], scores[in_b], groups[in_b])
+    draws_a = _bootstrap_indices(y_a, n_boot, seed)
+    draws_b = _bootstrap_indices(y_b, n_boot, seed + 1)
+    diffs = [
+        metric(y_b[j], s_b[j]) - metric(y_a[i], s_a[i])
+        for i, j in zip(draws_a, draws_b, strict=False)  # both lists may skip a few draws
+    ]
+    lower, upper = np.percentile(diffs, [2.5, 97.5])
+    return Estimate(metric(y_b, s_b) - metric(y_a, s_a), float(lower), float(upper))
