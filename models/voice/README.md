@@ -28,6 +28,8 @@ fold** → LightGBM / regularised linear → SHAP → fairness by sex and age ba
   meaningless here; report balanced accuracy and AUC.
 - **Sex correlates with class** (41 HC / 81 PD vs 23 HC / 107 PD) — belongs in
   the fairness analysis and probably as a covariate.
+- **No age column in UCI-470**, so the fairness analysis is by sex only; the
+  age-band breakdown cannot be done on this dataset (see RESULTS.md, VOICE-17).
 - **0 of 252 voice subjects have a PPMI scan** — this module is evaluated
   independently and is *not* in the fusion. Do not claim fusion here.
 - End-to-end deep audio rejected at n=252.
