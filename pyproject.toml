@@ -7,6 +7,15 @@ exclude = [".venv", "node_modules", "data", "**/notebooks"]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's DI system requires Depends()/Query()/etc. as argument defaults —
+# that's the framework's own idiom, not the mutable-default footgun B008
+# exists to catch. See https://fastapi.tiangolo.com/tutorial/dependencies/
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [tool.pytest.ini_options]
 testpaths = ["models", "services"]
 python_files = ["test_*.py"]
