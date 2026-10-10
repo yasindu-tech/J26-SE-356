@@ -25,11 +25,12 @@ pipeline). They are typical gait values, checked against the overlay plots.
 
 Checked on CARE-PD (9 Oct 2026, ``check_heel_strikes.py``): median stride times equal those of a
 coordinate-based method (ankle furthest ahead of the pelvis) in all four cohorts, and our strikes
-come 2 to 3 frames before it. Known limit: on UPDRS 2-3 walks about 4-7% of strikes have no
-match in that method (under 0.5% for UPDRS 0-1), and more strides are shorter than 0.7 s. Part
-of this is the reference failing on shuffling steps; the rest is not resolved. With almost no
-ankle swing, the pelvis's up-and-down movement can also be counted as steps. Measuring the
-ankle against the lower ankle instead of the pelvis was tried and changed little.
+come 2 to 3 frames before it. With ``forward`` given (``detect_heel_strikes`` does this), two
+landings of one foot also need a stance between them, which removes dips in mid-swing (3% of
+strikes on UPDRS 2 walks, 20% on UPDRS 3, almost none on UPDRS 0-1). Known limit: on UPDRS 2-3
+walks about 4-8% of strikes still have no match in the coordinate method (under 0.5% for UPDRS
+0-1); part of this is the reference failing on shuffling steps. GAIT-13 (``cycles.py``) then
+counts only real strides, which drops stepping on the spot.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from carepd_format import L_ANKLE, PELVIS, R_ANKLE
+from carepd_format import L_ANKLE, L_HIP, PELVIS, R_ANKLE, R_HIP
 from scipy.signal import butter, filtfilt, find_peaks
 
 SMOOTH_CUTOFF_HZ = 6.0  # common low-pass cutoff for walking kinematics
@@ -48,8 +49,13 @@ REL_DEPTH = 0.25  # a dip must be at least this share of the trace's 5th-95th pe
 ABS_DEPTH_M = 0.005  # and at least this deep in metres (5 mm keeps severe shuffling steps)
 FIRST_DROP_FRACTION = 0.5  # the first landing of a walk must drop at least this share of a
 #                            typical dip; otherwise it is a slow drift, not a step
+FIRST_SPEED_FRACTION = 0.5  # ... and end a descent at least this share as fast as a typical one
+FIRST_SETTLE_FRAMES = 1  # ... and come before its dip's lowest point (not on it)
 ONSET_SPEED_FRACTION = 0.2  # the foot has landed once its downward speed drops below this share
 #                             of the fastest downward speed in that dip
+
+STANCE_BACK_M = 0.05  # between two landings of one foot there is a stance, in which the ankle
+#                       moves back relative to the pelvis by at least this much
 
 Method = Literal["onset", "minimum"]
 
@@ -70,6 +76,10 @@ class HeelStrikes:
     right: FootStrikes
     fps: float
     method: str
+    # Each ankle's position ahead of the pelvis along the facing direction (metres, per frame).
+    # Used by GAIT-13 to tell real steps from stepping on the spot; None if not computed.
+    left_forward: np.ndarray | None = None
+    right_forward: np.ndarray | None = None
 
     def all_stride_times(self) -> np.ndarray:
         return np.concatenate([self.left.stride_times(self.fps), self.right.stride_times(self.fps)])
@@ -109,6 +119,24 @@ def preprocess(joints: np.ndarray, fps: float) -> np.ndarray:
     return smooth(centre_on_pelvis(joints), fps)
 
 
+def ankle_forward(prepared: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Left and right ankle position ahead of the pelvis, along the direction the hips face.
+
+    The facing direction is horizontal and perpendicular to the hip line (h36m convention: +x is
+    the subject's left, y up), so it follows turns and needs no global position: it works on
+    hip-centred MediaPipe landmarks too.
+    """
+    hip = prepared[:, L_HIP] - prepared[:, R_HIP]
+    facing = np.stack([-hip[:, 2], np.zeros(len(hip)), hip[:, 0]], axis=1)
+    norm = np.linalg.norm(facing, axis=1, keepdims=True)
+    if (norm < 1e-6).any():
+        raise ValueError("left and right hip coincide; the facing direction is undefined")
+    facing /= norm
+    left = (prepared[:, L_ANKLE] * facing).sum(axis=1)
+    right = (prepared[:, R_ANKLE] * facing).sum(axis=1)
+    return left, right
+
+
 def ankle_heights(prepared: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Left and right ankle height relative to the pelvis (metres, up positive)."""
     return prepared[:, L_ANKLE, 1], prepared[:, R_ANKLE, 1]
@@ -134,11 +162,18 @@ def _onset(height: np.ndarray, minimum: int, start: int) -> int | None:
 
 
 def detect_foot(
-    height: np.ndarray, fps: float, method: Method = "onset", abs_depth_m: float = ABS_DEPTH_M
+    height: np.ndarray,
+    fps: float,
+    method: Method = "onset",
+    abs_depth_m: float = ABS_DEPTH_M,
+    forward: np.ndarray | None = None,
 ) -> FootStrikes:
     """Heel strikes of one foot from its ankle height (any vertical offset, y up).
 
     ``abs_depth_m`` is the smallest dip counted, in metres; noisier input (video) may need more.
+    ``forward`` is the ankle's position ahead of the pelvis (``ankle_forward``). If given, two
+    landings of one foot need a stance between them (the ankle moving back relative to the
+    pelvis); a dip in the middle of a swing, with no stance before the next one, is dropped.
     """
     x = np.asarray(height, dtype=np.float64)
     if not np.isfinite(x).all():
@@ -155,10 +190,19 @@ def detect_foot(
     padded = np.concatenate([x, np.full(gap, x.max())])
     minima, props = find_peaks(-padded, distance=gap, prominence=depth)
     typical = float(np.median(props["prominences"])) if minima.size else 0.0
+    # Fastest downward speed before each dip; a real landing ends a fast descent.
+    v = np.diff(x)
+    speeds = [
+        -float(v[lb : min(int(m), n - 1)].min())
+        for m, lb in zip(minima, props["left_bases"], strict=True)
+        if min(int(m), n - 1) > lb
+    ]
+    typical_speed = float(np.median([sp for sp in speeds if sp > 0])) if speeds else 0.0
     strikes: list[int] = []
     kept: list[int] = []
-    for m_pad, left_base in zip(minima, props["left_bases"], strict=True):
+    for i, (m_pad, left_base) in enumerate(zip(minima, props["left_bases"], strict=True)):
         m = min(int(m_pad), n - 1)
+        first = i == 0  # the walk's first dip: nothing before it shows a full swing
         start = max(int(left_base), kept[-1]) if kept else min(int(left_base), m)
         # A landing needs a swing before it: the ankle must have been at least `depth` higher
         # since the previous dip (or since the walk started). This merges two dips of one
@@ -168,7 +212,14 @@ def detect_foot(
         # A walk that starts high and drifts down is not a step. Nothing before the first
         # landing shows the swing in full, so it must drop at least half a typical dip of this
         # foot (a real first swing does; a slow drift at the start does not).
-        if not kept and x[start : m + 1].max() - x[m] < FIRST_DROP_FRACTION * typical:
+        if first and x[start : m + 1].max() - x[m] < FIRST_DROP_FRACTION * typical:
+            continue
+        # A walk can also start with the foot already in stance, slowly lowering: that dip is
+        # mid-stance, not a landing. The first landing must end a descent at least half as fast
+        # as this foot's typical one.
+        if first and (
+            m <= start or -float(v[start:m].min()) < FIRST_SPEED_FRACTION * typical_speed
+        ):
             continue
         if method == "minimum":
             if m < n - 1:  # the last frame is not a real minimum
@@ -176,6 +227,23 @@ def detect_foot(
                 kept.append(m)
             continue
         onset = _onset(x, m, start)
+        # A real landing is followed by stance, where the ankle keeps settling, so it comes
+        # before the dip's lowest point. A first "landing" on the lowest point itself is a walk
+        # that started mid-stance.
+        if onset is not None and first and m - onset < FIRST_SETTLE_FRAMES:
+            continue
+        # One landing per swing: between two landings of the same foot there must be a stance,
+        # in which the ankle moves back relative to the pelvis. If it did not, the previous
+        # "landing" was a dip in mid-swing; drop it and keep this one.
+        if (
+            onset is not None
+            and forward is not None
+            and strikes
+            and onset > strikes[-1]
+            and forward[strikes[-1]] - forward[strikes[-1] : onset + 1].min() < STANCE_BACK_M
+        ):
+            strikes.pop()
+            kept.pop()
         # The landing must be inside the walk with at least one frame after it; a walk that
         # ends mid-descent has not landed yet.
         if onset is not None and onset < n - 1 and (not strikes or onset > strikes[-1]):
@@ -186,10 +254,14 @@ def detect_foot(
 
 def detect_heel_strikes(joints: np.ndarray, fps: float, method: Method = "onset") -> HeelStrikes:
     """Preprocess a raw walk and find heel strikes of both feet."""
-    left, right = ankle_heights(preprocess(joints, fps))
+    prepared = preprocess(joints, fps)
+    left, right = ankle_heights(prepared)
+    left_fwd, right_fwd = ankle_forward(prepared)
     return HeelStrikes(
-        left=detect_foot(left, fps, method),
-        right=detect_foot(right, fps, method),
+        left=detect_foot(left, fps, method, forward=left_fwd),
+        right=detect_foot(right, fps, method, forward=right_fwd),
         fps=fps,
         method=method,
+        left_forward=left_fwd,
+        right_forward=right_fwd,
     )
