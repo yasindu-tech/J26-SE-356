@@ -7,6 +7,7 @@ import { clearSession, startSession } from "../api/session";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { PriorityRangePreview } from "../components/PriorityRangePreview";
 import { SESSION_IDLE_TIMEOUT_MINUTES } from "../constants/config";
+import { VoiceResults } from "./VoiceResults";
 import "./SignIn.css";
 
 export function SignIn() {
@@ -46,14 +47,8 @@ export function SignIn() {
     // No further screens exist yet (patient management, assessments — see
     // Desktop-App-Spec.md) — this placeholder just proves the session works
     // end to end (real tokens issued, idle sign-out armed) until they do.
-    return (
-      <div className="sign-in sign-in--signed-in">
-        <p>Signed in. You&rsquo;ll be signed out after {SESSION_IDLE_TIMEOUT_MINUTES} minutes of inactivity.</p>
-        <button type="button" className="sign-in__submit" onClick={handleSignOut}>
-          Sign out
-        </button>
-      </div>
-    );
+    // PP1: the voice result screen stands in for the placeholder for now.
+    return <VoiceResults onSignOut={handleSignOut} />;
   }
 
   return (
