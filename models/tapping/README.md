@@ -39,6 +39,64 @@ are never committed. Every number below is printed by
 Video → MediaPipe Hands → landmark tracking → tap detection → kinematics
 (rate, amplitude, decrement/fatigue, hesitations, arrhythmicity) → model → SHAP.
 
+## Hand landmarks (FT-11)
+`src/hand_landmarks.py` runs the MediaPipe HandLandmarker in VIDEO mode (`num_hands=1`) over
+one clip and writes one row per frame to `data/interim/landmarks/` (gitignored): 21 landmarks
+as normalised, pixel (displayed frame) and world coordinates. Download the model first with
+`models/tapping/fetch_model.sh`.
+
+```bash
+python models/tapping/src/hand_landmarks.py --video path/to/clip.mp4
+```
+
+- A frame with no hand has `detected = False` and NaN values, never zero.
+- `timestamp_ms` is the integer clock given to MediaPipe. **Tap timing must use `pts_ms`**,
+  the container's own time: phone clips are not constant frame rate.
+- fps, width, height, library versions, the model hash and the detector settings are stored
+  once in the parquet metadata (`read_clip_geometry`, `read_metadata`).
+- The handedness label is informational only: take the hand from the clip name (DCHA / IZDA).
+  On 2 of the 4 clips checked in FT-11 the label flickered between Left and Right while the
+  same hand was tracked correctly.
+- Exit codes: 0 ok, 1 unreadable clip, 2 missing video or model.
+
+Known limitations (from looking at ten full-resolution crops of two clips; eyeballed, not
+measured against ground truth):
+
+- **Absolute pixel positions are approximate. Normalise distances by hand size** (for example
+  wrist 0 to knuckle 9), and do not read single-frame positions too literally.
+- Landmarks 4 and 8 sit on the fingertip but are usually a little short of the visible nail
+  end, always inboard along the finger. The miss varies from frame to frame (about a tenth of
+  a hand size is typical; it was larger, about a third, at frame 0 of one clip).
+- In the same clips, the VIDEO-mode and the single-image result for one frame differed by up
+  to about a fifth of a hand size per landmark (frame 0 is identical in both modes).
+
+## Raw distance plot (FT-12)
+`src/plot_distance.py` plots the raw distance between thumb tip (landmark 4) and index tip
+(landmark 8), in pixels of the displayed frame, for one clip. It needs the landmarks file
+from FT-11 first. The plot goes to `data/interim/plots/` (gitignored) and is named by the
+clip's 8-character hash only; titles and axis text never contain the raw clip ID.
+
+```bash
+python models/tapping/src/plot_distance.py --clip <8-character hash>
+python models/tapping/src/plot_distance.py --parquet path/to/landmarks.parquet --compare-clocks
+```
+
+- **What it shows:** the raw curve against `pts_ms` (the container's time). A frame with no
+  hand breaks the line and gets a red tick along the bottom edge; nothing is drawn at zero.
+  The median hand size (wrist 0 to knuckle 9) is a dashed reference line and a labelled
+  right-hand axis; it never replaces the pixel signal. `--compare-clocks` also plots the
+  signal against the index/fps clock, with a zoom where the two clocks differ most.
+- **Printed numbers:** duration, min / median / max distance in pixels and in hand sizes
+  (reference only), frames without a distance, and a rough open/close cycle count.
+- **Limits:** the signal is raw, with no smoothing, no gap filling and no peak detection
+  (FT-13, FT-19, FT-20). The cycle count is a simple crossing count (below 25%, then above
+  50% of the clip's own 5th to 95th percentile range), **not the tap detector**, and it
+  depends on those thresholds. Pixel positions are approximate (see the FT-11 limitations).
+  At 30 fps a fast open or close edge gets only 1 to 3 samples, so edge timing and speed are
+  coarse on fast clips.
+- **Checked on four clips** (FT-12): all four show a repeating open/close oscillation of
+  about 0.5 to 1.4 cycles per second, with no missing frames. Reproduce with the command above.
+
 ## Known problems
 - Tapping features are **derived from the same behaviour** the MDS-UPDRS item
   rates. This is acceptable — raw kinematics, not a clinician's score — but it
