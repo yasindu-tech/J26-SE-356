@@ -116,15 +116,14 @@ deletion. Still request a real review for anything touching
 Keep PRs under ~400 changed lines where practical; say why in the
 description if it's larger.
 
-### Reviewers and assignee — automatic, don't set these manually
+### Reviewers — automatic, don't set these manually
 
 Every PR auto-requests review from `@yasindu-tech` and `@nethal17` via the
 CODEOWNERS catch-all (GitHub automatically skips whichever of the two is the
-PR's own author). Every PR also gets `@yasindu-tech` added as assignee by
-the `auto-assign.yml` workflow, regardless of who opened it. Both happen
-server-side on GitHub once the PR exists — don't pass `--reviewer` or
-`--assignee` flags to `gh pr create` for this repo, they're redundant and
-can conflict with what the automation sets.
+PR's own author). This happens server-side on GitHub once the PR exists —
+don't pass `--reviewer` to `gh pr create` for this repo, it's redundant and
+can conflict with what the automation sets. There is no auto-assign
+workflow; set an assignee by hand if you want one.
 
 ### Releases
 
