@@ -7,6 +7,22 @@ processed/   Analysis-ready feature tables
 external/    External validation cohorts (NTUA, BrainLat)
 ```
 
+## Gait datasets (models/gait)
+Both live under `raw/` and are never committed:
+
+```
+raw/CARE-PD/      SMPL-derived h36m 17-joint .npz files + per-cohort .pkl labels
+raw/KOA-PD-NM/    191 walking videos (.MOV) used as the demo input
+```
+
+- **CARE-PD** — 9 cohorts. Use the h36m world-coordinate files (metres, Y up).
+  Severity labels (`UPDRS_GAIT`) are in the cohort `.pkl` files, not in the
+  h36m files. fps is 30 except PD-GaM at 25. No age, sex or height is provided.
+- **KOA-PD-NM** — frame rate, resolution, clip length and severity scale are not
+  documented; they are confirmed in the gait Day 1 checks before any feature is
+  trusted.
+- Check each dataset's own licence and access terms before sharing any file.
+
 ## Rules
 - **Nothing here is ever committed.** `.gitignore` blocks it. A `guard-no-data`
   CI job that blocks it again on the server side is temporarily out of CI (see

@@ -1,0 +1,10 @@
+# Gait module dependencies (models/gait).
+# Install together with the shared dev environment from the repo root:
+#   pip install -r requirements-dev.txt -r models/gait/requirements.txt
+# Core packages (numpy, pandas, scipy, scikit-learn, shap, fastapi, pytest)
+# come from requirements-dev.txt and are not repeated here.
+
+mediapipe>=0.10.14,<0.11   # Pose Landmarker (33 landmarks, world coordinates in metres)
+opencv-python>=4.9         # video reading and frame handling
+xgboost>=2.0               # severity classifier; exact SHAP via TreeExplainer
+matplotlib>=3.8            # heel-strike, skeleton and SHAP plots
