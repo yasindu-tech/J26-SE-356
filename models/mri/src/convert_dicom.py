@@ -44,6 +44,12 @@ DEFAULT_OUT_NIFTI = DATA / "processed" / "nifti"
 DEFAULT_TABLE = DATA / "interim" / "mri_conversion_table.csv"
 
 IMAGE_DIR = re.compile(r"^I(\d+)$")
+# Maps the scanner computed itself and dcm2niix writes next to the raw DTI
+# (e.g. Philips adds "<stem>_ADC.nii.gz"). We compute our own maps, so these are removed.
+SCANNER_DERIVED = re.compile(r"_(ADC|TRACE|FA|ColFA)\.(nii\.gz|json)$", re.IGNORECASE)
+# Series names that are diffusion scans. Used only to label a scan that has no
+# .bval file (a b0-only reference scan), never to decide that a scan IS a DTI.
+DIFFUSION_NAME = re.compile(r"DTI|DIFF|DWI|B0", re.IGNORECASE)
 log = logging.getLogger("convert_dicom")
 
 
@@ -69,7 +75,7 @@ class SeriesRecord:
     n_dicom: int  # 1 file can hold a whole volume (multi-frame DICOM)
     status: str = "failed"  # "ok" or "failed"
     reason: str = ""  # why it failed; empty when ok
-    kind: str = ""  # "t1" or "dti" (decided from the output, not the name)
+    kind: str = ""  # "t1", "dti", or "dti_b0_only" (decided from the output, not the name)
     nifti_path: str = ""
     n_volumes: int | None = None
     shape: str = ""
@@ -177,7 +183,19 @@ def run_dcm2niix(series_dir: Path, out_dir: Path, stem: str) -> None:
         raise RuntimeError(f"dcm2niix exit code {result.returncode}")
 
 
-def check_output(out_dir: Path, stem: str) -> tuple[str, int, tuple[int, ...], tuple[float, ...]]:
+def remove_scanner_derived(out_dir: Path, stem: str) -> list[str]:
+    """Delete scanner-made maps (ADC, trace, FA) that dcm2niix wrote beside the raw scan."""
+    removed = []
+    for f in sorted(out_dir.glob(f"{stem}*")):
+        if SCANNER_DERIVED.search(f.name):
+            f.unlink()
+            removed.append(f.name)
+    return removed
+
+
+def check_output(
+    out_dir: Path, stem: str, series_name: str = ""
+) -> tuple[str, int, tuple[int, ...], tuple[float, ...]]:
     """Validate the conversion. Returns (kind, n_volumes, shape, voxel sizes).
 
     Raises ValueError with a plain reason when something is wrong.
@@ -185,7 +203,9 @@ def check_output(out_dir: Path, stem: str) -> tuple[str, int, tuple[int, ...], t
     import nibabel as nib
     import numpy as np
 
-    niftis = sorted(out_dir.glob(f"{stem}*.nii.gz"))
+    niftis = [
+        n for n in sorted(out_dir.glob(f"{stem}*.nii.gz")) if not SCANNER_DERIVED.search(n.name)
+    ]
     if any("_Eq" in n.name for n in niftis):
         raise ValueError(
             "unequal slice spacing: dcm2niix also wrote an interpolated '_Eq' copy. "
@@ -207,6 +227,11 @@ def check_output(out_dir: Path, stem: str) -> tuple[str, int, tuple[int, ...], t
         if n_bval != n_vol:
             raise ValueError(f"DTI volumes ({n_vol}) != bval entries ({n_bval})")
         return "dti", n_vol, shape, voxel
+
+    if DIFFUSION_NAME.search(series_name):
+        # A diffusion series with no .bval: a b0-only reference scan (e.g. a reverse
+        # phase-encode b0). Kept, labelled, and not used by the T1 or tensor steps.
+        return "dti_b0_only", n_vol, shape, voxel
 
     if len(shape) != 3:
         raise ValueError(f"T1 must be 3D, got shape {shape}")
@@ -240,7 +265,8 @@ def convert_one(
             for old in out_dir.glob(f"{stem}*"):
                 old.unlink()
             run_dcm2niix(series_dir, out_dir, stem)
-        kind, n_vol, shape, voxel = check_output(out_dir, stem)
+        remove_scanner_derived(out_dir, stem)
+        kind, n_vol, shape, voxel = check_output(out_dir, stem, series_name)
         rec.kind, rec.n_volumes = kind, n_vol
         rec.shape = "x".join(map(str, shape))
         rec.voxel_mm = "x".join(f"{v:.2f}" for v in voxel)
