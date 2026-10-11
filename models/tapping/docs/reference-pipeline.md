@@ -4,6 +4,8 @@ Source: https://github.com/arelraptor/UBU-PD-FT-Assessment
 Commit read: bb844dfc279965be28d10ff3166204245b62404c (2026-05-04)
 Dataset: HUBU-FIS, DOI 10.5281/zenodo.17738775
 Read by: Weerasinghe P.N.M. (IT23247918), 2026-10-10
+Cohort numbers in this note come from `python scripts/count_hubu_fis.py`
+(output: [hubu_fis_counts.md](hubu_fis_counts.md)).
 
 The official implementation released alongside the HUBU-FIS dataset.
 This note records what it actually does, with line references, so the
@@ -95,7 +97,7 @@ no faithfulness testing anywhere in the codebase.
 | TAF novelty claim | Reference has | This module adds | Verdict |
 |---|---|---|---|
 | Sequence effect quantification | 3 coarse features: frame-level slope plus 2 half-split differences | Per-tap amplitude series; decrement onset, late/early ratio, min/initial ratio, hesitations, halts | **Narrowed** — the claim is the per-tap formulation, not decrement as such |
-| Left-right asymmetry | Nothing; clips treated as independent rows | Participant-level L/R comparison, possible because the clip ID encodes participant and hand | **Supported** — the clinical ratings themselves show 42% of patients asymmetric vs 21% of controls |
+| Left-right asymmetry | Nothing; clips treated as independent rows | Participant-level L/R comparison, possible because the clip ID encodes participant and hand | **Supported** — the clinical ratings themselves show 42% of patients (31/74) asymmetric vs 21% of controls (9/42), among participants with both hands |
 | Video vs smartphone | Video only | Rate-feature transfer check on mPower | **Limited** — touchscreen capture cannot observe opening amplitude |
 | Faithfulness-tested XAI | No XAI at all | SHAP plus deletion curve plus cross-fold rank stability | **Safe** — nothing to contest |
 
