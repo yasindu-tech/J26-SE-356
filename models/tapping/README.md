@@ -97,6 +97,67 @@ python models/tapping/src/plot_distance.py --parquet path/to/landmarks.parquet -
 - **Checked on four clips** (FT-12): all four show a repeating open/close oscillation of
   about 0.5 to 1.4 cycles per second, with no missing frames. Reproduce with the command above.
 
+## Hand-size normalisation (FT-13)
+`src/hand_scale.py` divides the thumb-index distance by a length of the hand itself, so the
+signal no longer grows when the hand moves toward the camera.
+
+```python
+result = normalised_distance(df, scale="w9", mode="rolling_median", window_s=3.0)
+result.values  # one value per frame, in hand sizes; NaN where there is no distance or scale
+result.metadata()  # scale, mode, window, rejected frames: store this next to the signal
+```
+
+```bash
+python models/tapping/src/hand_scale.py --clip <8-character hash>   # plot in data/interim/plots
+```
+
+- **Decision: scale `w9` (wrist 0 to knuckle 9), mode `rolling_median` over a centred 3 s
+  window of `pts_ms`.** Runner-up: `median4` (median of the four wrist-to-knuckle lengths 5, 9,
+  13, 17), which was indistinguishable on every criterion and is the fallback if single knuckle
+  errors turn out to matter. The decision used physical criteria only, never UPDRS or
+  CONTROL/ID.
+- **Why not per frame:** the per-frame scale moves with the tap itself (after removing slow
+  drift, median |r| with the raw distance 0.41 for `w9`, over 35% of 42 clips above 0.5), so
+  dividing by it would shrink the tap amplitude. A rolling median averages that out (median
+  |r| 0.07, 5% of clips above 0.5). **Why not one number per clip:** it cannot follow an
+  approach; on a synthetic zoom from 0.85x to 1.1x it leaves a 6% median error, the rolling
+  median 0.3%.
+- **Why not palm width (MCP5 to MCP17):** it is the noisiest candidate (frame-to-frame jitter 17%,
+  against 2.5% for `w9`) and co-varies most with the tap.
+- **Guard:** a frame scale that is not finite, not positive, or below 25% of the clip's own
+  median scale is rejected (NaN) and counted. NaN stays NaN; nothing is zero-filled.
+  The scale uses only landmarks 0, 5, 9, 13 and 17, never the thumb or index tip.
+- **Evidence** (42 clips tracked with `hand_landmarks.py`, chosen by resolution and
+  orientation and not by label): the strongest real approach or recession is about 25%
+  hand-size change over a clip. The script column `camera_trend_removed` is (raw open-level trend minus normalised
+  open-level trend) divided by the hand-size change, where a trend is the change over the
+  clip of the 90th percentile in 4 s blocks, as a fraction of its mean. It measures how much
+  the normalisation shifted the trend, not how clean the remainder is. On the four clearest
+  approach/recede clips it shifted the open-level trend by roughly the size of the hand-size
+  change (80% to 128%), which confirms the correction has the expected size but does not
+  show that the remaining trend is free of camera effect; the main evidence is the synthetic
+  zoom test and the plots. On two of these clips the normalised trend is larger than the raw
+  one because a real decrement is revealed: dcd528b5 (raw -0.095, normalised -0.293) and
+  11054d82 (raw -0.031, normalised -0.188). The
+  world landmarks put the open aperture at 6.7 to 16.6 cm across the 42 clips, so the
+  differences between clips are not only camera distance. Reproduce every number in this
+  section with `python scripts/evaluate_hand_scale.py` (reads the existing parquet files,
+  writes to `data/interim/hand_scale_eval/`, shows clips by hash only).
+- **Residual coupling:** with the 3 s window, 2 of 42 clips still have |r| > 0.5 between the
+  scale and the tap (tap rates 1.2 and 1.5 per second, so it is not a slow-tapper effect, and
+  longer windows do not reliably clear it: one clip drops under 0.2 at 5 s and is back at 0.6 at 8 s). FT-15 should flag such clips (|r| > 0.5) rather than drop
+  them.
+- **Limits:** normalisation cannot fix rotation of the hand out of the image plane
+  (foreshortening shrinks `w9` and inflates the normalised aperture; the 2D open aperture was 1.07 to
+  1.91 times (median 1.33) the world-landmark value across the 42 clips); the closed floor is never zero
+  (about 0.1 hand sizes); the initial open plateau and landmark noise stay; and the window is
+  centred, so it uses frames after the current one. That is fine for recorded clips; live
+  capture would need a causal window. A genuine
+  amplitude decrement is not removed: on one approach clip the raw peaks looked flat while the
+  hand grew, and the normalised peaks showed the decrement.
+- **World landmarks** are a model prediction with a hand-shape prior (`w9` is 9 to 10 cm in
+  almost every clip), so they are a reference for pose, not a measurement of hand size.
+
 ## Known problems
 - Tapping features are **derived from the same behaviour** the MDS-UPDRS item
   rates. This is acceptable — raw kinematics, not a clinician's score — but it
