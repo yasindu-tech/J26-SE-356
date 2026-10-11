@@ -158,6 +158,41 @@ python models/tapping/src/hand_scale.py --clip <8-character hash>   # plot in da
 - **World landmarks** are a model prediction with a hand-shape prior (`w9` is 9 to 10 cm in
   almost every clip), so they are a reference for pose, not a measurement of hand size.
 
+## Overlay GIF (FT-14)
+`src/overlay_gif.py` makes a short GIF of the tracked hand skeleton on one clip, cropped to the
+hand, with the normalised thumb-index distance (FT-13) as a live trace underneath. A poster
+still (PNG) is saved from the same window. It is a **proof-of-concept visual, not a result**.
+
+```bash
+python models/tapping/src/overlay_gif.py --clip <8-character hash> --start-s 3 --duration-s 4
+# options: --width 480 --fps 15 --blur-outside --out-dir data/interim/gifs
+```
+
+- **Needs** the landmarks parquet (FT-11) and the video in `data/raw/HUBU-FIS/videos/`.
+  Output: `data/interim/gifs/<hash>_overlay.gif` and `<hash>_overlay_poster.png` (gitignored).
+- **Shows:** bones and joints of the 21 landmarks, thumb tip (4, orange) and index tip (8,
+  magenta) highlighted and joined by a thin line, and the trace with a cursor that moves with
+  the video. A frame without a hand shows the picture and no skeleton.
+- **Timing follows `pts_ms`.** The window is chosen by `pts_ms`; with `--fps` below the
+  clip's rate every n-th frame is kept (15 fps from a 30 fps clip). GIF delays come in 10 ms
+  units, so each delay is the gap to the next kept frame rounded on a running total: at 15 fps
+  from a 30 fps clip they alternate 60 and 70 ms, the total stays within a few ms of the `pts_ms` span, and
+  irregular gaps are kept. Rates with exact delays are 50, 25, 20 and 10 fps.
+- **Limits, enforced:** width 160 to 640 px (default 480), at most 6 s, 150 frames and 5 MB;
+  one shared 72-colour palette (the overlay colours are reserved so the tips stay visible),
+  no dithering, looping forever. The output folder must be inside `data/interim`.
+- **Every decoded frame's container time is checked against the parquet's `pts_ms`**, and
+  auto-rotation is switched on and read back (as in FT-11), so a shifted frame or a rotated
+  picture is an error, not a silent mistake.
+- **Privacy:** nothing is drawn but the skeleton and the trace: no rating, no group, no clip
+  ID, no wording about disease. Files are named by the clip's hash only. The picture is
+  cropped to the hand; `--blur-outside` also blurs everything but the hand. **Look at the
+  result before showing it in public**, and do not copy it out of `data/interim` for anything
+  but the slide.
+- **Limits:** landmarks 4 and 8 sit a little short of the visible nail (FT-11), so the markers
+  touch before the nails do; the colour palette flattens skin tones; one clip, one window,
+  no validation.
+
 ## Known problems
 - Tapping features are **derived from the same behaviour** the MDS-UPDRS item
   rates. This is acceptable — raw kinematics, not a clinician's score — but it
