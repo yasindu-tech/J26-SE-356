@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import Any
 
@@ -490,8 +491,13 @@ def probe_video(
     *,
     crop: tuple[float, float, float, float] | None = None,
     follow: bool = False,
+    max_seconds: float | None = None,
 ) -> tuple[VideoInfo, PoseTrace]:
-    """Run the heavy Pose Landmarker (video mode, one person) over a clip."""
+    """Run the heavy Pose Landmarker (video mode, one person) over a clip.
+
+    ``max_seconds`` stops after that much video (the heavy model is slow on a CPU: a long clip
+    would take an hour); the default runs the whole clip.
+    """
     import mediapipe as mp
     from mediapipe.tasks.python import BaseOptions
     from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
@@ -513,7 +519,10 @@ def probe_video(
         return mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
 
     with PoseLandmarker.create_from_options(options) as landmarker:
-        trace = run_pose(read_rgb_frames(path), info, landmarker, windows, make_image=make_image)
+        frames = read_rgb_frames(path)
+        if max_seconds is not None:
+            frames = islice(frames, max(int(round(max_seconds * info.fps)), 1))
+        trace = run_pose(frames, info, landmarker, windows, make_image=make_image)
     return info, trace
 
 
