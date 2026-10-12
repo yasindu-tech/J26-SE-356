@@ -1,5 +1,39 @@
-import { app, BrowserWindow } from "electron";
-import { join } from "path";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { readFile, stat } from "fs/promises";
+import { basename, join } from "path";
+import { IPC_OPEN_VOICE_RESULT, type OpenResultFileReply } from "../shared/ipc";
+
+// A voice result file is a few kB; anything far larger is the wrong file.
+const MAX_RESULT_FILE_BYTES = 5 * 1024 * 1024;
+
+/** Lets the clinician pick a voice result JSON (e.g. demo_results.json from
+ * models/voice/artifacts/) and returns its parsed content. Read-only: the file
+ * is never copied, kept or sent anywhere. */
+async function openVoiceResultFile(): Promise<OpenResultFileReply> {
+  const options = {
+    title: "Open voice result file",
+    properties: ["openFile" as const],
+    filters: [{ name: "Voice result (JSON)", extensions: ["json"] }],
+  };
+  const window = BrowserWindow.getFocusedWindow();
+  const choice = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
+  const filePath = choice.filePaths[0];
+  if (choice.canceled || filePath === undefined) return { status: "cancelled" };
+
+  try {
+    if ((await stat(filePath)).size > MAX_RESULT_FILE_BYTES) {
+      return { status: "error", message: "This file is too large to be a voice result file." };
+    }
+    const content: unknown = JSON.parse(await readFile(filePath, "utf8"));
+    return { status: "loaded", fileName: basename(filePath), content };
+  } catch (error) {
+    const message =
+      error instanceof SyntaxError ? "This file is not valid JSON." : "The file could not be read.";
+    return { status: "error", message };
+  }
+}
 
 function createMainWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -28,6 +62,7 @@ function createMainWindow(): void {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle(IPC_OPEN_VOICE_RESULT, openVoiceResultFile);
   createMainWindow();
 
   app.on("activate", () => {
