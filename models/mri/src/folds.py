@@ -1,4 +1,4 @@
-"""Subject-wise cross-validation folds for the MRI models (CLAUDE.md section 3.3).
+"""Subject-wise cross-validation folds for the MRI models.
 
 Every person lands in the test part exactly once per repeat, and never in train and test of
 the same fold. That is enforced by an assertion inside the fold generator itself, not only in
