@@ -1,4 +1,4 @@
-"""Feature contract for the MRI models (CLAUDE.md section 3.1). Call before every fit().
+"""Feature contract for the MRI models. Call before every fit().
 
 Two checks, both on column names:
 
@@ -85,7 +85,7 @@ class MriContractError(ValueError):
     def __init__(self, violations: list[Violation]) -> None:
         self.violations = violations
         lines = "\n".join(f"  {v.name!r}: {v.rule}" for v in violations)
-        super().__init__(f"MRI feature contract violated (CLAUDE.md 3.1):\n{lines}")
+        super().__init__(f"MRI feature contract violated:\n{lines}")
 
 
 def _words(name: str) -> list[str]:
