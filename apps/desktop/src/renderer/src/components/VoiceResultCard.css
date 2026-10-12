@@ -1,0 +1,281 @@
+.voice-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.voice-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.voice-card__eyebrow {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.voice-card__title {
+  margin: var(--spacing-xs) 0 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* Priority badge — attention / calm tokens, never a pass/fail colour */
+
+.voice-card__badge {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.voice-card__badge--attention {
+  background: var(--color-attention-muted);
+  color: var(--color-attention);
+}
+
+.voice-card__badge--calm {
+  background: var(--color-calm-muted);
+  color: var(--color-calm);
+}
+
+.voice-card__badge--none {
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  color: var(--color-neutral-600);
+}
+
+/* Score with its confidence interval */
+
+.voice-card__score {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.voice-card__score-numbers {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+}
+
+.voice-card__score-value {
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-card__score-label {
+  font-size: 15px;
+  color: var(--color-neutral-600);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-card__range-track {
+  position: relative;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+}
+
+.voice-card__range-band {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-muted);
+  border: 1px solid var(--color-primary);
+}
+
+.voice-card__range-threshold {
+  position: absolute;
+  top: -6px;
+  width: 0;
+  height: 22px;
+  border-left: 2px dashed var(--color-neutral-600);
+}
+
+.voice-card__range-marker {
+  position: absolute;
+  top: -5px;
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transform: translateX(-2px);
+}
+
+.voice-card__range-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--spacing-sm);
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+/* Abstained */
+
+.voice-card__abstained {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+}
+
+.voice-card__abstained-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.voice-card__abstained ul {
+  margin: var(--spacing-sm) 0;
+  padding-left: var(--spacing-lg);
+}
+
+/* Sections */
+
+.voice-card__section {
+  border-top: 1px solid var(--color-neutral-200);
+  padding-top: var(--spacing-lg);
+}
+
+.voice-card__section-title {
+  margin: 0 0 var(--spacing-md);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.voice-card__caption {
+  margin: var(--spacing-sm) 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-neutral-600);
+}
+
+.voice-card__modalities {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-card__modalities li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.voice-card__status--used {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-primary);
+}
+
+.voice-card__status--absent {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-neutral-600);
+}
+
+/* SHAP drivers — diverging bars around zero */
+
+.voice-card__drivers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-card__driver {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 2fr);
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: 14px;
+}
+
+.voice-card__driver-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.voice-card__driver-track {
+  position: relative;
+  height: 12px;
+  background: linear-gradient(var(--color-neutral-200), var(--color-neutral-200)) center / 1px 100%
+    no-repeat;
+}
+
+.voice-card__driver-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.voice-card__driver-bar--up {
+  background: var(--color-attention);
+}
+
+.voice-card__driver-bar--down {
+  background: var(--color-calm);
+}
+
+.voice-card__driver-value {
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Limits */
+
+.voice-card__caveats {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.voice-card__caveats li + li {
+  margin-top: var(--spacing-sm);
+}
+
+.voice-card__version {
+  margin: var(--spacing-md) 0 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-card__demo {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-50);
+  border: 1px dashed var(--color-neutral-200);
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
