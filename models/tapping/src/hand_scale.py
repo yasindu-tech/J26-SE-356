@@ -73,6 +73,7 @@ DEFAULT_MODE = "rolling_median"
 DEFAULT_WINDOW_S = 3.0
 MIN_WINDOW_SAMPLES = 5  # a rolling window with fewer scale values than this gives NaN
 MIN_SCALE_FRACTION = 0.25  # a frame scale below this share of the clip median is rejected
+HIGHPASS_S = 6.0  # slow drift (real approach, real amplitude change) is removed before r
 
 # A scale is a function of the per-pair lengths; every pair lists landmarks 0/5/9/13/17 only.
 _PAIRS: dict[str, tuple[tuple[int, int], ...]] = {
@@ -253,6 +254,40 @@ def normalised_distance(
         scale_rejected_frames=rejected,
         scale_median_px=float(np.median(finite)) if finite.size else float("nan"),
     )
+
+
+def highpass(t: np.ndarray, x: np.ndarray, window_s: float = HIGHPASS_S) -> np.ndarray:
+    """``x`` minus its centred rolling median (time-based, seconds); NaN stays NaN."""
+    series = pd.Series(x, index=pd.to_datetime(t, unit="s"))
+    slow = series.rolling(f"{window_s:g}s", center=True, min_periods=5).median()
+    return np.asarray((series - slow).to_numpy(), dtype=float)
+
+
+def correlation(a: np.ndarray, b: np.ndarray) -> float:
+    """Pearson r over the frames where both are finite; NaN if too few or constant."""
+    ok = np.isfinite(a) & np.isfinite(b)
+    if ok.sum() < 20 or np.std(a[ok]) == 0 or np.std(b[ok]) == 0:
+        return float("nan")
+    return float(np.corrcoef(a[ok], b[ok])[0, 1])
+
+
+def scale_tap_correlation(
+    df: pd.DataFrame,
+    scale: str = DEFAULT_SCALE,
+    mode: str = DEFAULT_MODE,
+    *,
+    window_s: float = DEFAULT_WINDOW_S,
+) -> float:
+    """|r| between the scale used for normalising and the raw tap signal (both high-passed).
+
+    A high value means the scale moves with the tap (FT-13: about 2 of 42 clips at 0.5).
+    NaN if the clip has no usable times, too few frames or a constant series.
+    """
+    t, _ = time_axis_s(df)
+    if not np.isfinite(t).all():
+        return float("nan")
+    used, _ = estimate_scale(df, scale, mode, window_s=window_s)
+    return abs(correlation(highpass(t, used), highpass(t, thumb_index_distance_px(df))))
 
 
 def thumb_index_distance_world_cm(df: pd.DataFrame) -> np.ndarray:

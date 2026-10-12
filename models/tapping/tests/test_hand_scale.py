@@ -349,3 +349,23 @@ def test_cli_missing_columns_exit_1(tmp_path: Path, capsys: pytest.CaptureFixtur
         ["--clip", pseudonym(stem), "--landmarks-dir", str(tmp_path), "--scale", "median4"]
     )
     assert code == 1 and "CONTROL9003" not in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- scale / tap coupling (FT-15)
+
+
+def test_scale_tap_correlation_is_high_per_frame_when_the_scale_follows_the_tap() -> None:
+    d = open_close(600)
+    coupled = make_table(d, zoom=1.0 + 0.2 * (d - d.mean()) / np.ptp(d))
+    assert hs.scale_tap_correlation(coupled, mode="per_frame") > 0.9
+    assert hs.scale_tap_correlation(coupled) < 0.3  # the 3 s rolling median averages it out
+    assert np.isnan(hs.scale_tap_correlation(make_table(d)))  # constant scale: NaN, not 0
+
+
+def test_scale_tap_correlation_is_nan_without_usable_times_or_frames() -> None:
+    d = open_close(600)
+    pts = np.arange(600) * 1000.0 / FPS
+    pts[5] = np.nan
+    assert np.isnan(hs.scale_tap_correlation(make_table(d, pts=pts)))
+    assert np.isnan(hs.scale_tap_correlation(make_table(d[:10])))
+    assert np.isnan(hs.correlation(np.arange(30.0), np.ones(30)))

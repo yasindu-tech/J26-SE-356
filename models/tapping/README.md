@@ -193,6 +193,75 @@ python models/tapping/src/overlay_gif.py --clip <8-character hash> --start-s 3 -
   touch before the nails do; the colour palette flattens skin tones; one clip, one window,
   no validation.
 
+## Batch tracking (FT-15)
+`src/tracking.py` runs `track_clip` over a folder of clips: one parquet per clip (the FT-11
+schema, unchanged) and a manifest with one row per clip. The full run over all 234 clips is
+FT-16; FT-17 builds the detection log and retention rate from the manifest; FT-18 re-runs
+low-detection clips with other parameters.
+
+```bash
+python models/tapping/src/tracking.py --dry-run                 # what would be done, writes nothing
+python models/tapping/src/tracking.py --workers 4               # all clips in data/raw/HUBU-FIS/videos
+python models/tapping/src/tracking.py --clips <hash>,<hash> --out-dir data/interim/x   # a subset
+```
+
+Outputs go to `data/interim/landmarks/` and `data/interim/tracking_manifest.csv` (with another
+`--out-dir`, the manifest is `<out-dir>/tracking_manifest.csv`); both must be inside
+`data/interim` (gitignored). Exit codes: 0 all selected clips done, 1 some clips failed,
+2 an input is missing, an output is outside `data/interim`, or the folder mixes parameter sets,
+130 interrupted. Flags never change the exit code.
+
+- **Resume.** A parquet is up to date only if its tool version, mediapipe and opencv versions,
+  model sha256, every detector parameter and the video's fingerprint (size plus sha256 of the
+  first and last MiB) all match. Otherwise it is recomputed; `recompute_reason` in the manifest
+  says why. Files made before FT-15 have no fingerprint and are recomputed once. `--force`
+  recomputes everything selected.
+- **No mixing.** If the output folder holds files made with another parameter set (detector
+  thresholds, model, tool or library versions), the run is refused and says how many. Use one
+  `--out-dir` per parameter set (FT-18), or `--force`.
+- **Safe writes.** Each parquet is written to a temporary file and renamed, so a killed run
+  leaves no partial file (temporary files are removed at the next start). A clip that fails
+  becomes a `failed` row (reason free of the raw ID) and the batch goes on. Run one runner per
+  folder at a time.
+- **Same result with any number of workers.** Each clip gets its own landmarker in a spawned
+  process; the manifest is sorted by clip. Verified bit-identical for 1 and 4 workers.
+- **Manifest** (`tracking_manifest.csv`, 54 columns): `clip_id` (the raw ID, gitignored data
+  only), `ref` (hash), `participant_ref`, `group`, `hand`, `container`, `resolution`,
+  `orientation` (recorded for the retention audit only, never used in a decision); fps,
+  duration, frames container/decoded/detected, `detection_rate`; gap statistics
+  (`longest_missing_run`, `n_gaps`, `gap_median_frames`, `gap_share_fillable`,
+  `unfillable_frames_share`, `edge_missing_frames`); `handedness_switches` (informational),
+  out-of-range counts, `pts_*` irregularity; the FT-13 scale metadata (`scale`, `scale_mode`,
+  `scale_window_s`, `scale_rejected_frames`, `scale_median_px`) and `scale_tap_abs_r`;
+  `tap_rate_exploratory_hz` (25/50 crossing counter, **not** the tap detector); `flags`,
+  `flag_details`; `status`, `reason`, `action` (computed / skipped), `recompute_reason`,
+  `wall_s`; runner, tool, library versions, model sha256, the detector parameters and the
+  gating thresholds used (`gating`, JSON). The normalised distance is not stored: it is
+  deterministic from the landmarks plus the scale metadata (FT-19 owns the signal).
+- **Gating is flags, never deletions.** MediaPipe's own three thresholds already gate every
+  frame (a failing frame becomes a gap), so no extra per-frame gate is added, and the
+  handedness label and score are never used. A value exactly at a threshold is not flagged.
+
+| flag | raised when (default) |
+|---|---|
+| `low_detection` | detection rate below 0.90 |
+| `gaps_not_fillable` | more than 5% of frames lie in missing runs longer than 5 frames (FT-19 interpolates up to 5) |
+| `short_clip` | fewer than 150 decoded frames |
+| `frame_count_mismatch` | decoded and container frame counts differ by more than 2% |
+| `pts_unreliable` | any `pts_ms` missing or not increasing |
+| `landmarks_out_of_frame` | more than 5% of detected frames have a value outside [0, 1] |
+| `scale_tap_coupling` | the FT-13 rolling scale correlates with the tap, \|r\| above 0.5 |
+| `info_irregular_timing` | informational: largest `pts_ms` gap above 50 ms |
+
+- **Audit warning.** Low-detection clips may not be spread evenly over groups, resolutions or
+  orientations (the dataset has mixed capture settings). Before using a retention rate (FT-17),
+  tabulate flags by `group`, `resolution` and `orientation`; do not drop clips silently.
+- **FT-16** runs `python models/tapping/src/tracking.py --workers 4` on all 234 clips (about
+  7 to 8 minutes on this machine, from 1.8 s per clip with 4 workers in a 12-clip test).
+- **FT-18** should use `--out-dir data/interim/landmarks_det03 --min-hand-detection-confidence
+  0.3`. A larger input resolution needs a new `track_clip` parameter (it changes the pixel
+  rule), so it is left for FT-18; the runner already compares the whole `detector` dict.
+
 ## Known problems
 - Tapping features are **derived from the same behaviour** the MDS-UPDRS item
   rates. This is acceptable — raw kinematics, not a clinician's score — but it

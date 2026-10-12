@@ -68,7 +68,7 @@ MODE_ROWS: tuple[tuple[str, float | None, str], ...] = (
     ("rolling_median", 5.0, "roll5s"),
     ("clip_median", None, "clip_median"),
 )
-HIGHPASS_S = 6.0  # the slow part (real approach, real amplitude change) is removed before r
+HIGHPASS_S = hs.HIGHPASS_S
 LAG_FRAMES = 9  # the tap-phase check looks at lags of up to +-9 frames (0.3 s at 30 fps)
 COUPLING_LIMIT = 0.5
 SLOW_RATE = 0.7  # cycles per second below which a 3 s window covers fewer than 2 cycles
@@ -81,18 +81,8 @@ TREND_WINDOW_S = 4.0
 # --------------------------------------------------------------------------- helpers
 
 
-def highpass(t: np.ndarray, x: np.ndarray, window_s: float = HIGHPASS_S) -> np.ndarray:
-    """``x`` minus its centred rolling median (time-based); NaN stays NaN."""
-    series = pd.Series(x, index=pd.to_datetime(t, unit="s"))
-    slow = series.rolling(f"{window_s:g}s", center=True, min_periods=5).median()
-    return np.asarray((series - slow).to_numpy(), dtype=float)
-
-
-def correlation(a: np.ndarray, b: np.ndarray) -> float:
-    ok = np.isfinite(a) & np.isfinite(b)
-    if ok.sum() < 20 or np.std(a[ok]) == 0 or np.std(b[ok]) == 0:
-        return float("nan")
-    return float(np.corrcoef(a[ok], b[ok])[0, 1])
+highpass = hs.highpass  # moved to hand_scale.py in FT-15; kept here under the same name
+correlation = hs.correlation
 
 
 def lagged_max_abs_correlation(a: np.ndarray, b: np.ndarray, lags: int = LAG_FRAMES) -> float:
