@@ -1,6 +1,6 @@
 """ComBat harmonisation fitted inside the training fold, and the two mandatory checks.
 
-CLAUDE.md section 3.2: harmonisation is learned from data, so it is fitted on the training
+Harmonisation is learned from data, so it is fitted on the training
 part of each fold only and then applied, unchanged, to the test part. Two controls must fail
 the run loudly, not warn:
 
