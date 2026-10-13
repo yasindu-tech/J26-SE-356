@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from progress import NullRecorder, RunRecorder
 
 REPO = Path(__file__).resolve().parents[3]
 FSL_DIR = Path(os.environ.get("FSLDIR", str(Path.home() / "fsl")))
@@ -191,14 +192,26 @@ def normalise_brightness(t1: np.ndarray, seg: np.ndarray) -> np.ndarray:
     return t1 / ref
 
 
-def region_features(t1_norm: np.ndarray, pves: list[np.ndarray], atlas: Atlas) -> dict[str, float]:
+def tissue_features(pves: list[np.ndarray], atlas: Atlas) -> dict[str, float]:
+    """Mean CSF, grey and white share inside each region."""
     out: dict[str, float] = {}
     for region, mask in atlas.masks.items():
         for tissue, pve in zip(TISSUES, pves, strict=True):
             out[f"{region}_{tissue}_frac"] = float(pve[mask].mean())
+    return out
+
+
+def brightness_features(t1_norm: np.ndarray, atlas: Atlas) -> dict[str, float]:
+    """First-order statistics of normalised brightness inside each region."""
+    out: dict[str, float] = {}
+    for region, mask in atlas.masks.items():
         for stat, value in first_order(t1_norm[mask]).items():
             out[f"{region}_t1_{stat}"] = value
     return out
+
+
+def region_features(t1_norm: np.ndarray, pves: list[np.ndarray], atlas: Atlas) -> dict[str, float]:
+    return tissue_features(pves, atlas) | brightness_features(t1_norm, atlas)
 
 
 def mask_volume_ml(mask_path: Path) -> float:
@@ -246,27 +259,43 @@ def subject_files(subject_dir: Path, subject_id: str) -> dict[str, Path]:
     }
 
 
-def extract_subject(subject_dir: Path, subject_id: str, atlas: Atlas) -> SubjectFeatures:
+FEATURE_STEPS = ["load", "tissue", "brightness", "size"]
+
+
+def extract_subject(
+    subject_dir: Path,
+    subject_id: str,
+    atlas: Atlas,
+    recorder: RunRecorder | NullRecorder | None = None,
+) -> SubjectFeatures:
     """All features for one person. Never raises for a bad scan: returns status 'failed'."""
     import nibabel as nib
 
+    rec = recorder or NullRecorder()
     result = SubjectFeatures(subject=pseudonym(subject_id))
     try:
         files = subject_files(subject_dir, subject_id)
-        missing = [k for k, p in files.items() if not p.exists()]
-        if missing:
-            raise FeatureError(f"missing outputs: {', '.join(missing)}")
-        t1_img = nib.load(str(files["t1"]))
-        check_same_grid(t1_img.affine, t1_img.shape, atlas)
-        t1 = np.asarray(t1_img.dataobj, dtype=float)
-        seg = np.asarray(nib.load(str(files["seg"])).dataobj).astype(int)
-        pves = [np.asarray(nib.load(str(files[f"pve_{i}"])).dataobj, dtype=float) for i in range(3)]
-        for arr in (seg, *pves):
-            if arr.shape != t1.shape:
-                raise FeatureError("tissue maps and T1 have different shapes")
-        feats = region_features(normalise_brightness(t1, seg), pves, atlas)
-        feats["brain_volume_ml"] = mask_volume_ml(files["mask"])
-        feats["affine_det"] = affine_determinant(files["affine"])
+        with rec.step(subject_id, "load"):
+            missing = [k for k, p in files.items() if not p.exists()]
+            if missing:
+                raise FeatureError(f"missing outputs: {', '.join(missing)}")
+            t1_img = nib.load(str(files["t1"]))
+            check_same_grid(t1_img.affine, t1_img.shape, atlas)
+            t1 = np.asarray(t1_img.dataobj, dtype=float)
+            seg = np.asarray(nib.load(str(files["seg"])).dataobj).astype(int)
+            pves = [
+                np.asarray(nib.load(str(files[f"pve_{i}"])).dataobj, dtype=float) for i in range(3)
+            ]
+            for arr in (seg, *pves):
+                if arr.shape != t1.shape:
+                    raise FeatureError("tissue maps and T1 have different shapes")
+        with rec.step(subject_id, "tissue"):
+            feats = tissue_features(pves, atlas)
+        with rec.step(subject_id, "brightness"):
+            feats |= brightness_features(normalise_brightness(t1, seg), atlas)
+        with rec.step(subject_id, "size"):
+            feats["brain_volume_ml"] = mask_volume_ml(files["mask"])
+            feats["affine_det"] = affine_determinant(files["affine"])
         bad = [k for k, v in feats.items() if not np.isfinite(v)]
         if bad:
             raise FeatureError(f"non-finite values in {len(bad)} features, e.g. {bad[0]}")
@@ -332,6 +361,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--atlas-xml", type=Path, default=DEFAULT_ATLAS_XML)
     ap.add_argument("--out", type=Path, default=REPO / "data/processed/features/t1_features.csv")
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--events-url", default=None, help="send progress to a remote dashboard")
     args = ap.parse_args(argv)
 
     try:
@@ -341,11 +371,17 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     done = pd.read_csv(args.table, dtype=str)
     ids = done.loc[done["status"] == "ok", "subject_id"].tolist()[: args.limit]
+    rec = RunRecorder("t1features", ids, FEATURE_STEPS, events_url=args.events_url)
+    print("watch live: python models/mri/src/pipeline_monitor.py, then open /t1features")
     results = []
     for i, sid in enumerate(ids, 1):
-        r = extract_subject(args.t1_dir / sid, sid, atlas)
+        rec.subject_start(sid)
+        r = extract_subject(args.t1_dir / sid, sid, atlas, recorder=rec)
+        metrics = {k: r.features.get(k) for k in GLOBAL_FEATURES}
+        rec.subject_end(sid, r.status, r.reason, metrics=metrics)
         print(f"[{i}/{len(ids)}] {r.subject}: {r.status} {r.reason}".rstrip())
         results.append(r)
+    rec.run_end()
     table = build_table(results, scanner_metadata(args.conversion))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(args.out, index=False)

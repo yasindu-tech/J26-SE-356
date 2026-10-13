@@ -9,6 +9,7 @@ Pages:
     /t1     T1 pipeline: counts, current person and step with a live timer,
             time per step, estimated time left, and every person's row
     /dti    the same for DTI
+    /t1features  T1 feature extraction (one row of numbers per person)
 
 API (used by the pages, also handy for other tools):
     GET  /api/state?pipeline=t1[&run=<id>]   current state as JSON
@@ -40,7 +41,8 @@ from urllib.parse import parse_qs, urlparse
 
 from progress import RUNS_DIR, expected_step_seconds, fold_events, latest_run, read_events
 
-PIPELINES = ("t1", "dti")
+PIPELINES = ("t1", "dti", "t1features")
+NAMES = {"t1": "T1 pipeline", "dti": "DTI pipeline", "t1features": "T1 features"}
 SAFE_ID = re.compile(r"^[a-z0-9_]{1,64}$")
 
 STEP_INFO = {
@@ -59,8 +61,17 @@ STEP_INFO = {
         "align": ("Align to standard", "ANTs fits FA to the FMRIB58 template."),
         "qc": ("Check", "Saves a check picture."),
     },
+    "t1features": {
+        "load": ("Load images", "Reads the aligned T1, tissue maps and atlas grid check."),
+        "tissue": ("Tissue shares", "Grey, white and CSF share in each of the 8 regions."),
+        "brightness": (
+            "Brightness stats",
+            "Six statistics of normalised T1 brightness per region.",
+        ),
+        "size": ("Brain size", "Native brain volume and the affine scale factor."),
+    },
 }
-NEXT_STAGES = ["Extract features", "Harmonise (ComBat)", "Train model", "Explain (SHAP)"]
+NEXT_STAGES = ["Harmonise (ComBat)", "Train model", "Explain (SHAP)"]
 
 
 def state_for(pipeline: str, runs_dir: Path, run: str | None = None) -> dict:
@@ -163,11 +174,8 @@ function live(ok){ document.getElementById('live').innerHTML =
 def page(title: str, active: str, body: str, script: str) -> str:
     nav = "".join(
         f'<a href="{href}" class="{"on" if key == active else ""}">{name}</a>'
-        for key, href, name in (
-            ("home", "/", "Overview"),
-            ("t1", "/t1", "T1 pipeline"),
-            ("dti", "/dti", "DTI pipeline"),
-        )
+        for key, href, name in (("home", "/", "Overview"),)
+        + tuple((p, f"/{p}", NAMES[p]) for p in PIPELINES)
     )
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1"><style>{STYLE}</style></head>
@@ -177,20 +185,20 @@ def page(title: str, active: str, body: str, script: str) -> str:
 
 
 OVERVIEW_BODY = """<h1>MRI preprocessing</h1>
-<div class="sub">T1 and DTI scans are cleaned in separate pipelines, then combined for features and the model.</div>
+<div class="sub">T1 and DTI scans are cleaned in separate pipelines, then turned into features for the model.</div>
 <div class="cards" id="cards"></div>
 <div class="panel next" style="margin-top:16px"><h2><span>Combined (next stages)</span><span class="muted">not started</span></h2>
 <div class="flow" id="next"></div></div>"""
 
 OVERVIEW_JS = """
-const NEXT = __NEXT__;
+const NEXT = __NEXT__, NAMES = __NAMES__;
 document.getElementById('next').innerHTML = NEXT.map(n=>`<div class="step"><div class="t">${n}</div></div>`)
   .join('<div class="arrow">→</div>');
 const S = {};
 function card(p, s){
   const now = s.current ? `${s.current.id} · ${label(s, s.current.step||'')}` : (s.status==='finished'?'finished':'idle');
   return `<a href="/${p}" class="panel" style="display:block;color:inherit">
-   <h2><span>${p.toUpperCase()} pipeline</span><span class="muted">${s.status}</span></h2>
+   <h2><span>${NAMES[p]}</span><span class="muted">${s.status}</span></h2>
    ${bar(s)}<div class="kpis" style="margin-top:12px">
    <div class="kpi"><div class="v">${s.done}/${s.total}</div><div class="l">done</div></div>
    <div class="kpi"><div class="v" style="color:var(--red)">${s.failed}</div><div class="l">failed</div></div>
@@ -199,8 +207,8 @@ function card(p, s){
    <div class="muted" style="font-size:12px">Now: ${now} — open details →</div></a>`;
 }
 function render(){ document.getElementById('cards').innerHTML =
-  ['t1','dti'].map(p=> S[p] ? card(p,S[p]) : '').join(''); }
-['t1','dti'].forEach(p=>{
+  Object.keys(NAMES).map(p=> S[p] ? card(p,S[p]) : '').join(''); }
+Object.keys(NAMES).forEach(p=>{
   const es = new EventSource('/api/stream?pipeline='+p);
   es.onmessage = e => { S[p] = JSON.parse(e.data); render(); live(true); };
   es.onerror = () => live(false);
@@ -221,8 +229,8 @@ DETAIL_BODY = """<div style="display:flex;justify-content:space-between;align-it
 <table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>"""
 
 DETAIL_JS = """
-const P = __P__; let S = null, filter = 'all', run = new URLSearchParams(location.search).get('run');
-document.getElementById('title').textContent = P.toUpperCase() + ' pipeline';
+const P = __P__, NAME = __NAME__; let S = null, filter = 'all', run = new URLSearchParams(location.search).get('run');
+document.getElementById('title').textContent = NAME;
 async function loadRuns(){ const r = await (await fetch('/api/runs?pipeline='+P)).json();
   const sel = document.getElementById('runsel');
   sel.innerHTML = '<option value="">latest</option>' + r.map(x=>`<option ${x===run?'selected':''}>${x}</option>`).join('');
@@ -312,20 +320,26 @@ def make_handler(
                     "MRI preprocessing",
                     "home",
                     OVERVIEW_BODY,
-                    OVERVIEW_JS.replace("__NEXT__", json.dumps(NEXT_STAGES)),
+                    OVERVIEW_JS.replace("__NEXT__", json.dumps(NEXT_STAGES)).replace(
+                        "__NAMES__", json.dumps(NAMES)
+                    ),
                 )
                 return self._send(200, html.encode(), "text/html; charset=utf-8")
-            if url.path in ("/t1", "/dti"):
+            if url.path[1:] in PIPELINES:
                 p = url.path[1:]
                 html = page(
-                    f"{p.upper()} pipeline",
+                    NAMES[p],
                     p,
                     DETAIL_BODY,
-                    DETAIL_JS.replace("__P__", json.dumps(p)),
+                    DETAIL_JS.replace("__P__", json.dumps(p)).replace(
+                        "__NAME__", json.dumps(NAMES[p])
+                    ),
                 )
                 return self._send(200, html.encode(), "text/html; charset=utf-8")
             if pipe not in PIPELINES and url.path.startswith("/api/"):
-                return self._json({"error": "pipeline must be t1 or dti"}, 400)
+                return self._json(
+                    {"error": "pipeline must be one of: " + ", ".join(PIPELINES)}, 400
+                )
             if url.path == "/api/state":
                 return self._json(state_for(pipe, runs_dir, run))
             if url.path == "/api/runs":
@@ -397,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
     server.daemon_threads = True
     shown = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     print(
-        f"MRI pipeline dashboard: http://{shown}:{args.port}   (T1: /t1, DTI: /dti, Ctrl+C to stop)"
+        f"MRI pipeline dashboard: http://{shown}:{args.port}   (T1: /t1, DTI: /dti, features: /t1features, Ctrl+C)"
     )
     with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()
