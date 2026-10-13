@@ -71,3 +71,6 @@ Thumbs.db
 
 # Gait working notes
 models/gait/docs/*.md
+
+# Tapping working notes
+models/tapping/**/*.md
