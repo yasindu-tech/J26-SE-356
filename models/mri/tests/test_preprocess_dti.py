@@ -263,3 +263,133 @@ def test_median_in_mask(tmp_path: Path) -> None:
     nib.save(nib.Nifti1Image(fa, np.eye(4)), tmp_path / "fa.nii.gz")
     nib.save(nib.Nifti1Image(mask, np.eye(4)), tmp_path / "m.nii.gz")
     assert d.median_in_mask(tmp_path / "fa.nii.gz", tmp_path / "m.nii.gz") == pytest.approx(0.3)
+
+
+# --- averaging fine scans down to 2 mm ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("zooms", "target", "expected"),
+    [
+        ((1.0, 1.0, 2.0), 2.0, (2.0, 2.0, 1.0)),  # GE 256x256: average in-plane only
+        ((2.0, 2.0, 2.0), 2.0, (1.0, 1.0, 1.0)),  # already 2 mm: untouched
+        ((2.5, 2.5, 2.5), 2.0, (1.0, 1.0, 1.0)),  # coarser: never upsampled
+        ((1.96, 1.96, 2.0), 2.0, (1.0, 1.0, 1.0)),  # within 5%: untouched
+        ((1.0, 1.0, 2.0), 0.0, (1.0, 1.0, 1.0)),  # switched off
+        ((1.5, 1.5, 2.0), 2.0, (2.0 / 1.5, 2.0 / 1.5, 1.0)),  # non-whole factor
+    ],
+)
+def test_downsample_factors(zooms, target, expected) -> None:
+    assert d.downsample_factors(zooms, target) == pytest.approx(expected)
+
+
+def test_block_average_values() -> None:
+    data = np.arange(4 * 4 * 2, dtype=float).reshape(4, 4, 2)
+    out = d.downsample(data, (2.0, 2.0, 1.0))
+    assert out.shape == (2, 2, 2)
+    assert out[0, 0, 0] == pytest.approx(data[:2, :2, 0].mean())
+    assert out[1, 1, 1] == pytest.approx(data[2:, 2:, 1].mean())
+
+
+def test_new_voxel_sits_at_centre_of_old_block_and_axes_keep_direction() -> None:
+    rot = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])  # oblique-ish axes
+    affine = np.eye(4)
+    affine[:3, :3] = rot @ np.diag([1.0, 1.0, 2.0])
+    affine[:3, 3] = [10.0, -5.0, 3.0]
+    new = d.resample_affine(affine, (2.0, 2.0, 1.0))
+    old_centre = (affine @ np.array([0.5, 0.5, 0.0, 1.0]))[:3]  # middle of voxels 0 and 1
+    assert np.allclose(new @ np.array([0, 0, 0, 1.0]), [*old_centre, 1.0])
+    unit = lambda m: m[:3, :3] / np.linalg.norm(m[:3, :3], axis=0)  # noqa: E731
+    assert np.allclose(unit(new), unit(affine))  # same directions, so bvecs stay valid
+    assert np.allclose(np.linalg.norm(new[:3, :3], axis=0), [2.0, 2.0, 2.0])
+
+
+def test_non_whole_factor_interpolates_a_flat_image_exactly() -> None:
+    out = d.downsample(np.full((9, 9, 4, 2), 7.0), (1.5, 1.5, 1.0))
+    assert out.shape == (6, 6, 4, 2) and np.allclose(out, 7.0)
+
+
+def test_write_selected_averages_fine_scan_and_keeps_bvecs(tmp_path: Path) -> None:
+    bvals = [0, 1000, 1000, 1000, 1000, 1000, 1000]
+    nifti, bval, bvec = write_dwi(tmp_path, "s", bvals)
+    img = nib.load(str(nifti))
+    fine = nib.Nifti1Image(np.asarray(img.dataobj, dtype=np.float32), np.diag([1.0, 1.0, 2.0, 1.0]))
+    nib.save(fine, str(nifti))
+    dwi, _, bc, _ = d.write_selected(nifti, bval, bvec, tmp_path, "out", target_voxel_mm=2.0)
+    out = nib.load(str(dwi))
+    assert out.header.get_zooms()[:3] == pytest.approx((2.0, 2.0, 2.0))
+    assert out.shape[:2] == (img.shape[0] // 2, img.shape[1] // 2)
+    assert np.allclose(np.loadtxt(bc), np.loadtxt(bvec).reshape(3, -1))
+    assert d.voxel_summary(nifti, 2.0) == ("1.00x1.00x2.00", True)
+    assert d.voxel_summary(nifti, 0.0)[1] is False
+
+
+def test_too_small_to_resample_fails() -> None:
+    with pytest.raises(d.StepError, match="too small"):
+        d.downsample(np.ones((1, 1, 1)), (2.0, 2.0, 1.0))
+
+
+# --- deleting inputs after a finished run --------------------------------------------------
+
+
+def _finished_outputs(out: Path, stem: str) -> None:
+    (out / "transforms").mkdir(parents=True, exist_ok=True)
+    (out / "transforms" / "a_affine.mat").write_bytes(b"x")
+    for suffix in d.FINAL_SUFFIXES:
+        (out / f"{stem}{suffix}").write_bytes(b"x")
+    (out / f"{stem}_dwi.bval").write_text("0 1000 1000 1000 1000 1000 1000\n")
+
+
+def _table(tmp_path: Path, nifti: Path, subject: str) -> Path:
+    path = tmp_path / "conv.csv"
+    pd.DataFrame(
+        {
+            "subject_id": [subject],
+            "image_id": ["111"],
+            "series_name": ["Ax_DTI"],
+            "status": ["ok"],
+            "kind": ["dti"],
+            "nifti_path": [str(nifti)],
+        }
+    ).to_csv(path, index=False)
+    return path
+
+
+def test_finished_person_with_deleted_inputs_is_still_chosen(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    _finished_outputs(out / "S1", "S1")
+    table = _table(tmp_path, tmp_path / "gone" / "S1_I111.nii.gz", "S1")  # inputs not there
+    chosen, skipped = d.dti_inputs(table, out)
+    assert [c[0] for c in chosen] == ["S1"] and skipped == []
+
+
+def test_unfinished_person_with_missing_inputs_fails_loudly(tmp_path: Path) -> None:
+    table = _table(tmp_path, tmp_path / "gone" / "S1_I111.nii.gz", "S1")
+    with pytest.raises(FileNotFoundError):
+        d.dti_inputs(table, tmp_path / "out")
+
+
+def test_clean_inputs_only_touches_the_named_person(tmp_path: Path, monkeypatch) -> None:
+    import input_cleanup
+
+    nifti_root = tmp_path / "data" / "processed" / "nifti"
+    monkeypatch.setattr(input_cleanup, "NIFTI_ROOT", nifti_root)
+    monkeypatch.setattr(d, "REPO_ROOT", tmp_path)
+    mine = nifti_root / "S1" / "S1_I111.nii.gz"
+    theirs = nifti_root / "S2" / "S2_I222.nii.gz"
+    for f in (mine, theirs):
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"x")
+    conv = pd.DataFrame(
+        {
+            "subject_id": ["S1", "S2"],
+            "image_id": ["111", "222"],
+            "status": ["ok", "ok"],
+            "kind": ["dti", "dti"],
+            "nifti_path": [str(mine.relative_to(tmp_path)), str(theirs.relative_to(tmp_path))],
+        }
+    )
+    assert d.clean_inputs("S1", conv, [], dry_run=True) == 1
+    assert mine.exists()
+    d.clean_inputs("S1", conv, [])
+    assert not mine.exists() and theirs.exists()
