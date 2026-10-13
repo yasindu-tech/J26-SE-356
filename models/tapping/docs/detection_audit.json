@@ -1,0 +1,624 @@
+{
+  "by_threshold": {
+    "0.8": {
+      "by": {
+        "group": {
+          "CONTROL": {
+            "clips": 85,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 85,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "ID": {
+            "clips": 149,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 148,
+            "retained_pct": 99.3,
+            "small_cell": false
+          }
+        },
+        "orientation": {
+          "landscape": {
+            "clips": 37,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 37,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "portrait": {
+            "clips": 197,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 196,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "resolution": {
+          "1080x1920": {
+            "clips": 185,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 184,
+            "retained_pct": 99.5,
+            "small_cell": false
+          },
+          "1080x2400": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1280x720": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1920x1080": {
+            "clips": 29,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 29,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "352x640": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "480x848": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "640x352": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          }
+        },
+        "stored_rotated": {
+          "False": {
+            "clips": 41,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 41,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "True": {
+            "clips": 193,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 192,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "updrs": {
+          "0": {
+            "clips": 71,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 71,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "1": {
+            "clips": 99,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 98,
+            "retained_pct": 99.0,
+            "small_cell": false
+          },
+          "2": {
+            "clips": 38,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 38,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "3": {
+            "clips": 26,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 26,
+            "retained_pct": 100.0,
+            "small_cell": false
+          }
+        }
+      },
+      "drop_causes": {
+        "dropped_clips": 1,
+        "flag_counts": {
+          "gaps_not_fillable": 1,
+          "low_detection": 1
+        },
+        "longest_missing_run_of_dropped": [
+          20
+        ]
+      },
+      "overall": {
+        "clips": 234,
+        "dropped": 1,
+        "few_dropped": true,
+        "retained": 233,
+        "retained_pct": 99.6,
+        "small_cell": false
+      },
+      "participants": {
+        "CONTROL": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 43,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 42,
+          "two_hands_lose_one": 0,
+          "with_one_hand": 1,
+          "with_two_hands": 42
+        },
+        "ID": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 75,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 73,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 1,
+          "with_two_hands": 74
+        },
+        "all": {
+          "one_hand_kept": 2,
+          "one_hand_lost": 0,
+          "participants": 118,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 115,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 2,
+          "with_two_hands": 116
+        }
+      }
+    },
+    "0.9": {
+      "by": {
+        "group": {
+          "CONTROL": {
+            "clips": 85,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 85,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "ID": {
+            "clips": 149,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 148,
+            "retained_pct": 99.3,
+            "small_cell": false
+          }
+        },
+        "orientation": {
+          "landscape": {
+            "clips": 37,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 37,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "portrait": {
+            "clips": 197,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 196,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "resolution": {
+          "1080x1920": {
+            "clips": 185,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 184,
+            "retained_pct": 99.5,
+            "small_cell": false
+          },
+          "1080x2400": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1280x720": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1920x1080": {
+            "clips": 29,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 29,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "352x640": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "480x848": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "640x352": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          }
+        },
+        "stored_rotated": {
+          "False": {
+            "clips": 41,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 41,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "True": {
+            "clips": 193,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 192,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "updrs": {
+          "0": {
+            "clips": 71,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 71,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "1": {
+            "clips": 99,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 98,
+            "retained_pct": 99.0,
+            "small_cell": false
+          },
+          "2": {
+            "clips": 38,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 38,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "3": {
+            "clips": 26,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 26,
+            "retained_pct": 100.0,
+            "small_cell": false
+          }
+        }
+      },
+      "drop_causes": {
+        "dropped_clips": 1,
+        "flag_counts": {
+          "gaps_not_fillable": 1,
+          "low_detection": 1
+        },
+        "longest_missing_run_of_dropped": [
+          20
+        ]
+      },
+      "overall": {
+        "clips": 234,
+        "dropped": 1,
+        "few_dropped": true,
+        "retained": 233,
+        "retained_pct": 99.6,
+        "small_cell": false
+      },
+      "participants": {
+        "CONTROL": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 43,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 42,
+          "two_hands_lose_one": 0,
+          "with_one_hand": 1,
+          "with_two_hands": 42
+        },
+        "ID": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 75,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 73,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 1,
+          "with_two_hands": 74
+        },
+        "all": {
+          "one_hand_kept": 2,
+          "one_hand_lost": 0,
+          "participants": 118,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 115,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 2,
+          "with_two_hands": 116
+        }
+      }
+    },
+    "0.95": {
+      "by": {
+        "group": {
+          "CONTROL": {
+            "clips": 85,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 85,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "ID": {
+            "clips": 149,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 148,
+            "retained_pct": 99.3,
+            "small_cell": false
+          }
+        },
+        "orientation": {
+          "landscape": {
+            "clips": 37,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 37,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "portrait": {
+            "clips": 197,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 196,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "resolution": {
+          "1080x1920": {
+            "clips": 185,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 184,
+            "retained_pct": 99.5,
+            "small_cell": false
+          },
+          "1080x2400": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1280x720": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "1920x1080": {
+            "clips": 29,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 29,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "352x640": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "480x848": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          },
+          "640x352": {
+            "clips": 4,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 4,
+            "retained_pct": 100.0,
+            "small_cell": true
+          }
+        },
+        "stored_rotated": {
+          "False": {
+            "clips": 41,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 41,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "True": {
+            "clips": 193,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 192,
+            "retained_pct": 99.5,
+            "small_cell": false
+          }
+        },
+        "updrs": {
+          "0": {
+            "clips": 71,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 71,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "1": {
+            "clips": 99,
+            "dropped": 1,
+            "few_dropped": true,
+            "retained": 98,
+            "retained_pct": 99.0,
+            "small_cell": false
+          },
+          "2": {
+            "clips": 38,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 38,
+            "retained_pct": 100.0,
+            "small_cell": false
+          },
+          "3": {
+            "clips": 26,
+            "dropped": 0,
+            "few_dropped": false,
+            "retained": 26,
+            "retained_pct": 100.0,
+            "small_cell": false
+          }
+        }
+      },
+      "drop_causes": {
+        "dropped_clips": 1,
+        "flag_counts": {
+          "gaps_not_fillable": 1,
+          "low_detection": 1
+        },
+        "longest_missing_run_of_dropped": [
+          20
+        ]
+      },
+      "overall": {
+        "clips": 234,
+        "dropped": 1,
+        "few_dropped": true,
+        "retained": 233,
+        "retained_pct": 99.6,
+        "small_cell": false
+      },
+      "participants": {
+        "CONTROL": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 43,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 42,
+          "two_hands_lose_one": 0,
+          "with_one_hand": 1,
+          "with_two_hands": 42
+        },
+        "ID": {
+          "one_hand_kept": 1,
+          "one_hand_lost": 0,
+          "participants": 75,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 73,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 1,
+          "with_two_hands": 74
+        },
+        "all": {
+          "one_hand_kept": 2,
+          "one_hand_lost": 0,
+          "participants": 118,
+          "two_hands_lose_both": 0,
+          "two_hands_lose_none": 115,
+          "two_hands_lose_one": 1,
+          "with_one_hand": 2,
+          "with_two_hands": 116
+        }
+      }
+    }
+  },
+  "clips": 234,
+  "min_cell": 5,
+  "note": "This is an audit. The retention threshold is NOT chosen here and no preprocessing depends on it; the rule is still to be decided with the supervisor.",
+  "rate_distribution": {
+    "clips": 234,
+    "clips_at_1": 206,
+    "clips_below": {
+      "0.8": 1,
+      "0.9": 1,
+      "0.95": 1,
+      "0.96": 2,
+      "0.97": 4,
+      "0.98": 4,
+      "0.99": 9
+    },
+    "median": 1.0,
+    "min": 0.7891,
+    "no_rate": 0
+  },
+  "retained_means": "detection_rate >= threshold"
+}
