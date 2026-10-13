@@ -69,6 +69,12 @@ ALLOWED_PATTERNS = (
     re.compile(rf"^{_REGION}_(csf|grey|white)_frac$"),
     re.compile(rf"^{_REGION}_t1_(mean|median|std|skewness|kurtosis|entropy)$"),
     re.compile(r"^(brain_volume_ml|affine_det)$"),
+    # DTI: JHU white-matter tracts (FA and MD), deep grey matter (MD), whole white matter
+    re.compile(
+        r"^dti_(CC_(genu|body|splenium)|[LR]_(cerebral_peduncle|cst|alic|plic))_(fa|md)_mean$"
+    ),
+    re.compile(rf"^dti_{_REGION}_md_mean$"),
+    re.compile(r"^dti_wm_(fa|md)_median$"),
 )
 DEMOGRAPHICS = {"age", "sex"}
 

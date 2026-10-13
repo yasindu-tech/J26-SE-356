@@ -81,3 +81,29 @@ def test_duplicates_and_empty_fail() -> None:
         check_mri_features(["affine_det", "affine_det"])
     with pytest.raises(MriContractError, match="at least one"):
         check_mri_features([])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "dti_CC_genu_fa_mean",
+        "dti_L_plic_md_mean",
+        "dti_R_cerebral_peduncle_fa_mean",
+        "dti_L_putamen_md_mean",
+        "dti_wm_fa_median",
+    ],
+)
+def test_dti_feature_names_pass(name: str) -> None:
+    check_mri_features([*GOOD, name])
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["dti_L_putamen_fa_mean", "dti_CC_genu_fa_max", "dti_substantia_nigra_fa_mean", "FA_putamen"],
+)
+def test_dti_names_outside_the_scheme_fail(name: str) -> None:
+    assert rule_for(name) == R_UNKNOWN
+
+
+def test_dti_datscan_name_still_banned() -> None:
+    assert rule_for("dti_datscan_putamen") == R_DAT_QSM
