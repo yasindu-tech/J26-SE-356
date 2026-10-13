@@ -30,6 +30,10 @@ Nothing here learns from the dataset (templates are fixed external files), so it
 safe before any train/test split. A failed step or check gives ``status="failed"``
 with the reason, never zeros.
 
+Disk space: with ``--delete-inputs --raw-dir <folder>``, a person who passes every check has
+their converted NIfTI files and raw DICOM folders deleted right away (see input_cleanup.py).
+Only the results are kept. People who fail keep their inputs.
+
 Needs: FSL (bet, eddy), Python packages antspyx, dipy, nibabel.
 
 Usage (from the repo root, venv active):
@@ -56,6 +60,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from input_cleanup import SeriesRef, delete_inputs
 from progress import NullRecorder, RunRecorder
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -581,9 +586,12 @@ def preprocess_dti(
         bval = nifti.with_name(nifti.name.removesuffix(".nii.gz") + ".bval")
         bvec = bval.with_suffix(".bvec")
         sidecar_file = bval.with_suffix(".json")
-        for f in (nifti, bval, bvec):
-            if not f.exists():
-                raise StepError(f"input not found: {f.name}")
+        # A finished person (inputs possibly deleted to save space) is reused, not re-read.
+        reuse = not redo and final_outputs_exist(out, stem)
+        if not reuse:
+            for f in (nifti, bval, bvec):
+                if not f.exists():
+                    raise StepError(f"input not found: {f.name}")
         sidecar = json.loads(sidecar_file.read_text()) if sidecar_file.exists() else {}
         out.mkdir(parents=True, exist_ok=True)
 
@@ -729,6 +737,19 @@ def remove_intermediates(out: Path, stem: str) -> int:
     return freed
 
 
+def clean_inputs(
+    subject_id: str, conversion: pd.DataFrame, raw_dirs: list[Path], dry_run: bool = False
+) -> int:
+    """Delete this person's converted inputs. Returns bytes freed (or that would be)."""
+    rows = conversion[
+        (conversion["subject_id"] == subject_id)
+        & (conversion["status"] == "ok")
+        & conversion["kind"].isin(["dti", "dti_b0_only"])
+    ]
+    series = [SeriesRef(str(r.image_id), REPO_ROOT / str(r.nifti_path)) for r in rows.itertuples()]
+    return delete_inputs(subject_id, series, raw_dirs, dry_run=dry_run).bytes_freed
+
+
 def median_in_mask(fa: Path, mask: Path) -> float:
     import nibabel as nib
 
@@ -747,14 +768,27 @@ def _rel(path: Path) -> str:
 # ---------------------------------------------------------------- command line
 
 
-def dti_inputs(table: Path) -> tuple[list[tuple[str, str, str, Path]], list[tuple[str, str]]]:
-    """Chosen series per person, plus (subject, reason) for people with no usable DTI."""
+def dti_inputs(
+    table: Path, out_root: Path | None = None
+) -> tuple[list[tuple[str, str, str, Path]], list[tuple[str, str]]]:
+    """Chosen series per person, plus (subject, reason) for people with no usable DTI.
+
+    A person whose inputs were deleted after a finished run is counted from the b-values
+    kept with their results, so rerunning the same table does not mark them as failed.
+    """
     df = pd.read_csv(table, dtype=str)
     df = df[(df["status"] == "ok") & (df["kind"] == "dti")].copy()
     df["path"] = df["nifti_path"].map(lambda p: REPO_ROOT / p)
-    df["n_shell_dirs"] = df["path"].map(
-        lambda p: count_shell_dirs(p.with_name(p.name.removesuffix(".nii.gz") + ".bval"))
-    )
+
+    def shell_dirs(row: pd.Series) -> int:
+        bval = row["path"].with_name(row["path"].name.removesuffix(".nii.gz") + ".bval")
+        if not bval.exists() and out_root is not None:
+            sid = str(row["subject_id"])
+            if final_outputs_exist(out_root / sid, sid):
+                return count_shell_dirs(out_root / sid / f"{sid}_dwi.bval")
+        return count_shell_dirs(bval)
+
+    df["n_shell_dirs"] = df.apply(shell_dirs, axis=1)
     chosen, skipped = [], []
     for subject, rows in df.groupby("subject_id"):
         try:
@@ -796,6 +830,25 @@ def main(argv: list[str] | None = None) -> int:
         help="keep big in-between files (eddy output etc.) instead of deleting them",
     )
     ap.add_argument(
+        "--delete-inputs",
+        action="store_true",
+        help="after a person passes every check, delete their converted NIfTI files and the "
+        "raw DICOM folders of those series (needs --raw-dir for the DICOM part)",
+    )
+    ap.add_argument(
+        "--raw-dir",
+        type=Path,
+        action="append",
+        default=[],
+        help="raw DICOM folder holding <subject>/<series>/<date>/I<id> (repeatable; must be "
+        "inside data/raw). Only used with --delete-inputs",
+    )
+    ap.add_argument(
+        "--dry-run-delete",
+        action="store_true",
+        help="with --delete-inputs: say what would be deleted, delete nothing",
+    )
+    ap.add_argument(
         "--target-voxel",
         type=float,
         default=2.0,
@@ -823,13 +876,14 @@ def main(argv: list[str] | None = None) -> int:
         log.error("%s", exc)
         return 2
 
-    chosen, skipped = dti_inputs(args.table)
+    chosen, skipped = dti_inputs(args.table, args.out)
     if args.subject:
         chosen = [c for c in chosen if c[0] == args.subject]
         skipped = [s for s in skipped if s[0] == args.subject]
     if args.limit:
         chosen = chosen[: args.limit]
 
+    conversion = pd.read_csv(args.table, dtype=str)
     everyone = [c[0] for c in chosen] + [s for s, _ in skipped]
     rec = RunRecorder("dti", everyone, DTI_STEP_KEYS, events_url=args.events_url, jobs=args.jobs)
     print(f"run events: {_rel(rec.path)}  (watch live: python models/mri/src/pipeline_monitor.py)")
@@ -854,6 +908,12 @@ def main(argv: list[str] | None = None) -> int:
                 "template_correlation": r.template_correlation,
             },
         )
+        if args.delete_inputs and r.status == "ok" and final_outputs_exist(args.out / s, s):
+            freed = clean_inputs(s, conversion, args.raw_dir, args.dry_run_delete)
+            print(
+                f"{pseudonym(s)}: inputs {'would free' if args.dry_run_delete else 'freed'} "
+                f"{freed / 1e6:.0f} MB"
+            )
         return r
 
     # Threads are enough: the slow part (eddy) runs as a separate FSL process.
