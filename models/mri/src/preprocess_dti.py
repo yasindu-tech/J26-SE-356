@@ -4,6 +4,7 @@ One diffusion scan in, FA and MD maps in standard space out:
 
 1. pick one diffusion series per person, by the same rule for everyone, and keep
    only its b0 volumes and its b~1000 shell (so every person is measured alike);
+   scans finer than 2 mm are averaged down to 2 mm voxels (see below);
 2. brain mask from the mean b0 (FSL BET);
 3. motion and eddy-current correction with FSL eddy, which also rotates the
    gradient directions to match;
@@ -16,9 +17,22 @@ Only some sites acquired the reverse phase-encode data topup needs, so correctin
 only those people would make processing differ by site, which is the very effect
 harmonisation tries to remove. This is a stated limitation, not an oversight.
 
+Design choice: every scan with voxels finer than 2 mm (e.g. GE 256x256 at 1 x 1 x 2 mm) is
+averaged down to 2 mm before eddy. Most of our scans are acquired at 2 mm; the finer ones
+were mostly interpolated by the scanner, take about four times longer in eddy, and would
+give FA maps with a different smoothness from everyone else. The rule depends only on the
+voxel size, so it applies the same way to every scanner. When the size ratio is a whole
+number (1 mm -> 2 mm) neighbouring voxels are averaged; otherwise linear interpolation is
+used. The voxel axes keep their directions, so the gradient directions (bvecs) stay valid.
+Turn it off with ``--target-voxel 0``.
+
 Nothing here learns from the dataset (templates are fixed external files), so it is
 safe before any train/test split. A failed step or check gives ``status="failed"``
 with the reason, never zeros.
+
+Disk space: with ``--delete-inputs --raw-dir <folder>``, a person who passes every check has
+their converted NIfTI files and raw DICOM folders deleted right away (see input_cleanup.py).
+Only the results are kept. People who fail keep their inputs.
 
 Needs: FSL (bet, eddy), Python packages antspyx, dipy, nibabel.
 
@@ -46,6 +60,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from input_cleanup import SeriesRef, delete_inputs
 from progress import NullRecorder, RunRecorder
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -94,6 +109,7 @@ class DTIConfig:
     keep_intermediates: bool = False  # False: delete big in-between files once a person passes
     eddy_threads: int = 1  # eddy --nthr; only newer FSL builds support it
     repol: bool = True  # eddy outlier replacement: better data, somewhat slower
+    target_voxel_mm: float = 2.0  # average finer scans down to this; 0 = keep native size
 
 
 @dataclass
@@ -110,6 +126,8 @@ class DTIResult:
     pe_source: str = ""  # "json", "series_name" or "assumed"
     readout_s: float | None = None
     readout_source: str = ""  # "json" or "fallback"
+    input_voxel_mm: str = ""  # voxel size of the scan as acquired, e.g. "1.00x1.00x2.00"
+    resampled: bool = False  # True when the scan was averaged down to target_voxel_mm
     brain_mask_ml: float | None = None
     mean_abs_motion_mm: float | None = None
     mean_rel_motion_mm: float | None = None
@@ -288,10 +306,74 @@ def _run(cmd: list[str], what: str) -> None:
         raise StepError(f"{what} failed (exit {proc.returncode}): {tail[0]}")
 
 
+RESAMPLE_TOLERANCE = 0.05  # voxels within 5% of the target are left alone
+
+
+def downsample_factors(zooms: tuple[float, ...], target_mm: float) -> tuple[float, float, float]:
+    """How many input voxels go into one output voxel, per axis. Never below 1 (no upsampling)."""
+    if target_mm <= 0:
+        return (1.0, 1.0, 1.0)
+    out = []
+    for z in zooms[:3]:
+        f = target_mm / float(z)
+        out.append(f if f > 1 + RESAMPLE_TOLERANCE else 1.0)
+    return (out[0], out[1], out[2])
+
+
+def resample_affine(affine: np.ndarray, factors: tuple[float, float, float]) -> np.ndarray:
+    """Same axes and directions, bigger voxels; voxel 0 sits at the centre of the old block."""
+    f = np.asarray(factors, dtype=float)
+    new = affine.copy()
+    new[:3, :3] = affine[:3, :3] * f[None, :]
+    new[:3, 3] = affine[:3, :3] @ ((f - 1) / 2) + affine[:3, 3]
+    return new
+
+
+def downsample(data: np.ndarray, factors: tuple[float, float, float]) -> np.ndarray:
+    """Average (whole-number factors) or linearly interpolate a 3D or 4D array onto bigger voxels."""
+    from scipy.ndimage import affine_transform
+
+    f = np.asarray(factors, dtype=float)
+    shape = tuple(int(np.floor(n / k)) for n, k in zip(data.shape[:3], f, strict=True))
+    if min(shape) < 1:
+        raise StepError("scan is too small to resample")
+    vols = data[..., None] if data.ndim == 3 else data
+    if np.allclose(f, np.round(f)):
+        k = np.round(f).astype(int)
+        crop = vols[: shape[0] * k[0], : shape[1] * k[1], : shape[2] * k[2]]
+        blocks = crop.reshape(shape[0], k[0], shape[1], k[1], shape[2], k[2], -1)
+        out = blocks.mean(axis=(1, 3, 5))
+    else:
+        out = np.stack(
+            [
+                affine_transform(
+                    vols[..., t].astype(float),
+                    np.diag(f),
+                    offset=(f - 1) / 2,
+                    output_shape=shape,
+                    order=1,
+                    mode="nearest",
+                )
+                for t in range(vols.shape[-1])
+            ],
+            axis=-1,
+        )
+    return out[..., 0] if data.ndim == 3 else out
+
+
 def write_selected(
-    nifti: Path, bval: Path, bvec: Path, out: Path, stem: str
+    nifti: Path,
+    bval: Path,
+    bvec: Path,
+    out: Path,
+    stem: str,
+    target_voxel_mm: float = 0.0,
 ) -> tuple[Path, Path, Path, np.ndarray]:
-    """Keep only the b0 + b~1000 volumes. Returns new (dwi, bval, bvec, bvals)."""
+    """Keep only the b0 + b~1000 volumes and, if finer than the target, average them down.
+
+    Returns new (dwi, bval, bvec, bvals). bvecs are unchanged: resampling keeps the voxel
+    axes and their directions.
+    """
     import nibabel as nib
 
     bvals = np.atleast_1d(np.loadtxt(bval))
@@ -302,12 +384,33 @@ def write_selected(
             f"volumes {img.shape[-1]}, bvals {bvals.size}, bvecs {bvecs.shape[1]} disagree"
         )
     keep = select_shell(bvals)
-    data = np.asarray(img.dataobj)[..., keep]
+    data = np.asarray(img.dataobj)[..., keep].astype(np.float32)
+    affine, header = img.affine, img.header.copy()
+    zooms = tuple(float(z) for z in img.header.get_zooms()[:3])
+    factors = downsample_factors(zooms, target_voxel_mm)
+    if factors != (1.0, 1.0, 1.0):
+        data = downsample(data, factors).astype(np.float32)
+        affine = resample_affine(img.affine, factors)
     dwi, bv, bc = out / f"{stem}_dwi.nii.gz", out / f"{stem}_dwi.bval", out / f"{stem}_dwi.bvec"
-    nib.save(nib.Nifti1Image(data.astype(np.float32), img.affine, img.header), str(dwi))
+    new = nib.Nifti1Image(data, affine, header)
+    new.header.set_zooms(
+        tuple(z * k for z, k in zip(zooms, factors, strict=True)) + tuple(header.get_zooms()[3:])
+    )
+    new.set_sform(affine, code=int(img.header["sform_code"]) or 1)
+    new.set_qform(affine, code=int(img.header["qform_code"]) or 1)
+    nib.save(new, str(dwi))
     np.savetxt(bv, bvals[keep][None, :], fmt="%g")
     np.savetxt(bc, bvecs[:, keep], fmt="%.6f")
     return dwi, bv, bc, bvals[keep]
+
+
+def voxel_summary(nifti: Path, target_voxel_mm: float) -> tuple[str, bool]:
+    """Voxel size as acquired, and whether this scan gets averaged down."""
+    import nibabel as nib
+
+    zooms = tuple(float(z) for z in nib.load(str(nifti)).header.get_zooms()[:3])
+    factors = downsample_factors(zooms, target_voxel_mm)
+    return "x".join(f"{z:.2f}" for z in zooms), factors != (1.0, 1.0, 1.0)
 
 
 def brain_mask(dwi: Path, bvals: np.ndarray, out: Path, stem: str, config: DTIConfig) -> Path:
@@ -483,9 +586,12 @@ def preprocess_dti(
         bval = nifti.with_name(nifti.name.removesuffix(".nii.gz") + ".bval")
         bvec = bval.with_suffix(".bvec")
         sidecar_file = bval.with_suffix(".json")
-        for f in (nifti, bval, bvec):
-            if not f.exists():
-                raise StepError(f"input not found: {f.name}")
+        # A finished person (inputs possibly deleted to save space) is reused, not re-read.
+        reuse = not redo and final_outputs_exist(out, stem)
+        if not reuse:
+            for f in (nifti, bval, bvec):
+                if not f.exists():
+                    raise StepError(f"input not found: {f.name}")
         sidecar = json.loads(sidecar_file.read_text()) if sidecar_file.exists() else {}
         out.mkdir(parents=True, exist_ok=True)
 
@@ -510,7 +616,10 @@ def preprocess_dti(
                 bv, bc = kept_bval, out / f"{stem}_dwi.bvec"
                 bvals = np.atleast_1d(np.loadtxt(kept_bval))
             else:
-                dwi, bv, bc, bvals = write_selected(nifti, bval, bvec, out, stem)
+                dwi, bv, bc, bvals = write_selected(
+                    nifti, bval, bvec, out, stem, config.target_voxel_mm
+                )
+            res.input_voxel_mm, res.resampled = voxel_summary(nifti, config.target_voxel_mm)
             res.n_b0 = int((bvals < B0_MAX).sum())
             res.n_directions = int(bvals.size - res.n_b0)
             res.b_value = float(np.median(bvals[bvals >= B0_MAX]))
@@ -628,6 +737,19 @@ def remove_intermediates(out: Path, stem: str) -> int:
     return freed
 
 
+def clean_inputs(
+    subject_id: str, conversion: pd.DataFrame, raw_dirs: list[Path], dry_run: bool = False
+) -> int:
+    """Delete this person's converted inputs. Returns bytes freed (or that would be)."""
+    rows = conversion[
+        (conversion["subject_id"] == subject_id)
+        & (conversion["status"] == "ok")
+        & conversion["kind"].isin(["dti", "dti_b0_only"])
+    ]
+    series = [SeriesRef(str(r.image_id), REPO_ROOT / str(r.nifti_path)) for r in rows.itertuples()]
+    return delete_inputs(subject_id, series, raw_dirs, dry_run=dry_run).bytes_freed
+
+
 def median_in_mask(fa: Path, mask: Path) -> float:
     import nibabel as nib
 
@@ -646,14 +768,27 @@ def _rel(path: Path) -> str:
 # ---------------------------------------------------------------- command line
 
 
-def dti_inputs(table: Path) -> tuple[list[tuple[str, str, str, Path]], list[tuple[str, str]]]:
-    """Chosen series per person, plus (subject, reason) for people with no usable DTI."""
+def dti_inputs(
+    table: Path, out_root: Path | None = None
+) -> tuple[list[tuple[str, str, str, Path]], list[tuple[str, str]]]:
+    """Chosen series per person, plus (subject, reason) for people with no usable DTI.
+
+    A person whose inputs were deleted after a finished run is counted from the b-values
+    kept with their results, so rerunning the same table does not mark them as failed.
+    """
     df = pd.read_csv(table, dtype=str)
     df = df[(df["status"] == "ok") & (df["kind"] == "dti")].copy()
     df["path"] = df["nifti_path"].map(lambda p: REPO_ROOT / p)
-    df["n_shell_dirs"] = df["path"].map(
-        lambda p: count_shell_dirs(p.with_name(p.name.removesuffix(".nii.gz") + ".bval"))
-    )
+
+    def shell_dirs(row: pd.Series) -> int:
+        bval = row["path"].with_name(row["path"].name.removesuffix(".nii.gz") + ".bval")
+        if not bval.exists() and out_root is not None:
+            sid = str(row["subject_id"])
+            if final_outputs_exist(out_root / sid, sid):
+                return count_shell_dirs(out_root / sid / f"{sid}_dwi.bval")
+        return count_shell_dirs(bval)
+
+    df["n_shell_dirs"] = df.apply(shell_dirs, axis=1)
     chosen, skipped = [], []
     for subject, rows in df.groupby("subject_id"):
         try:
@@ -695,6 +830,31 @@ def main(argv: list[str] | None = None) -> int:
         help="keep big in-between files (eddy output etc.) instead of deleting them",
     )
     ap.add_argument(
+        "--delete-inputs",
+        action="store_true",
+        help="after a person passes every check, delete their converted NIfTI files and the "
+        "raw DICOM folders of those series (needs --raw-dir for the DICOM part)",
+    )
+    ap.add_argument(
+        "--raw-dir",
+        type=Path,
+        action="append",
+        default=[],
+        help="raw DICOM folder holding <subject>/<series>/<date>/I<id> (repeatable; must be "
+        "inside data/raw). Only used with --delete-inputs",
+    )
+    ap.add_argument(
+        "--dry-run-delete",
+        action="store_true",
+        help="with --delete-inputs: say what would be deleted, delete nothing",
+    )
+    ap.add_argument(
+        "--target-voxel",
+        type=float,
+        default=2.0,
+        help="average scans finer than this (mm) down to it before eddy; 0 keeps native size",
+    )
+    ap.add_argument(
         "--no-repol",
         action="store_true",
         help="skip eddy outlier replacement (faster; applies to everyone in the run)",
@@ -707,6 +867,7 @@ def main(argv: list[str] | None = None) -> int:
         eddy_command=args.eddy,
         eddy_threads=args.eddy_threads,
         repol=not args.no_repol,
+        target_voxel_mm=args.target_voxel,
         keep_intermediates=args.keep_intermediates,
     )
     try:
@@ -715,13 +876,14 @@ def main(argv: list[str] | None = None) -> int:
         log.error("%s", exc)
         return 2
 
-    chosen, skipped = dti_inputs(args.table)
+    chosen, skipped = dti_inputs(args.table, args.out)
     if args.subject:
         chosen = [c for c in chosen if c[0] == args.subject]
         skipped = [s for s in skipped if s[0] == args.subject]
     if args.limit:
         chosen = chosen[: args.limit]
 
+    conversion = pd.read_csv(args.table, dtype=str)
     everyone = [c[0] for c in chosen] + [s for s, _ in skipped]
     rec = RunRecorder("dti", everyone, DTI_STEP_KEYS, events_url=args.events_url, jobs=args.jobs)
     print(f"run events: {_rel(rec.path)}  (watch live: python models/mri/src/pipeline_monitor.py)")
@@ -746,6 +908,12 @@ def main(argv: list[str] | None = None) -> int:
                 "template_correlation": r.template_correlation,
             },
         )
+        if args.delete_inputs and r.status == "ok" and final_outputs_exist(args.out / s, s):
+            freed = clean_inputs(s, conversion, args.raw_dir, args.dry_run_delete)
+            print(
+                f"{pseudonym(s)}: inputs {'would free' if args.dry_run_delete else 'freed'} "
+                f"{freed / 1e6:.0f} MB"
+            )
         return r
 
     # Threads are enough: the slow part (eddy) runs as a separate FSL process.

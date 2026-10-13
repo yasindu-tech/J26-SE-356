@@ -222,6 +222,26 @@ def test_unreadable_clip_fails_loudly(tmp_path: Path) -> None:
     assert not (tmp_path / "out").exists()
 
 
+def test_unreadable_clip_does_not_leak_ids_to_stderr(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """OpenCV prints the full file path (the raw clip ID) on a failed open, from C code.
+
+    capfd sees file descriptor 2, so this fails if the probe ever opens a clip without muting
+    it. Both an empty file and a garbage file are tried; the names are made up.
+    """
+    pytest.importorskip("cv2")
+    csv, videos = make_inputs(tmp_path)  # empty files: nothing decodes
+    garbage = videos / "CONTROL9001_DCHA.mp4"
+    garbage.write_bytes(np.random.default_rng(0).bytes(4096))
+    assert run_main(tmp_path, csv, videos, "--probe-video") == 1
+    captured = capfd.readouterr()
+    for clip_id, _ in ROWS:
+        assert clip_id not in captured.out + captured.err
+        assert clip_id.split("_")[0] not in captured.out + captured.err
+    assert "clips could not be read" in captured.err  # the hashed-ID message is still shown
+
+
 # --------------------------------------------------------------------------- probe guard
 
 

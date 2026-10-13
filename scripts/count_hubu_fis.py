@@ -219,8 +219,9 @@ def _orientation(width: int, height: int) -> str:
 def _first_frame_size(path: Path, auto_rotate: bool) -> tuple[int, int] | None:
     """(width, height) of the first decoded frame, or None if nothing decodes."""
     import cv2
+    from hand_landmarks import open_video  # mutes OpenCV's stderr, which prints the file path
 
-    capture = cv2.VideoCapture(str(path))
+    capture = open_video(str(path))
     try:
         if not capture.isOpened():
             return None
@@ -234,11 +235,14 @@ def _first_frame_size(path: Path, auto_rotate: bool) -> tuple[int, int] | None:
 def probe_clip(path: Path) -> dict[str, Any]:
     """Read fps, frame count, rotation and the stored and displayed frame size of one clip.
 
-    Raises HubuFisError (message without the clip ID) if the clip cannot be read.
+    Raises HubuFisError (message without the clip ID) if the clip cannot be read. Clips are
+    opened with ``hand_landmarks.open_video``: on a failed open OpenCV itself prints the full
+    file path, which is the raw clip ID, so its stderr is muted around the call.
     """
     import cv2
+    from hand_landmarks import open_video
 
-    capture = cv2.VideoCapture(str(path))
+    capture = open_video(str(path))
     try:
         if not capture.isOpened():
             raise HubuFisError("cannot be opened")
