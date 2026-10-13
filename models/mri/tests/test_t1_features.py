@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import t1_features as f
+from progress import RunRecorder, read_events
 from scipy.io import savemat
 
 SHAPE = (30, 30, 30)
@@ -209,3 +210,25 @@ def test_blank_site_key_stays_blank(tmp_path: Path) -> None:
     meta = f.scanner_metadata(conv)
     assert meta[f.pseudonym("2")]["site_key"] == ""
     assert meta[f.pseudonym("1")]["site_key"] == "32"
+
+
+# --- progress events for the dashboard --------------------------------------------
+
+
+def test_progress_events_per_step(tmp_path: Path, atlas: f.Atlas) -> None:
+    rec = RunRecorder("t1features", ["S0001"], f.FEATURE_STEPS, runs_dir=tmp_path / "runs")
+    r = f.extract_subject(write_subject(tmp_path), "S0001", atlas, recorder=rec)
+    ends = [e for e in read_events(rec.path) if e["type"] == "step_end"]
+    assert r.status == "ok"
+    assert [e["step"] for e in ends] == f.FEATURE_STEPS and all(e["ok"] for e in ends)
+    assert "S0001" not in rec.path.read_text()
+
+
+def test_failed_step_is_recorded(tmp_path: Path, atlas: f.Atlas) -> None:
+    d = write_subject(tmp_path)
+    (d / "S0001_fast_seg.nii.gz").unlink()
+    rec = RunRecorder("t1features", ["S0001"], f.FEATURE_STEPS, runs_dir=tmp_path / "runs")
+    r = f.extract_subject(d, "S0001", atlas, recorder=rec)
+    ends = [e for e in read_events(rec.path) if e["type"] == "step_end"]
+    assert r.status == "failed"
+    assert [(e["step"], e["ok"]) for e in ends] == [("load", False)]
