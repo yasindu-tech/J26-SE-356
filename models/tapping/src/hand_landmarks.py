@@ -78,7 +78,7 @@ N_LANDMARKS = 21
 MAX_FPS = 1000.0  # integer milliseconds cannot separate frames closer than 1 ms
 TOOL_VERSION = "hand-landmarks-0.1.0"
 EXPECTED_MODEL_SHA256 = "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
-FETCH_SCRIPT = "models/tapping/fetch_model.sh"
+MODEL_HINT = "place hand_landmarker.task in models/tapping/artifacts/ (see models/tapping/README.md)"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MODEL = REPO_ROOT / "models" / "tapping" / "artifacts" / "hand_landmarker.task"
@@ -295,7 +295,7 @@ def track_clip(
     if landmarker_factory is None:
         if not model_path.is_file():
             raise InputMissingError(
-                f"hand landmarker model not found at {model_path}. Download it with {FETCH_SCRIPT}"
+                f"hand landmarker model not found at {model_path}. {MODEL_HINT}"
             )
         landmarker_factory = MediaPipeHandLandmarker
 
@@ -599,7 +599,7 @@ def main(
     if landmarker_factory is None and not args.model.is_file():
         print(
             f"error: hand landmarker model not found at {args.model}. "
-            f"Download it with {FETCH_SCRIPT}",
+            f"{MODEL_HINT}",
             file=sys.stderr,
         )
         return 2

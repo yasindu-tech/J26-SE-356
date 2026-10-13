@@ -557,12 +557,12 @@ def test_cli_missing_model_exits_2_and_points_to_the_fetch_script(
     )
     err = capsys.readouterr().err
     assert code == 2
-    assert "fetch_model.sh" in err and "not found" in err
+    assert "README.md" in err and "not found" in err
     assert not (tmp_path / f"{STEM}.parquet").exists()
 
 
 def test_track_clip_missing_model_raises_a_clear_error(tmp_path: Path) -> None:
-    with pytest.raises(hl.InputMissingError, match="fetch_model.sh"):
+    with pytest.raises(hl.InputMissingError, match="README.md"):
         hl.track_clip(
             make_clip(tmp_path),
             tmp_path / "absent.task",
@@ -631,7 +631,7 @@ def test_stderr_is_restored_after_the_open_call(
 
 needs_model = pytest.mark.skipif(
     not MODEL_FILE.is_file(),
-    reason="models/tapping/artifacts/hand_landmarker.task is missing; run models/tapping/fetch_model.sh",
+    reason="models/tapping/artifacts/hand_landmarker.task is missing; see models/tapping/README.md",
 )
 
 

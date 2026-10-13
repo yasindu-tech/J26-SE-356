@@ -42,8 +42,9 @@ Video → MediaPipe Hands → landmark tracking → tap detection → kinematics
 ## Hand landmarks (FT-11)
 `src/hand_landmarks.py` runs the MediaPipe HandLandmarker in VIDEO mode (`num_hands=1`) over
 one clip and writes one row per frame to `data/interim/landmarks/` (gitignored): 21 landmarks
-as normalised, pixel (displayed frame) and world coordinates. Download the model first with
-`models/tapping/fetch_model.sh`.
+as normalised, pixel (displayed frame) and world coordinates. The model `hand_landmarker.task` (float16, v1) goes in
+`models/tapping/artifacts/` (git-ignored); download it from
+https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task.
 
 ```bash
 python models/tapping/src/hand_landmarks.py --video path/to/clip.mp4
