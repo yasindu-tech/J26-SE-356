@@ -66,8 +66,15 @@ def subject_folds(
     seed: int = 0,
     strata: Sequence[str] | None = None,
 ) -> list[Fold]:
-    """Repeated, stratified, subject-wise K-fold. Every test part holds both classes."""
-    from sklearn.model_selection import StratifiedGroupKFold
+    """Repeated, stratified, subject-wise K-fold. Every test part holds both classes.
+
+    When every person has exactly one row, plain StratifiedKFold is used: it is then
+    subject-wise by construction and stratifies exactly. StratifiedGroupKFold with shuffling
+    is greedy and can put a single class into a test fold even when an even split exists.
+    Several rows per person always use StratifiedGroupKFold. The disjointness assertion runs
+    either way.
+    """
+    from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
     subjects_arr = np.asarray(subjects)
     y_arr = np.asarray(y)
@@ -82,10 +89,18 @@ def subject_folds(
 
     folds = []
     x_dummy = np.zeros(len(y_arr))
+    one_row_each = len(set(subjects_arr)) == len(subjects_arr)
     for r in range(n_repeats):
-        cv = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed + r)
+        if one_row_each:
+            splits = StratifiedKFold(n_splits, shuffle=True, random_state=seed + r).split(
+                x_dummy, strat
+            )
+        else:
+            splits = StratifiedGroupKFold(n_splits, shuffle=True, random_state=seed + r).split(
+                x_dummy, strat, groups=subjects_arr
+            )
         times_tested = np.zeros(len(y_arr), dtype=int)
-        for k, (train, test) in enumerate(cv.split(x_dummy, strat, groups=subjects_arr)):
+        for k, (train, test) in enumerate(splits):
             assert_subject_disjoint(train, test, subjects_arr)
             if len(set(y_arr[test])) < 2:
                 raise SplitError(f"repeat {r} fold {k}: test part has one class; use fewer folds")
