@@ -10,6 +10,7 @@ Pages:
             time per step, estimated time left, and every person's row
     /dti    the same for DTI
     /t1features  T1 feature extraction (one row of numbers per person)
+    /dtifeatures DTI feature extraction
 
 API (used by the pages, also handy for other tools):
     GET  /api/state?pipeline=t1[&run=<id>]   current state as JSON
@@ -41,8 +42,13 @@ from urllib.parse import parse_qs, urlparse
 
 from progress import RUNS_DIR, expected_step_seconds, fold_events, latest_run, read_events
 
-PIPELINES = ("t1", "dti", "t1features")
-NAMES = {"t1": "T1 pipeline", "dti": "DTI pipeline", "t1features": "T1 features"}
+PIPELINES = ("t1", "dti", "t1features", "dtifeatures")
+NAMES = {
+    "t1": "T1 pipeline",
+    "dti": "DTI pipeline",
+    "t1features": "T1 features",
+    "dtifeatures": "DTI features",
+}
 SAFE_ID = re.compile(r"^[a-z0-9_]{1,64}$")
 
 STEP_INFO = {
@@ -69,6 +75,12 @@ STEP_INFO = {
             "Six statistics of normalised T1 brightness per region.",
         ),
         "size": ("Brain size", "Native brain volume and the affine scale factor."),
+    },
+    "dtifeatures": {
+        "load": ("Load maps", "Reads FA and MD in standard space and checks the atlas grid."),
+        "tracts": ("Tracts", "Mean FA and MD in 11 white-matter tracts (JHU atlas)."),
+        "deepgrey": ("Deep grey matter", "Mean MD in the 8 regions used for T1."),
+        "whole": ("Whole white matter", "Median FA and MD over all labelled white matter."),
     },
 }
 NEXT_STAGES = ["Harmonise (ComBat)", "Train model", "Explain (SHAP)"]
@@ -411,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     server.daemon_threads = True
     shown = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     print(
-        f"MRI pipeline dashboard: http://{shown}:{args.port}   (T1: /t1, DTI: /dti, features: /t1features, Ctrl+C)"
+        f"MRI pipeline dashboard: http://{shown}:{args.port}   (pages: /t1 /dti /t1features /dtifeatures, Ctrl+C)"
     )
     with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()

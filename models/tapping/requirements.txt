@@ -1,0 +1,14 @@
+# Finger-tapping module dependencies (models/tapping).
+# Install together with the shared dev environment from the repo root:
+#   pip install -r requirements-dev.txt -r models/tapping/requirements.txt
+# Core packages (numpy, pandas, scipy, scikit-learn, lightgbm, shap, pytest)
+# come from requirements-dev.txt and are not repeated here.
+
+mediapipe>=0.10.14,<0.11   # Hand Landmarker (21 landmarks); bound matches models/gait
+# opencv is NOT declared here: mediapipe pulls opencv-contrib-python,
+# which provides the same cv2 module. Declaring opencv-python as well
+# installs two packages that overwrite each other's cv2.
+pyarrow>=16.0              # parquet storage for per-clip landmark series
+pingouin>=0.5.4            # ICC(2,1) for tap-detector validation against manual counts
+matplotlib>=3.8            # amplitude-decay, QC and SHAP plots
+streamlit>=1.37            # clinician-facing demo
