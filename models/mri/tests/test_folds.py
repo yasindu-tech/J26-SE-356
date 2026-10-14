@@ -100,3 +100,13 @@ def test_unseen_scanner_is_reported() -> None:
     f = folds[0]
     scanner[f.test_idx[0]] = "only_in_test"
     assert unseen_test_groups(f, scanner) == {"only_in_test"}
+
+
+def test_one_row_per_person_always_gets_both_classes_in_every_test_fold() -> None:
+    # StratifiedGroupKFold with shuffling put a single class into a test fold for some
+    # seeds with 30 people (15 + 15) and 5 folds; every seed must work.
+    subjects = np.array([f"s{i:02d}" for i in range(30)])
+    y = np.tile([0, 1], 15)
+    for seed in range(50):
+        for f in subject_folds(subjects, y, n_splits=5, n_repeats=1, seed=seed):
+            assert sorted(np.bincount(y[f.test_idx])) == [3, 3]
