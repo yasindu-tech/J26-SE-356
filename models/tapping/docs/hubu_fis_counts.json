@@ -1,0 +1,376 @@
+{
+  "asymmetry": {
+    "CONTROL": {
+      "abs_diff_counts": {
+        "0": 33,
+        "1": 9
+      },
+      "asymmetric": 9,
+      "mean_abs_diff": 0.21,
+      "participants_with_both_hands": 42,
+      "share_asymmetric": 0.214
+    },
+    "ID": {
+      "abs_diff_counts": {
+        "0": 43,
+        "1": 29,
+        "2": 2
+      },
+      "asymmetric": 31,
+      "mean_abs_diff": 0.45,
+      "participants_with_both_hands": 74,
+      "share_asymmetric": 0.419
+    }
+  },
+  "clips": {
+    "by_group": {
+      "CONTROL": 85,
+      "ID": 149
+    },
+    "by_hand": {
+      "left": 117,
+      "right": 117
+    },
+    "by_updrs": {
+      "0": 71,
+      "1": 99,
+      "2": 38,
+      "3": 26
+    },
+    "control_clips_rated_ge1": 27,
+    "group_x_hand": {
+      "CONTROL": {
+        "left": 42,
+        "right": 43
+      },
+      "ID": {
+        "left": 75,
+        "right": 74
+      }
+    },
+    "group_x_updrs": {
+      "CONTROL": {
+        "0": 58,
+        "1": 27,
+        "2": 0,
+        "3": 0
+      },
+      "ID": {
+        "0": 13,
+        "1": 72,
+        "2": 38,
+        "3": 26
+      }
+    },
+    "patient_clips_rated_0": 13,
+    "updrs_never_used": [
+      4
+    ]
+  },
+  "files": {
+    "ignored_non_video_files": 0,
+    "labelled_clips": 234,
+    "labels_and_videos_match_1_to_1": true,
+    "video_files": 234,
+    "video_files_by_suffix": {
+      ".MOV": 8,
+      ".mp4": 226
+    }
+  },
+  "participant_level_updrs": {
+    "group_x_max_updrs": {
+      "CONTROL": {
+        "0": 25,
+        "1": 18,
+        "2": 0,
+        "3": 0
+      },
+      "ID": {
+        "0": 2,
+        "1": 33,
+        "2": 22,
+        "3": 18
+      }
+    }
+  },
+  "participants": {
+    "by_group": {
+      "CONTROL": 43,
+      "ID": 75
+    },
+    "one_hand_only": {
+      "left": 1,
+      "right": 1
+    },
+    "total": 118,
+    "with_both_hands": 116,
+    "with_both_hands_by_group": {
+      "CONTROL": 42,
+      "ID": 74
+    },
+    "with_one_hand": 2
+  },
+  "source": {
+    "csv_name": "fis_diagnostic.csv",
+    "csv_sha256": "1e15081cfc0aeab98b7e72c0a199e74bebc410bee4816f9f835294e8999a4677"
+  },
+  "targets": {
+    "group_control_vs_id": {
+      "clip_ratio": 1.75,
+      "clips": {
+        "CONTROL": 85,
+        "ID": 149
+      },
+      "participant_ratio": 1.74,
+      "participants": {
+        "CONTROL": 43,
+        "ID": 75
+      }
+    },
+    "updrs_ge1_vs_0": {
+      "clip_ratio": 2.3,
+      "clips": {
+        "0": 71,
+        ">=1": 163
+      },
+      "participant_ratio_max_hand": 3.37,
+      "participants_max_hand": {
+        "0": 27,
+        ">=1": 91
+      }
+    }
+  },
+  "video_probe": {
+    "by_group": {
+      "container": {
+        "mov": {
+          "CONTROL": 8,
+          "ID": 0
+        },
+        "mp4": {
+          "CONTROL": 77,
+          "ID": 149
+        }
+      },
+      "fps": {
+        "30": {
+          "CONTROL": 85,
+          "ID": 147
+        },
+        "60": {
+          "CONTROL": 0,
+          "ID": 2
+        }
+      },
+      "orientation": {
+        "landscape": {
+          "CONTROL": 14,
+          "ID": 23
+        },
+        "portrait": {
+          "CONTROL": 71,
+          "ID": 126
+        }
+      },
+      "resolution": {
+        "1080x1920": {
+          "CONTROL": 65,
+          "ID": 120
+        },
+        "1080x2400": {
+          "CONTROL": 0,
+          "ID": 4
+        },
+        "1280x720": {
+          "CONTROL": 0,
+          "ID": 4
+        },
+        "1920x1080": {
+          "CONTROL": 10,
+          "ID": 19
+        },
+        "352x640": {
+          "CONTROL": 4,
+          "ID": 0
+        },
+        "480x848": {
+          "CONTROL": 2,
+          "ID": 2
+        },
+        "640x352": {
+          "CONTROL": 4,
+          "ID": 0
+        }
+      }
+    },
+    "clips_with_any_group_exclusive_value": {
+      "CONTROL": 16,
+      "ID": 8
+    },
+    "fps_exact_by_group": {
+      "29.51": {
+        "CONTROL": 0,
+        "ID": 1
+      },
+      "29.6": {
+        "CONTROL": 0,
+        "ID": 1
+      },
+      "29.96": {
+        "CONTROL": 1,
+        "ID": 0
+      },
+      "29.97": {
+        "CONTROL": 6,
+        "ID": 2
+      },
+      "29.98": {
+        "CONTROL": 1,
+        "ID": 0
+      },
+      "30.0": {
+        "CONTROL": 4,
+        "ID": 9
+      },
+      "30.01": {
+        "CONTROL": 5,
+        "ID": 13
+      },
+      "30.02": {
+        "CONTROL": 13,
+        "ID": 21
+      },
+      "30.03": {
+        "CONTROL": 17,
+        "ID": 17
+      },
+      "30.04": {
+        "CONTROL": 36,
+        "ID": 83
+      },
+      "30.13": {
+        "CONTROL": 1,
+        "ID": 0
+      },
+      "30.14": {
+        "CONTROL": 1,
+        "ID": 0
+      },
+      "59.96": {
+        "CONTROL": 0,
+        "ID": 2
+      }
+    },
+    "group_exclusive_values": [
+      {
+        "clips": 4,
+        "group": "ID",
+        "property": "resolution",
+        "value": "1080x2400"
+      },
+      {
+        "clips": 4,
+        "group": "ID",
+        "property": "resolution",
+        "value": "1280x720"
+      },
+      {
+        "clips": 4,
+        "group": "CONTROL",
+        "property": "resolution",
+        "value": "352x640"
+      },
+      {
+        "clips": 4,
+        "group": "CONTROL",
+        "property": "resolution",
+        "value": "640x352"
+      },
+      {
+        "clips": 2,
+        "group": "ID",
+        "property": "fps",
+        "value": "60"
+      },
+      {
+        "clips": 8,
+        "group": "CONTROL",
+        "property": "container",
+        "value": "mov"
+      }
+    ],
+    "orientation_check": {
+      "by_container": {
+        "mov": {
+          "clips": 8,
+          "stored_differs_from_displayed": 4,
+          "with_rotation_meta": 4
+        },
+        "mp4": {
+          "clips": 226,
+          "stored_differs_from_displayed": 189,
+          "with_rotation_meta": 189
+        }
+      },
+      "clips_with_rotation_meta": 193,
+      "displayed_inconsistent_with_rotation_meta": 0,
+      "orientation_stored_by_group": {
+        "landscape": {
+          "CONTROL": 81,
+          "ID": 149
+        },
+        "portrait": {
+          "CONTROL": 4,
+          "ID": 0
+        }
+      },
+      "prop_size_equals_displayed": 234,
+      "prop_size_equals_stored": 41,
+      "resolution_stored_by_group": {
+        "1080x1920": {
+          "CONTROL": 4,
+          "ID": 0
+        },
+        "1280x720": {
+          "CONTROL": 0,
+          "ID": 4
+        },
+        "1920x1080": {
+          "CONTROL": 71,
+          "ID": 139
+        },
+        "2400x1080": {
+          "CONTROL": 0,
+          "ID": 4
+        },
+        "640x352": {
+          "CONTROL": 8,
+          "ID": 0
+        },
+        "848x480": {
+          "CONTROL": 2,
+          "ID": 2
+        }
+      },
+      "rotation_meta_values": {
+        "0": 41,
+        "90": 193
+      },
+      "stored_differs_from_displayed": 193
+    },
+    "seconds_by_group": {
+      "CONTROL": {
+        "50%": 20.27,
+        "max": 23.77,
+        "min": 19.92
+      },
+      "ID": {
+        "50%": 20.24,
+        "max": 29.34,
+        "min": 15.01
+      }
+    },
+    "size_used_in_tables": "displayed (first frame decoded with auto-rotation on)",
+    "tool": "opencv 5.0.0"
+  }
+}

@@ -46,7 +46,7 @@ def post(url: str, body: dict) -> int:
 
 def test_pages_render(server) -> None:
     base, _ = server
-    for path in ("/", "/t1", "/dti"):
+    for path in ("/", "/t1", "/dti", "/t1features", "/dtifeatures"):
         code, body = get(base + path)
         assert code == 200 and b"<html>" in body
 
@@ -106,3 +106,13 @@ def test_stream_sends_state(server) -> None:
 )
 def test_valid_event(event: object, ok: bool) -> None:
     assert m.valid_event(event) is ok
+
+
+def test_feature_extraction_run_is_shown(server) -> None:
+    base, runs = server
+    rec = RunRecorder("t1features", ["1", "2"], ["load", "tissue"], runs_dir=runs)
+    rec.subject_start("1")
+    state = json.loads(get(base + "/api/state?pipeline=t1features")[1])
+    assert (state["total"], state["running"]) == (2, 1)
+    assert state["step_info"]["tissue"]["label"] == "Tissue shares"
+    assert get(base + "/api/state?pipeline=t1features&run=t1_20260101_000000")[0] == 400
