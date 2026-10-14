@@ -142,3 +142,71 @@ def test_bootstrap_rejects_bad_arguments() -> None:
         gm.bootstrap_intervals(y, [proba], subjects, n_boot=0)
     with pytest.raises(ValueError, match="level"):
         gm.bootstrap_intervals(y, [proba], subjects, n_boot=5, level=1.5)
+
+
+# --------------------------------------------------------------------------- shared draws (GAIT-20)
+def reference_intervals(y, probas, subjects, n_boot, seed, level=0.95):  # type: ignore[no-untyped-def]
+    """The GAIT-19 bootstrap, written out again: one model, one draw at a time."""
+    weight = gm.subject_weights(subjects)
+    keys = np.unique(subjects)
+    groups = [np.flatnonzero(subjects == k) for k in keys]
+    rng = np.random.default_rng(seed)
+    draws = []
+    for _ in range(n_boot):
+        pick = rng.integers(0, len(groups), len(groups))
+        idx = np.concatenate([groups[i] for i in pick])
+        v = gm.metric_values(y[idx], [p[idx] for p in probas], weight[idx])
+        draws.append([v[m] for m in gm.METRICS])
+    lo, hi = np.nanpercentile(draws, [50 * (1 - level), 50 * (1 + level)], axis=0)
+    return {m: (float(lo[i]), float(hi[i])) for i, m in enumerate(gm.METRICS)}
+
+
+def test_the_intervals_are_the_gait19_intervals() -> None:
+    y, proba, subjects = subject_problem(n_subjects=30, seed=4)
+    _, other = random_problem(len(y), seed=9)
+    probas = [proba, other]
+    got = gm.bootstrap_intervals(y, probas, subjects, n_boot=60, seed=5)
+    assert got == reference_intervals(y, probas, subjects, 60, 5)
+
+
+def test_models_share_the_resampled_subjects() -> None:
+    y, proba, subjects = subject_problem(n_subjects=30, seed=1)
+    _, other = random_problem(len(y), seed=2)
+    draws = gm.bootstrap_draws(
+        y, {"a": [proba], "same_as_a": [proba], "b": [other]}, subjects, n_boot=40, seed=7
+    )
+    assert draws["a"].shape == (40, len(gm.METRICS))
+    assert np.array_equal(draws["a"], draws["same_as_a"])  # one resample per draw, for everyone
+    assert not np.array_equal(draws["a"], draws["b"])
+    alone = gm.bootstrap_draws(y, {"a": [proba]}, subjects, n_boot=40, seed=7)
+    assert np.array_equal(alone["a"], draws["a"])  # adding models does not change the draws
+
+
+def test_the_interval_of_a_difference_is_narrower_for_models_that_move_together() -> None:
+    y, proba, subjects = subject_problem(n_subjects=40, walks=12, seed=3)
+    rng = np.random.default_rng(0)
+    near = np.clip(proba + rng.normal(scale=0.02, size=proba.shape), 1e-6, None)
+    near /= near.sum(axis=1, keepdims=True)
+    draws = gm.bootstrap_draws(y, {"a": [proba], "b": [near]}, subjects, n_boot=200, seed=0)
+    lo, hi = gm.percentile_interval(draws["a"] - draws["b"])
+    lo_a, hi_a = gm.percentile_interval(draws["a"])
+    i = gm.METRICS.index("bal_acc")
+    assert (hi - lo)[i] < (hi_a - lo_a)[i] / 3
+
+
+def test_percentile_interval_gives_nan_for_an_empty_column_without_warnings() -> None:
+    import warnings
+
+    draws = np.array([[0.1, np.nan], [0.3, np.nan], [0.2, np.nan]])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        lo, hi = gm.percentile_interval(draws)
+    assert lo[0] < hi[0] and np.isnan(lo[1]) and np.isnan(hi[1])
+
+
+def test_bootstrap_draws_reject_bad_arguments() -> None:
+    y, proba, subjects = subject_problem(n_subjects=10)
+    with pytest.raises(ValueError, match="n_boot"):
+        gm.bootstrap_draws(y, {"a": [proba]}, subjects, n_boot=0)
+    with pytest.raises(ValueError, match="level"):
+        gm.percentile_interval(np.zeros((3, 2)), level=0.0)

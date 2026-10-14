@@ -20,11 +20,16 @@ Decisions:
    here (a sort and a cumulative sum) instead of calling scikit-learn in the bootstrap loop,
    which keeps 1,000 draws to seconds. ``tests/test_gait_metrics.py`` checks it against
    scikit-learn, with weights and ties.
+5. *Several models can share one bootstrap* (``bootstrap_draws``, GAIT-20). Every draw is applied
+   to all models, so the difference between two models is paired: the interval of a difference
+   is usually narrower than the two separate intervals suggest, and it is the one that says whether
+   a model, or an ablation, really changed the score.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import warnings
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from sklearn.metrics import f1_score
@@ -111,6 +116,52 @@ def subject_weights(subjects: np.ndarray) -> np.ndarray:
     return w * len(w) / w.sum()
 
 
+def subject_groups(subjects: np.ndarray) -> list[np.ndarray]:
+    """Row positions of every subject (one array per subject, in sorted subject order)."""
+    _, inverse = np.unique(subjects, return_inverse=True)
+    order = np.argsort(inverse, kind="stable")
+    counts = np.bincount(inverse)
+    return np.split(order, np.cumsum(counts)[:-1])
+
+
+def bootstrap_draws(
+    y: np.ndarray,
+    models: Mapping[str, Sequence[np.ndarray]],
+    subjects: np.ndarray,
+    n_boot: int = 1000,
+    seed: int = 0,
+) -> dict[str, np.ndarray]:
+    """The four headline scores of every model in every bootstrap draw (``n_boot`` x 4).
+
+    Each draw resamples whole subjects and applies the same resample to every model, so draws
+    of different models are paired. ``models`` maps a name to its out-of-fold probabilities, one
+    (walks x 3) array per seed.
+    """
+    if n_boot < 1:
+        raise ValueError("n_boot must be at least 1")
+    weight = subject_weights(subjects)
+    groups = subject_groups(subjects)
+    rng = np.random.default_rng(seed)
+    draws = {name: np.empty((n_boot, len(METRICS))) for name in models}
+    for b in range(n_boot):
+        pick = rng.integers(0, len(groups), len(groups))
+        idx = np.concatenate([groups[i] for i in pick])
+        for name, probas in models.items():
+            values = metric_values(y[idx], [p[idx] for p in probas], weight[idx])
+            draws[name][b] = [values[m] for m in METRICS]
+    return draws
+
+
+def percentile_interval(draws: np.ndarray, level: float = 0.95) -> tuple[np.ndarray, np.ndarray]:
+    """Lower and upper percentile bounds of each column of ``draws`` (NaN if a column is all NaN)."""
+    if not 0 < level < 1:
+        raise ValueError("level must be between 0 and 1")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # an all-NaN column gives NaN, not a crash
+        lo, hi = np.nanpercentile(draws, [50 * (1 - level), 50 * (1 + level)], axis=0)
+    return lo, hi
+
+
 def bootstrap_intervals(
     y: np.ndarray,
     probas: Sequence[np.ndarray],
@@ -124,17 +175,6 @@ def bootstrap_intervals(
         raise ValueError("n_boot must be at least 1")
     if not 0 < level < 1:
         raise ValueError("level must be between 0 and 1")
-    weight = subject_weights(subjects)
-    _, inverse = np.unique(subjects, return_inverse=True)
-    order = np.argsort(inverse, kind="stable")
-    counts = np.bincount(inverse)
-    groups = np.split(order, np.cumsum(counts)[:-1])
-    rng = np.random.default_rng(seed)
-    draws = np.empty((n_boot, len(METRICS)))
-    for b in range(n_boot):
-        pick = rng.integers(0, len(groups), len(groups))
-        idx = np.concatenate([groups[i] for i in pick])
-        values = metric_values(y[idx], [p[idx] for p in probas], weight[idx])
-        draws[b] = [values[m] for m in METRICS]
-    lo, hi = np.nanpercentile(draws, [50 * (1 - level), 50 * (1 + level)], axis=0)
+    draws = bootstrap_draws(y, {"model": probas}, subjects, n_boot=n_boot, seed=seed)["model"]
+    lo, hi = percentile_interval(draws, level)
     return {m: (float(lo[i]), float(hi[i])) for i, m in enumerate(METRICS)}
