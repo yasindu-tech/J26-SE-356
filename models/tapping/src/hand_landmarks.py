@@ -78,7 +78,9 @@ N_LANDMARKS = 21
 MAX_FPS = 1000.0  # integer milliseconds cannot separate frames closer than 1 ms
 TOOL_VERSION = "hand-landmarks-0.1.0"
 EXPECTED_MODEL_SHA256 = "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"
-MODEL_HINT = "place hand_landmarker.task in models/tapping/artifacts/ (see models/tapping/README.md)"
+MODEL_HINT = (
+    "place hand_landmarker.task in models/tapping/artifacts/ (see models/tapping/README.md)"
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MODEL = REPO_ROOT / "models" / "tapping" / "artifacts" / "hand_landmarker.task"
@@ -598,8 +600,7 @@ def main(
         return 2
     if landmarker_factory is None and not args.model.is_file():
         print(
-            f"error: hand landmarker model not found at {args.model}. "
-            f"{MODEL_HINT}",
+            f"error: hand landmarker model not found at {args.model}. {MODEL_HINT}",
             file=sys.stderr,
         )
         return 2
