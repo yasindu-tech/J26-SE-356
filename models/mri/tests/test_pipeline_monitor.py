@@ -46,7 +46,7 @@ def post(url: str, body: dict) -> int:
 
 def test_pages_render(server) -> None:
     base, _ = server
-    for path in ("/", "/t1", "/dti", "/t1features"):
+    for path in ("/", "/t1", "/dti", "/t1features", "/dtifeatures"):
         code, body = get(base + path)
         assert code == 200 and b"<html>" in body
 
