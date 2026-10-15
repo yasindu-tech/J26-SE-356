@@ -14,6 +14,10 @@ import "./MriAnalysis.css";
 // explanation). The scan goes to the backend only when the clinician presses
 // Upload; the backend deletes the DICOM files when the analysis ends.
 
+// What the backend answers when there is no usable session (401 after a failed
+// renewal; 403 from HTTPBearer when no token is sent at all).
+const SIGNED_OUT_CODES = new Set(["NOT_AUTHENTICATED", "HTTP_401", "HTTP_403"]);
+
 type Screen =
   | { view: "new" }
   | { view: "uploading"; fraction: number }
@@ -272,7 +276,15 @@ function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
           return;
         }
       } catch (e) {
-        if (!stopped) errorRef.current(errorText(e, "Lost contact with the backend; still trying."));
+        if (stopped) return;
+        if (e instanceof ApiError && SIGNED_OUT_CODES.has(e.code)) {
+          // No valid session: polling cannot succeed, so stop instead of retrying.
+          errorRef.current(
+            "You are signed out. Sign in again and open this analysis from the list; it keeps running.",
+          );
+          return;
+        }
+        errorRef.current(errorText(e, "Lost contact with the backend; still trying."));
       }
       if (!stopped) timer = setTimeout(() => void poll(), MRI_POLL_INTERVAL_MS);
     }

@@ -15,8 +15,11 @@ const ACTIVITY_EVENTS = ["mousedown", "keydown", "wheel"] as const;
 function resetIdleTimer(): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
+    // clearSession() forgets the callback, so take it first. Calling it after
+    // clearSession() did nothing: the screen stayed up with no session.
+    const signOut = onIdleSignOut;
     clearSession();
-    onIdleSignOut?.();
+    signOut?.();
   }, IDLE_TIMEOUT_MS);
 }
 
