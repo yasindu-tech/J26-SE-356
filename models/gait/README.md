@@ -65,6 +65,8 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
    (an input group or a cohort removed).
 10. **Noise check** — `noise_check.py`: scores on test walks whose joints are
     jittered by multiples of the jitter measured on MediaPipe output.
+11. **SHAP explanations** — `explain_shap.py`: global importance chart and the top
+    three inputs for example walks, from the saved model.
 
 ## Evaluation (CLAUDE.md section 3.4)
 - Headline: balanced accuracy and AUC (one-vs-rest), each with a bootstrap 95%
@@ -92,6 +94,7 @@ python models/gait/src/train_xgboost.py          # train, score, SHAP, save the 
 python models/gait/src/evaluate_cohorts.py       # by cohort, leave-one-cohort-out, ablations
 python models/gait/src/check_mediapipe_mapping.py  # video pipeline on KOA-PD-NM clips
 python models/gait/src/noise_check.py            # joint-noise check (needs the traces above)
+python models/gait/src/explain_shap.py           # SHAP charts of the saved model
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
