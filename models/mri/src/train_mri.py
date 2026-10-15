@@ -182,13 +182,25 @@ def fit_predict_fold(
     return out
 
 
-def fold_strata(data: ModelData, n_splits: int) -> np.ndarray | None:
-    """Also balance the first scanner group across folds, but only when every
-    (label, scanner) cell has at least one person per fold. Otherwise stratify on the label
-    alone: both classes in every test fold matters more than balanced scanners."""
-    batch = next(iter(data.batches.values()))
-    cells = pd.Series(list(zip(data.y, batch, strict=True))).value_counts()
-    return batch if cells.min() >= n_splits else None
+def fold_groups(data: ModelData) -> np.ndarray:
+    """The ComBat batches of every modality, joined into one key per person.
+
+    Folds deal each of these groups evenly (``spread`` in folds.subject_folds), so every
+    training part keeps enough people of every scanner group for ComBat, and no test person
+    comes from a scanner group the training part has not seen. Stratifying on the label
+    alone let a small group cluster in one test fold: a group of 3 could leave 1 person in
+    training, which ComBat refuses.
+    """
+    parts = [np.asarray(b).astype(str) for b in data.batches.values()]
+    key = parts[0]
+    for p in parts[1:]:
+        key = np.char.add(np.char.add(key, "|"), p)
+    return key
+
+
+def make_folds(data: ModelData, labels: np.ndarray, n_splits: int, n_repeats: int, seed: int):
+    """Subject-wise folds with every scanner group spread evenly (see ``fold_groups``)."""
+    return subject_folds(data.subjects, labels, n_splits, n_repeats, seed, spread=fold_groups(data))
 
 
 def run_cv(
@@ -208,9 +220,7 @@ def run_cv(
     """
     labels = data.y if y is None else np.asarray(y)
     run = replace(data, y=labels)
-    folds = subject_folds(
-        run.subjects, labels, n_splits, n_repeats, seed, strata=fold_strata(run, n_splits)
-    )
+    folds = make_folds(run, labels, n_splits, n_repeats, seed)
     probs = {m: np.full((n_repeats, run.n), np.nan) for m in models}
     for i, f in enumerate(folds, 1):
         pred = fit_predict_fold(run, f.train_idx, f.test_idx, models, seed + f.repeat)
@@ -341,9 +351,7 @@ def run_set(
 
     # site gate on out-of-fold harmonised features (one repeat of the same kind of folds;
     # with the same seed this is exactly repeat 0 of the CV above)
-    folds = subject_folds(
-        data.subjects, data.y, n_splits, 1, seed, strata=fold_strata(data, n_splits)
-    )
+    folds = make_folds(data, data.y, n_splits, 1, seed)
     report.split = split_summary(data, folds, n_splits, n_repeats)
     pairs = [(f.train_idx, f.test_idx) for f in folds]
     with rec.step(name, "site_gate"):
@@ -388,7 +396,9 @@ def split_summary(data: ModelData, folds, n_splits: int, n_repeats: int) -> dict
         "train_people": [min(train), max(train)],
         "test_people": [min(test), max(test)],
         "test_pd": [min(test_pd), max(test_pd)],
-        "stratified_by_scanner": fold_strata(data, n_splits) is not None,
+        "min_train_per_scanner_group": min(
+            int(pd.Series(fold_groups(data)[f.train_idx]).value_counts().min()) for f in folds
+        ),
     }
 
 
@@ -513,8 +523,8 @@ def _commit() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # sklearn warns when a stratum is smaller than the number of folds; fold_strata already
-    # handles that case, so the warning is noise here.
+    # sklearn can warn about strata smaller than the number of folds; the folds here are
+    # dealt by scanner group (fold_groups), so the warning is noise.
     warnings.filterwarnings("ignore", message="The least populated class", category=UserWarning)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sets", nargs="+", choices=SETS, help="default: every set with features")
