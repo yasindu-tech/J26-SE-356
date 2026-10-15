@@ -34,6 +34,31 @@ layout.
   never "diagnosis", "positive", or "negative".
 - Low risk renders as *not prioritised*, never *discharged* or *cleared*.
 
+## MRI screen (`pages/MriAnalysis.tsx`)
+
+After sign-in, the MRI tab works like this:
+
+1. **Upload:** choose a zip of one person's DICOM study, then enter age and sex. The zip
+   is sent to the backend only when the clinician presses *Upload and analyse*, which is
+   the explicit send the rule above asks for. The backend deletes the DICOM files once
+   the analysis ends.
+2. **Progress:** the screen polls `GET /api/v1/mri/analyses/{id}` every 3 s and shows the
+   steps: convert, T1, DTI, features, score, explain. DTI can take an hour or more.
+   Earlier analyses are listed on the left.
+3. **Result:** the screen shows the MRI module's output:
+   - which parts (T1/DTI) were used;
+   - the raw model score in log-odds with its 95% interval on an axis whose 0 is the
+     model's boundary (deliberately not a percentage: it is not calibrated, and fusion
+     decides how it is combined);
+   - the features that moved the score most (TreeSHAP);
+   - the harmonised feature vector, with a *Copy as JSON* button for the fusion work;
+   - the series used, with their checks and QC pictures;
+   - the model card.
+
+   If the module abstains, it says why.
+
+Backend setup for this screen is in `services/backend/README.md` (MRI analyses).
+
 ## Setup
 ```bash
 cp .env.example .env   # set VITE_API_BASE_URL if the backend isn't on localhost:8000

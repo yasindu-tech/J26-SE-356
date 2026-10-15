@@ -1,0 +1,23 @@
+.workspace__tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-xl);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.workspace__tab {
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-neutral-600);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.workspace__tab--on {
+  background: var(--color-primary-muted);
+  color: var(--color-primary);
+}
