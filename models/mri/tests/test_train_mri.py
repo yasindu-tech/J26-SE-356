@@ -209,3 +209,25 @@ def test_fold_groups_join_every_modality() -> None:
     d = cohort(n=8)
     d.batches = {"t1": np.array(["A", "B"] * 4), "dti": np.array(["X"] * 4 + ["Y"] * 4)}
     assert list(tm.fold_groups(d)[:2]) == ["A|X", "B|X"]
+
+
+def test_column_combat_cannot_fit_is_left_out_and_reported() -> None:
+    # Real case: pallidum CSF share is 0 for 36 of 37 people, so inside some scanner groups
+    # it has no variance and ComBat refuses the whole fold.
+    d = cohort(n=40, signal=2.0, cols=[*T1_COLS[:5], "R_pallidum_csf_frac"])
+    d.features["R_pallidum_csf_frac"] = 0.0
+    d.features.loc[0, "R_pallidum_csf_frac"] = 0.0015
+    report, probs = tm.run_set(
+        d,
+        n_splits=4,
+        n_repeats=1,
+        n_permutations=3,
+        permutation_repeats=1,
+        gate_permutations=10,
+        n_boot=100,
+    )
+    assert report.dropped_features == {"R_pallidum_csf_frac": 4}  # every fold fit
+    assert not np.isnan(probs["lgbm_t1"]).any()
+    assert "R_pallidum_csf_frac (4)" in tm.markdown(
+        [report], {"time": "t", "commit": "c", "folds": 4, "repeats": 1}
+    )

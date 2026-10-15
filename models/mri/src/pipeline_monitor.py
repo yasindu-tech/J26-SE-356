@@ -413,6 +413,7 @@ function renderExtra(s){
       <div class="kpis">${kp.map(k=>`<div class="kpi"><div class="v">${k[0]}</div><div class="l">${k[1]}</div></div>`).join('')}</div>
       <div class="muted" style="font-size:12px;margin-bottom:10px">Scanner groups used as ComBat batches: ${groups}.
         Every person is scored once per repeat, by models that never saw them.
+        ${Object.keys(r.dropped_features||{}).length ? 'Left out where ComBat could not estimate them (no variance inside a scanner group), fold fits out of '+sp.fits_per_model+': '+Object.entries(r.dropped_features).map(([k,v])=>esc(k)+' ('+v+')').join(', ')+'.' : ''}
         Folds spread every scanner group evenly and balance diagnosis inside it${sp.min_train_per_scanner_group!==undefined?`; fewest training people of one scanner group in any fold: ${sp.min_train_per_scanner_group}`:''}.</div>
       <table><thead><tr><th>Model</th><th>AUC · dot = mean, line = 95% CI, dashed = chance</th><th>AUC mean ± SD</th>
         <th>AUC 95% CI</th><th>Balanced accuracy</th><th>Sensitivity</th><th>Specificity</th><th>PPV at 1% / 2% / 5%</th>
