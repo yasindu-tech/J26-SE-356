@@ -50,6 +50,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 from clip_id import UnparseableClipId, parse_clip_id
 from hubu_fis import HubuFisError, list_videos, pseudonym
 from qc_verdicts import HASH_RE, PLACEHOLDERS, RAW_ID_RE, WORD_RE
@@ -95,7 +96,7 @@ RATER_COLUMNS = (
 )  # fmt: skip
 EXPORT_COLUMNS = (
     "ref", "rater", "set", "n_taps", "tap_frames", "tap_times_s", "n_edge_partials", "confidence",
-    "note", "cell", "weight",
+    "note", "cell", "weight", "window_first", "window_last",
 )  # fmt: skip
 UNREADABLE_COLUMNS = ("ref", "rater", "list", "utc")
 LIST_LIMIT = 12
@@ -561,7 +562,27 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if errors else 0
 
 
-def build_export(out_dir: Path) -> tuple[pd.DataFrame | None, list[str]]:
+def window_bounds(
+    smoothed_dir: Path, refs: Iterable[str]
+) -> tuple[dict[str, tuple[int, int]], list[str]]:
+    """First and last video frame (inclusive) of each clip's smoothed signal, and the refs
+    whose smoothed file is missing or unusable."""
+    bounds: dict[str, tuple[int, int]] = {}
+    missing: list[str] = []
+    for ref in sorted(set(refs)):
+        try:
+            frames = pd.read_parquet(Path(smoothed_dir) / f"{ref}.parquet", columns=["frame"])
+        except (OSError, ValueError, KeyError, pa.ArrowException):
+            missing.append(ref)
+            continue
+        if frames.empty:
+            missing.append(ref)
+            continue
+        bounds[ref] = (int(frames["frame"].iloc[0]), int(frames["frame"].iloc[-1]))
+    return bounds, missing
+
+
+def build_export(out_dir: Path, smoothed_dir: Path) -> tuple[pd.DataFrame | None, list[str]]:
     sel = read_selection(out_dir)
     info = sel.set_index("ref")
     parts, problems = [], []
@@ -583,13 +604,19 @@ def build_export(out_dir: Path) -> tuple[pd.DataFrame | None, list[str]]:
         parts.append(rows)
     if problems:
         return None, problems
-    table = pd.concat(parts, ignore_index=True)[list(EXPORT_COLUMNS)]
+    table = pd.concat(parts, ignore_index=True)
+    bounds, missing = window_bounds(smoothed_dir, table["ref"])
+    if missing:
+        return None, [f"window: {len(missing)} clips have no smoothed file: {_listed(missing)}"]
+    table["window_first"] = table["ref"].map(lambda r: str(bounds[r][0]))
+    table["window_last"] = table["ref"].map(lambda r: str(bounds[r][1]))
+    table = table[list(EXPORT_COLUMNS)]
     return table.sort_values(["set", "rater", "ref"], kind="stable").reset_index(drop=True), []
 
 
 def cmd_export(args: argparse.Namespace) -> int:
     out_dir, docs_dir, _, _ = _paths(args)
-    table, problems = build_export(out_dir)
+    table, problems = build_export(out_dir, Path(args.smoothed_dir or INTERIM_ROOT / "smoothed"))
     if table is None:
         for problem in problems:
             print(f"ERROR: {problem}", file=sys.stderr)
@@ -613,7 +640,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("check", help="validate the selection and the rater files")
     sub.add_parser("export", help="write models/tapping/docs/manual_counts.csv")
     for p in sub.choices.values():
-        for name in ("--out-dir", "--docs-dir", "--summary", "--video-dir"):
+        for name in ("--out-dir", "--docs-dir", "--summary", "--video-dir", "--smoothed-dir"):
             p.add_argument(name, type=Path, default=None)
     return ap
 
@@ -621,8 +648,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     out_dir, docs_dir, summary, _ = _paths(args)
-    if not is_inside(out_dir, INTERIM_ROOT) or not is_inside(summary, INTERIM_ROOT):
-        print("error: --out-dir and --summary must be inside data/interim", file=sys.stderr)
+    smoothed = Path(args.smoothed_dir or INTERIM_ROOT / "smoothed")
+    if not all(is_inside(p, INTERIM_ROOT) for p in (out_dir, summary, smoothed)):
+        print(
+            "error: --out-dir, --summary and --smoothed-dir must be inside data/interim",
+            file=sys.stderr,
+        )
         return 2
     if not is_inside(docs_dir, DOCS_ROOT):
         print("error: --docs-dir must be inside models/tapping/docs", file=sys.stderr)

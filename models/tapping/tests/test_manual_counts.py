@@ -57,7 +57,16 @@ def make_world(root: Path, rejected: int = 1) -> dict[str, object]:
         docs / "qc_retained.csv", index=False
     )
     kept = summary["ref"].tolist()
+    (interim / "smoothed").mkdir()
+    windows = {}
+    for i, ref in enumerate(kept):  # made-up windows: some start late, some end early
+        first, last = i % 4, 599 - i % 7
+        windows[ref] = (first, last)
+        pd.DataFrame({"frame": range(first, last + 1)}).to_parquet(
+            interim / "smoothed" / f"{ref}.parquet"
+        )
     return {
+        "windows": windows,
         "interim": interim,
         "docs": docs,
         "videos": video_dir,
@@ -430,7 +439,7 @@ def test_export_writes_the_committed_table(world: dict[str, object]) -> None:
     assert list(table.columns) == list(mc.EXPORT_COLUMNS)
     assert list(table.columns) == [
         "ref", "rater", "set", "n_taps", "tap_frames", "tap_times_s", "n_edge_partials",
-        "confidence", "note", "cell", "weight",
+        "confidence", "note", "cell", "weight", "window_first", "window_last",
     ]  # fmt: skip
     assert table["set"].value_counts().to_dict() == {"primary": 40, "second": 12, "hard": 4}
     sources = {
@@ -447,10 +456,42 @@ def test_export_writes_the_committed_table(world: dict[str, object]) -> None:
             assert exported.at[ref, "tap_times_s"] == rows.at[ref, "tap_times_s"]
             assert exported.at[ref, "n_taps"] == rows.at[ref, "n_taps"]
     assert table["tap_frames"].nunique() > 20  # not one repeated value
+    windows: dict[str, tuple[int, int]] = world["windows"]  # type: ignore[assignment]
+    for row in table.itertuples(index=False):
+        assert (int(row.window_first), int(row.window_last)) == windows[row.ref]
+    assert table["window_first"].nunique() > 1 and table["window_last"].nunique() > 1
     assert set(table["rater"]) == {"R1", "R2"}
     assert (table.loc[table["set"] != "primary", "weight"] == "").all()
     assert (table.loc[table["set"] == "primary", "weight"] != "").all()
     assert not set(table["ref"]) & set(mc.PRACTICE)
+
+
+def test_export_refuses_when_a_smoothed_file_is_missing(
+    world: dict[str, object], capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = Path(world["out"])  # type: ignore[arg-type]
+    assert mc.main(["select"]) == 0
+    sel = mc.read_selection(out)
+    fill(out, "R1", "main", mc.list_refs(sel, "R1", "main"))
+    fill(out, "R2", "main", mc.list_refs(sel, "R2", "main"))
+    gone = mc.list_refs(sel, "R1", "main")[3]
+    (Path(world["interim"]) / "smoothed" / f"{gone}.parquet").unlink()  # type: ignore[arg-type]
+    assert mc.main(["export"]) == 1
+    captured = capsys.readouterr().err
+    assert "no smoothed file" in captured and gone in captured and "refused" in captured
+    assert not (Path(world["docs"]) / mc.EXPORT_NAME).exists()  # type: ignore[arg-type]
+
+
+def test_window_bounds_are_first_and_last_frame(world: dict[str, object]) -> None:
+    smoothed = Path(world["interim"]) / "smoothed"  # type: ignore[arg-type]
+    refs = list(world["refs"])[:5]  # type: ignore[call-overload]
+    bounds, missing = mc.window_bounds(smoothed, [*refs, "00000000"])
+    assert missing == ["00000000"]
+    assert bounds == {r: world["windows"][r] for r in refs}  # type: ignore[index]
+    pd.DataFrame({"frame": pd.Series([], dtype="int64")}).to_parquet(smoothed / "empty000.parquet")
+    assert mc.window_bounds(smoothed, ["empty000"])[1] == ["empty000"]
+    (smoothed / "bad00000.parquet").write_bytes(b"not parquet")
+    assert mc.window_bounds(smoothed, ["bad00000"])[1] == ["bad00000"]
 
 
 def test_check_finds_a_tampered_selection(
