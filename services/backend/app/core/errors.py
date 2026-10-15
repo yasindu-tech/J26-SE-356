@@ -43,11 +43,32 @@ class NotAuthenticatedError(AppError):
     status_code, code, message = 401, "NOT_AUTHENTICATED", "Not authenticated"
 
 
+class MriAnalysisNotFoundError(AppError):
+    # Also returned for another clinician's analysis, so IDs cannot be probed.
+    status_code, code, message = 404, "MRI_ANALYSIS_NOT_FOUND", "MRI analysis not found"
+
+
+class MriResultNotReadyError(AppError):
+    status_code, code, message = 409, "MRI_RESULT_NOT_READY", "The MRI analysis has not finished"
+
+
+class InvalidUploadError(AppError):
+    status_code, code, message = 400, "INVALID_UPLOAD", "The upload must be a zip of DICOM files"
+
+
+class UploadTooLargeError(AppError):
+    status_code, code, message = 413, "UPLOAD_TOO_LARGE", "The upload is larger than allowed"
+
+
 # Every AppError code, for the parity test against errorCodes.ts.
 ERROR_CODES: tuple[str, ...] = (
     AppError.code,
     InvalidCredentialsError.code,
     InvalidRefreshTokenError.code,
     NotAuthenticatedError.code,
+    MriAnalysisNotFoundError.code,
+    MriResultNotReadyError.code,
+    InvalidUploadError.code,
+    UploadTooLargeError.code,
     "VALIDATION_ERROR",
 )
