@@ -278,11 +278,22 @@ def cross_validate(
     seeds: Sequence[int] | None = None,
     weighted: bool = False,
     params: dict[str, Any] | None = None,
+    test_table: pd.DataFrame | None = None,
 ) -> CVResult:
-    """Fit every model in ``models`` on each training split and predict its test split."""
+    """Fit every model in ``models`` on each training split and predict its test split.
+
+    ``test_table`` (GAIT-20, noise check) replaces the inputs of the *test* rows only: same rows in
+    the same order as ``table``, so every model is still fitted on the clean training rows.
+    """
     unknown = [m for m in models if m not in LEARNERS]
     if unknown:
         raise ValueError(f"unknown models {unknown}")
+    if test_table is not None and not (
+        len(test_table) == len(table)
+        and (test_table["walk"].to_numpy() == table["walk"].to_numpy()).all()
+        and (test_table["subject_key"].to_numpy() == table["subject_key"].to_numpy()).all()
+    ):
+        raise ValueError("test_table must hold the same walks in the same order as table")
     params = XGB_PARAMS if params is None else params
     all_seeds = tuple(sorted(int(s) for s in set(assignments["seed"])))
     seeds = all_seeds if seeds is None else tuple(seeds)
@@ -299,7 +310,8 @@ def cross_validate(
         for k in sorted(set(folds)):
             train_idx = np.flatnonzero(folds != k)
             test_idx = np.flatnonzero(folds == k)
-            train, test = table.iloc[train_idx], table.iloc[test_idx]
+            train = table.iloc[train_idx]
+            test = (table if test_table is None else test_table).iloc[test_idx]
             assert_no_leakage(train, test)
             y_train = y_all[train_idx]
             if set(y_train) != set(gm.CLASSES):
@@ -341,7 +353,6 @@ def summarize(
         for name in gm.METRICS:
             row[name] = point[name]
             row[f"{name}_lo"], row[f"{name}_hi"] = ci[name]
-        row["macro_f1"] = float(np.mean([gm.macro_f1(y, p.argmax(axis=1)) for p in probas]))
         row["bal_acc_seed_sd"] = float(np.std(per_seed, ddof=1)) if len(per_seed) > 1 else 0.0
         row["fold_mean"] = float(folds.mean())
         row["fold_sd"] = float(folds.std(ddof=1)) if len(folds) > 1 else 0.0
@@ -469,14 +480,14 @@ def report(table: pd.DataFrame, result: CVResult, scores: pd.DataFrame, n_boot: 
     )
     print(
         f"{'model':<18}{'balanced accuracy':>26}{'AUC (one-vs-rest)':>26}"
-        f"{'bal.acc subject-wtd':>26}{'macro-F1':>10}"
+        f"{'bal.acc subject-wtd':>26}{'macro-F1':>26}"
     )
     for _, r in scores.iterrows():
         print(
             f"{r['model']:<18}{_ci(r['bal_acc'], r['bal_acc_lo'], r['bal_acc_hi']):>26}"
             f"{_ci(r['auc'], r['auc_lo'], r['auc_hi']):>26}"
             f"{_ci(r['bal_acc_subject'], r['bal_acc_subject_lo'], r['bal_acc_subject_hi']):>26}"
-            f"{r['macro_f1']:>10.3f}"
+            f"{_ci(r['macro_f1'], r['macro_f1_lo'], r['macro_f1_hi']):>26}"
         )
     x = scores.set_index("model").loc["xgboost"]
     print(

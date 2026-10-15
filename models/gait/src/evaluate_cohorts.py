@@ -511,7 +511,6 @@ def score_models(
         for i, name in enumerate(gm.METRICS):
             row[name] = point[name]
             row[f"{name}_lo"], row[f"{name}_hi"] = float(lo[i]), float(hi[i])
-        row["macro_f1"] = float(np.mean([gm.macro_f1(y, p.argmax(axis=1)) for p in probas]))
         rows.append(row)
     return pd.DataFrame(rows), draws
 
@@ -522,7 +521,7 @@ def difference_table(
     pairs: Sequence[tuple[str, str]],
     level: float = 0.95,
 ) -> pd.DataFrame:
-    """Paired differences ``model - versus`` in the four headline scores, with intervals."""
+    """Paired differences ``model - versus`` in the five scores, with intervals."""
     by_model = scores.set_index("model")
     rows = []
     for model, versus in pairs:

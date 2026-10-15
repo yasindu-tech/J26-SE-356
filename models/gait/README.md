@@ -59,10 +59,15 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
    control fails the run if it scores above chance. SHAP is computed on the
    out-of-fold models. A final model fitted on all subjects is saved for the demo;
    it has seen every subject, so its own score is never reported.
+9. **Checks on the score** — `evaluate_cohorts.py`: scores inside each cohort,
+   leave-one-cohort-out (train on three cohorts, test on the fourth) and ablations
+   (an input group or a cohort removed).
+10. **Noise check** — `noise_check.py`: scores on test walks whose joints are
+    jittered by multiples of the jitter measured on MediaPipe output.
 
 ## Evaluation (CLAUDE.md section 3.4)
 - Headline: balanced accuracy and AUC (one-vs-rest), each with a bootstrap 95%
-  CI resampled by subject. Secondary: macro-F1 and the confusion matrix.
+  CI resampled by subject. Secondary: macro-F1 (same interval) and the confusion matrix.
 - Walk-level and subject-weighted scores (PD-GaM is 61% of the walks).
 - Baseline ladder on the same folds: majority class, cohort-only, best single
   feature, logistic regression, XGBoost. Age and sex are not available in CARE-PD.
@@ -74,11 +79,6 @@ balanced accuracy 0.553 (95% CI 0.503–0.602), AUC 0.750 (0.700–0.796); chanc
 0.333. Shuffled labels: 0.328. Cohort only: 0.382. Logistic regression: 0.566, as
 good as XGBoost on these data. Subject-weighted, XGBoost scores 0.506.
 
-**Next (GAIT-20):** per-cohort scores pooled over all folds, leave-one-cohort-out,
-and ablations: without `stride_time_cv`, without `arm_swing_range_norm`, without
-`hip_flexion_range_deg`, without the three joint-angle inputs, without BMCLab,
-without PD-GaM.
-
 ## Run
 ```
 python3.11 -m venv .venv && source .venv/bin/activate
@@ -88,7 +88,9 @@ python models/gait/src/count_labels.py           # label counts per cohort and c
 python models/gait/src/build_feature_table.py    # features of every CARE-PD walk
 python models/gait/src/make_folds.py             # subject-wise folds (prints a fingerprint)
 python models/gait/src/train_xgboost.py          # train, score, SHAP, final model
+python models/gait/src/evaluate_cohorts.py       # by cohort, leave-one-cohort-out, ablations
 python models/gait/src/check_mediapipe_mapping.py  # video pipeline on KOA-PD-NM clips
+python models/gait/src/noise_check.py            # joint-noise check (needs the traces above)
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
@@ -99,7 +101,8 @@ Subject IDs are shown only as short hashes.
   22 of them. Scores vary by about ±0.05 between folds.
 - **Cohort signature.** The features identify the cohort well, while the cohort
   alone predicts the class only a little better than chance. Leave-one-cohort-out
-  tests whether the model transfers.
+  (GAIT-20) shows that transfer to a cohort the model has not seen is weak: balanced
+  accuracy falls by 0.10 against cross-validation.
 - **Frame resolution.** Stride times are whole frames (33–40 ms, about 3% of a
   stride), close to the size of `stride_time_cv` itself.
 - **No demographics.** CARE-PD gives no age, sex or height, so there is no

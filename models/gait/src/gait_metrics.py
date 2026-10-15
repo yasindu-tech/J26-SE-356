@@ -1,29 +1,17 @@
-"""GAIT-19: scores for the severity classifier, with subject-level bootstrap intervals.
+"""Scores for the severity classifier, with subject-level bootstrap intervals (GAIT-19 to 21).
 
-CLAUDE.md section 3.4 sets the headline metrics: balanced accuracy and AUC, each with a bootstrap
-95% CI. Macro-F1 and the confusion matrix are secondary. This module holds those scores so that
-GAIT-19 (training) and GAIT-20 (reports by cohort, ablations) compute them the same way.
+Balanced accuracy and AUC are the headline scores (CLAUDE.md 3.4); macro-F1 gets the same
+interval. GAIT-19 (training) and GAIT-20 (cohorts, ablations, noise) share this code.
 
 Decisions:
 
-1. *The bootstrap resamples subjects, not walks.* A subject has a median of 21 walks, and the
-   walks of one person are not independent, so resampling walks would give intervals that are far
-   too narrow. Each draw picks 109 subjects with replacement and takes all of their walks.
-2. *A score is computed per seed on the pooled out-of-fold predictions, then averaged over seeds.*
-   Every walk is tested once per seed, by a model that never saw its subject. Each bootstrap draw
-   repeats the same recipe, so the interval covers the averaging too. Probabilities are never
-   averaged across seeds: that would blend models trained on different people.
-3. *Walk-level and subject-weighted scores.* PD-GaM is 61% of the walks, so a walk-level score is
-   mostly a PD-GaM score. The subject-weighted score gives every subject the same total weight
-   (weight 1 / walks of the subject).
-4. *AUC is one-vs-rest, macro-averaged over the classes present;* ties count half. It is computed
-   here (a sort and a cumulative sum) instead of calling scikit-learn in the bootstrap loop,
-   which keeps 1,000 draws to seconds. ``tests/test_gait_metrics.py`` checks it against
-   scikit-learn, with weights and ties.
-5. *Several models can share one bootstrap* (``bootstrap_draws``, GAIT-20). Every draw is applied
-   to all models, so the difference between two models is paired: the interval of a difference
-   is usually narrower than the two separate intervals suggest, and it is the one that says whether
-   a model, or an ablation, really changed the score.
+1. The bootstrap resamples subjects, not walks: the walks of one person are not independent.
+2. A score is computed per seed on the pooled out-of-fold predictions, then averaged over seeds.
+   Probabilities are never averaged across seeds.
+3. Walk-level and subject-weighted scores: PD-GaM is 61% of the walks.
+4. AUC (one-vs-rest, macro) and macro-F1 are written with sorts and counts, not scikit-learn,
+   to keep 1,000 bootstrap draws fast; the tests check them against scikit-learn.
+5. Several models can share one bootstrap (``bootstrap_draws``), so differences are paired.
 """
 
 from __future__ import annotations
@@ -32,10 +20,9 @@ import warnings
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from sklearn.metrics import f1_score
 
 CLASSES = (0, 1, 2)
-METRICS = ("bal_acc", "auc", "bal_acc_subject", "auc_subject")
+METRICS = ("bal_acc", "auc", "bal_acc_subject", "auc_subject", "macro_f1")
 
 
 def weighted_auc(positive: np.ndarray, score: np.ndarray, weight: np.ndarray) -> float:
@@ -77,7 +64,18 @@ def balanced_accuracy(y: np.ndarray, pred: np.ndarray, weight: np.ndarray | None
 
 
 def macro_f1(y: np.ndarray, pred: np.ndarray) -> float:
-    return float(f1_score(y, pred, labels=list(CLASSES), average="macro", zero_division=0))
+    """Unweighted mean of the per-class F1 over the three classes (0 for a class never met).
+
+    Written with counts, not scikit-learn, because the bootstrap calls it for every draw, seed
+    and model; ``tests/test_gait_metrics.py`` checks it against ``f1_score``.
+    """
+    n = len(CLASSES)
+    tp = np.bincount(y[y == pred], minlength=n).astype(float)
+    n_true = np.bincount(y, minlength=n).astype(float)
+    n_pred = np.bincount(pred, minlength=n).astype(float)
+    denominator = n_true + n_pred
+    f1 = np.divide(2 * tp, denominator, out=np.zeros(n), where=denominator > 0)
+    return float(f1.mean())
 
 
 def confusion(y: np.ndarray, pred: np.ndarray) -> np.ndarray:
@@ -90,7 +88,7 @@ def confusion(y: np.ndarray, pred: np.ndarray) -> np.ndarray:
 def metric_values(
     y: np.ndarray, probas: Sequence[np.ndarray], subject_weight: np.ndarray
 ) -> dict[str, float]:
-    """The four headline scores: each is computed per seed, then averaged over the seeds.
+    """The five scores: each is computed per seed, then averaged over the seeds.
 
     ``probas`` holds one (walks x 3) out-of-fold probability array per seed.
     ``subject_weight`` is 1 / (walks of the walk's subject).
@@ -103,6 +101,7 @@ def metric_values(
         rows["auc"].append(macro_auc(y, proba, ones))
         rows["bal_acc_subject"].append(balanced_accuracy(y, pred, subject_weight))
         rows["auc_subject"].append(macro_auc(y, proba, subject_weight))
+        rows["macro_f1"].append(macro_f1(y, pred))
     return {
         m: float(np.nanmean(v)) if not np.all(np.isnan(v)) else float("nan")
         for m, v in rows.items()
@@ -131,7 +130,7 @@ def bootstrap_draws(
     n_boot: int = 1000,
     seed: int = 0,
 ) -> dict[str, np.ndarray]:
-    """The four headline scores of every model in every bootstrap draw (``n_boot`` x 4).
+    """The scores of every model in every bootstrap draw (``n_boot`` x ``len(METRICS)``).
 
     Each draw resamples whole subjects and applies the same resample to every model, so draws
     of different models are paired. ``models`` maps a name to its out-of-fold probabilities, one
@@ -170,7 +169,7 @@ def bootstrap_intervals(
     seed: int = 0,
     level: float = 0.95,
 ) -> dict[str, tuple[float, float]]:
-    """Percentile intervals for the four headline scores, resampling whole subjects."""
+    """Percentile intervals for every score in ``METRICS``, resampling whole subjects."""
     if n_boot < 1:
         raise ValueError("n_boot must be at least 1")
     if not 0 < level < 1:

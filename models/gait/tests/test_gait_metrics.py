@@ -210,3 +210,61 @@ def test_bootstrap_draws_reject_bad_arguments() -> None:
         gm.bootstrap_draws(y, {"a": [proba]}, subjects, n_boot=0)
     with pytest.raises(ValueError, match="level"):
         gm.percentile_interval(np.zeros((3, 2)), level=0.0)
+
+
+# --------------------------------------------------------------------------- macro-F1 (GAIT-21)
+def test_macro_f1_is_scored_per_seed_and_averaged() -> None:
+    y, p1, subjects = subject_problem(n_subjects=25, seed=6)
+    _, p2 = random_problem(len(y), seed=8)
+    got = gm.metric_values(y, [p1, p2], gm.subject_weights(subjects))["macro_f1"]
+    want = np.mean([f1_score(y, p.argmax(axis=1), average="macro") for p in (p1, p2)])
+    assert got == pytest.approx(want, abs=1e-12)
+
+
+def test_macro_f1_interval_is_a_subject_bootstrap_of_scikit_learn_f1() -> None:
+    """Written again with scikit-learn only: one draw at a time, whole subjects."""
+    y, proba, subjects = subject_problem(n_subjects=30, seed=3)
+    _, other = random_problem(len(y), seed=2)
+    probas = [proba, other]
+    got = gm.bootstrap_intervals(y, probas, subjects, n_boot=80, seed=7)["macro_f1"]
+    keys = np.unique(subjects)
+    groups = [np.flatnonzero(subjects == k) for k in keys]
+    rng = np.random.default_rng(7)
+    values = []
+    for _ in range(80):
+        idx = np.concatenate([groups[i] for i in rng.integers(0, len(groups), len(groups))])
+        values.append(
+            np.mean(
+                [
+                    f1_score(
+                        y[idx],
+                        p[idx].argmax(axis=1),
+                        labels=[0, 1, 2],
+                        average="macro",
+                        zero_division=0,
+                    )
+                    for p in probas
+                ]
+            )
+        )
+    lo, hi = np.percentile(values, [2.5, 97.5])
+    assert got == (pytest.approx(lo, abs=1e-12), pytest.approx(hi, abs=1e-12))
+
+
+def test_the_original_four_scores_are_unchanged_by_the_fifth() -> None:
+    """The first four columns are what GAIT-19 reported; macro-F1 is appended after them."""
+    assert gm.METRICS[:4] == ("bal_acc", "auc", "bal_acc_subject", "auc_subject")
+    assert gm.METRICS[4] == "macro_f1"
+
+
+def test_macro_f1_matches_scikit_learn_including_missing_classes() -> None:
+    rng = np.random.default_rng(11)
+    for _ in range(40):
+        n = int(rng.integers(5, 60))
+        y = rng.integers(0, 3, n)
+        pred = rng.integers(0, 3, n)
+        want = f1_score(y, pred, labels=[0, 1, 2], average="macro", zero_division=0)
+        assert gm.macro_f1(y, pred) == pytest.approx(want, abs=1e-12)
+    only_zero = np.zeros(6, dtype=int)  # classes 1 and 2 never occur and are never predicted
+    assert gm.macro_f1(only_zero, only_zero) == pytest.approx(1 / 3)
+    assert gm.macro_f1(np.array([0, 1, 2]), np.array([1, 2, 0])) == 0.0
