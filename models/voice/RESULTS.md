@@ -265,4 +265,151 @@ resample has no false positives). It is a sanity check, not the headline.
 - Calibrated probabilities assume a 50/50 prior. They are not the chance that
   a screened person has PD; use the PPV table for that.
 - The quality gate checks the feature row only. PP1 has no audio, so recording
-  quality (clipping, noise, length) is not checked yet.
+  quality (clipping, noise, length) is not checked yet. The raw-audio pipeline
+  below adds that check for uploaded files.
+
+## Raw-audio data and quality gate (VOICE-20, VOICE-21)
+
+Reproduce (counts: seconds; features: about 15 seconds):
+
+```bash
+python scripts/count_voice_audio.py
+python models/voice/src/build_audio_table.py
+```
+
+Figshare "Voice Samples for Patients with Parkinson's Disease and Healthy
+Controls" (CC BY 4.0): one telephone "aaah" per person, WAV, 8 kHz mono.
+81 people: 40 PD (mean age 67.0, range 43.1–85.3) and 41 healthy (mean age
+47.7, range 18.0–79.0). **The healthy group is about 19 years younger**, so every
+result below is checked against age.
+
+| Quality gate | Recordings | Refused | Share refused |
+|---|---|---|---|
+| PD | 40 | 3 (clipping) | 0.075 |
+| Healthy | 41 | 1 (background noise) | 0.024 |
+
+77 people pass (37 PD / 40 healthy). Refusals are reported, not dropped
+silently; the gate refused PD recordings more often here, which is checked
+again as more data arrives.
+
+## UCI-470 model on uploaded audio (VOICE-25)
+
+Reproduce (about 35 seconds):
+
+```bash
+python models/voice/src/uci_transfer.py
+```
+
+The full UCI-470 model uses 24 features, and 22 of them (15 TQWT, 6 MFCC,
+1 wavelet) cannot be recomputed from audio. So a UCI-470 model was retrained on
+the **16 Baseline measures that Praat recomputes** (`uci_praat.py`: period mean
+and SD, 5 jitter, 6 shimmer, 3 harmonicity), with the same honest pipeline
+(person-level nested 5-fold CV, in-fold selection, k ∈ {4, 8, 16}, seed 42),
+then tested on Figshare, which it never saw.
+
+| Test | AUC [95% CI] | Balanced accuracy | Sensitivity | Specificity |
+|---|---|---|---|---|
+| UCI-470 CV, L1 logistic, 16 Praat measures | 0.731 [0.657, 0.801] | 0.652 [0.588, 0.721] | 0.601 [0.529, 0.667] | 0.703 [0.596, 0.820] |
+| UCI-470 CV, LightGBM, 16 Praat measures | 0.771 [0.706, 0.833] | 0.680 [0.611, 0.745] | 0.766 [0.705, 0.823] | 0.594 [0.472, 0.705] |
+| **Final L1 model on Figshare (external)** | **0.479 [0.351, 0.609]** | 0.430 [0.363, 0.498] | 0.811 [0.684, 0.921] | **0.050 [0.000, 0.128]** |
+| Same, ages 43.1–79.0 only (34 PD / 23 healthy) | 0.432 [0.278, 0.597] | – | – | – |
+
+Label-permutation control on UCI-470 (10 shuffles, L1): mean AUC 0.481, max
+0.545, pass. External PPV at 1% prevalence: 0.009 [0.007, 0.010].
+
+| Unit check: healthy median, Figshare ÷ UCI-470 | Ratio |
+|---|---|
+| period mean / SD | 1.16 / 1.32 |
+| shimmer (6 measures) | 1.25 – 1.49 |
+| harmonicity (3 measures) | 0.85 – 1.86 |
+| **jitter local / absolute / rap / ppq5 / ddp** | **4.34 / 5.44 / 16.57 / 6.64 / 16.95** |
+
+### What it says
+
+- **On UCI-470 itself, 16 Praat measures carry real signal**: AUC 0.731 (L1)
+  and 0.771 (LightGBM), below the 752-feature model's 0.812, as expected.
+- **The UCI-470 model does not transfer to telephone audio.** On Figshare it
+  scores at chance (0.479; CI includes 0.5). That is a cross-cohort drop of
+  about 0.25 AUC.
+- **Jitter is the reason it fails in a harmful direction.** Jitter from Figshare
+  is 4 to 17 times higher than UCI-470's, so the model reads every voice as
+  PD-like: it flags 95% of healthy people (specificity 0.050). Even inside
+  UCI-470, rap jitter is only 0.15 times local jitter, where Praat usually gives
+  about half, so the dataset's jitter was probably measured with other settings.
+- **Explanations warn about it** (decision D13): jitter is never compared with
+  UCI-470 voices for new audio, and a result that relies on it says so.
+- Post hoc (decided after seeing the result, so exploratory only): the same
+  model without the 5 jitter measures still scored at chance on Figshare
+  (L1 0.466, LightGBM 0.555; CIs include 0.5).
+
+### Caveats
+
+- One external dataset, telephone quality. The transfer may be better on
+  studio-quality audio closer to UCI-470's; there is no such dataset here yet.
+- The UCI-470 audio is not public, so our Praat measures cannot be checked
+  against theirs person by person; the unit check compares medians only.
+
+## Raw-audio model (VOICE-22 to VOICE-24) — provisional, Figshare only
+
+Reproduce (about 1 minute for the evidence, 15 seconds for the model):
+
+```bash
+python models/voice/src/audio_evidence.py
+python models/voice/src/audio_model.py
+```
+
+56 named features from `audio_features.extract_voice_features` (Praat via
+parselmouth, librosa), on the 77 quality-passed Figshare people. Same honest
+pipeline: person-level nested 5-fold CV, in-fold scaling and selection
+(k ∈ {5, 10, 20, 40}), seed 42, person-level bootstrap CIs (1000 resamples).
+
+| Rung | AUC [95% CI] | Balanced accuracy [95% CI] | Sensitivity | Specificity |
+|---|---|---|---|---|
+| age + sex only | 0.866 [0.769, 0.948] | 0.830 [0.741, 0.910] | 0.811 [0.676, 0.923] | 0.850 [0.727, 0.950] |
+| best single voice feature | 0.661 [0.542, 0.790] | 0.597 [0.490, 0.707] | 0.595 [0.438, 0.750] | 0.600 [0.450, 0.762] |
+| L1 logistic, voice | 0.710 [0.586, 0.824] | 0.674 [0.571, 0.779] | 0.649 [0.483, 0.800] | 0.700 [0.553, 0.833] |
+| LightGBM, voice | 0.716 [0.591, 0.828] | 0.651 [0.543, 0.766] | 0.703 [0.533, 0.857] | 0.600 [0.460, 0.756] |
+
+| Rung | PPV at 1% | PPV at 2% | PPV at 5% |
+|---|---|---|---|
+| age + sex only | 0.052 [0.028, 0.142] | 0.099 [0.056, 0.251] | 0.222 [0.132, 0.464] |
+| best single voice feature | 0.015 [0.010, 0.026] | 0.029 [0.019, 0.051] | 0.073 [0.048, 0.121] |
+| L1 logistic, voice | 0.021 [0.013, 0.040] | 0.042 [0.026, 0.078] | 0.102 [0.066, 0.178] |
+| LightGBM, voice | 0.017 [0.012, 0.030] | 0.035 [0.024, 0.059] | 0.085 [0.059, 0.139] |
+
+| Paired AUC difference (same resampled people) | Value [95% CI] |
+|---|---|
+| best single voice feature − age + sex | −0.204 [−0.363, −0.042] |
+| L1 logistic, voice − age + sex | −0.155 [−0.302, −0.009] |
+| LightGBM, voice − age + sex | −0.149 [−0.304, −0.005] |
+
+| Age-matched check (ages 43.1–79.0; 34 PD / 23 healthy) | AUC [95% CI] |
+|---|---|
+| age + sex only | 0.751 [0.590, 0.887] |
+| L1 logistic, voice | 0.701 [0.556, 0.838] |
+| LightGBM, voice | 0.730 [0.592, 0.860] |
+
+Label-permutation control (10 shuffles): L1 mean 0.492 (max 0.637), LightGBM
+mean 0.478 (max 0.612): both pass.
+
+### What it says
+
+- **Age beats voice on this dataset.** Age and sex alone reach AUC 0.866; both
+  voice models score lower, and the paired CIs exclude zero. A headline number
+  from this dataset that ignored age would be measuring age.
+- **Voice still carries some signal beyond age.** Within the age range both
+  classes share, the voice models keep AUC 0.70–0.73 with lower bounds above
+  0.5, and shuffled labels score at chance.
+- Trained and tested on the same kind of audio, this model works far better on
+  telephone recordings than the UCI-470 model does (0.710 vs 0.479), but it has
+  not been tested on any other dataset.
+
+### Caveats
+
+- One dataset, telephone audio, 77 people: provisional.
+- The final model's hold-out check (16 people, 8 PD / 8 healthy) gave AUC
+  0.547 [0.250, 0.857]: far too few people to tell anything. The CV numbers
+  above are the evidence.
+- The dataset gate (within-dataset AUC) cannot run with one dataset.
+- The age-matched check still contains an age difference inside the range; it
+  is a sanity check, not an age adjustment.
