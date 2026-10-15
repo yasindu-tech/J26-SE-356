@@ -110,3 +110,52 @@ def test_one_row_per_person_always_gets_both_classes_in_every_test_fold() -> Non
     for seed in range(50):
         for f in subject_folds(subjects, y, n_splits=5, n_repeats=1, seed=seed):
             assert sorted(np.bincount(y[f.test_idx])) == [3, 3]
+
+
+# --- spread: every group dealt evenly over the folds ----------------------------------
+
+
+def test_spread_caps_each_group_per_test_fold() -> None:
+    subjects = np.array([f"s{i:02d}" for i in range(37)])
+    y = np.array([i % 2 for i in range(37)])
+    group = np.array(["A"] * 12 + ["B"] * 9 + ["C"] * 7 + ["D"] * 6 + ["E"] * 3)
+    for seed in range(25):
+        folds = subject_folds(subjects, y, n_splits=5, n_repeats=2, seed=seed, spread=group)
+        for f in folds:
+            in_test = {g: int((group[f.test_idx] == g).sum()) for g in set(group)}
+            cap = {"A": 3, "B": 2, "C": 2, "D": 2, "E": 1}  # ceil(size / 5)
+            assert all(in_test[g] <= cap[g] for g in cap)
+            assert set(y[f.test_idx]) == {0, 1}
+            assert not unseen_test_groups(f, group)
+
+
+def test_spread_keeps_rows_of_one_person_together() -> None:
+    subjects = np.repeat([f"s{i}" for i in range(20)], 2)
+    y = np.repeat([i % 2 for i in range(20)], 2)
+    group = np.repeat(["A", "B"] * 10, 2)
+    for f in subject_folds(subjects, y, n_splits=4, n_repeats=2, spread=group):
+        assert not set(subjects[f.train_idx]) & set(subjects[f.test_idx])
+
+
+def test_spread_differs_between_repeats_and_repeats_with_seed() -> None:
+    subjects = [f"s{i}" for i in range(30)]
+    y = [i % 2 for i in range(30)]
+    group = ["A", "B", "C"] * 10
+    a = subject_folds(subjects, y, n_splits=5, n_repeats=2, seed=3, spread=group)
+    b = subject_folds(subjects, y, n_splits=5, n_repeats=2, seed=3, spread=group)
+    assert all(np.array_equal(x.test_idx, z.test_idx) for x, z in zip(a, b, strict=True))
+    first = {tuple(f.test_idx) for f in a if f.repeat == 0}
+    second = {tuple(f.test_idx) for f in a if f.repeat == 1}
+    assert first != second
+
+
+def test_spread_and_strata_together_fail() -> None:
+    with pytest.raises(SplitError, match="not both"):
+        subject_folds(
+            ["a", "b", "c", "d"], [0, 1, 0, 1], 2, 1, strata=list("xyxy"), spread=list("xyxy")
+        )
+
+
+def test_spread_group_must_be_constant_per_person() -> None:
+    with pytest.raises(SplitError, match="different spread groups"):
+        subject_folds(["a", "a", "b", "c"], [0, 0, 1, 1], 2, 1, spread=["x", "y", "x", "y"])

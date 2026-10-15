@@ -1,6 +1,10 @@
+import sys
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 # The fallback JWT secret. Fine for environment="dev" (local dev/tests
 # without a .env file); the app refuses to start with it in any other
@@ -28,6 +32,16 @@ class Settings(BaseSettings):
 
     # Never "*" — a browser preflight only succeeds for an origin listed here.
     cors_origins: list[str] = ["http://localhost:5173"]
+
+    # MRI analyses (models/mri/src/predict_scan.py runs as a separate process).
+    # Uploads and working files live under data/ (git-ignored, never committed);
+    # the uploaded DICOM files are deleted as soon as the analysis ends.
+    mri_work_dir: Path = REPO_ROOT / "data" / "backend" / "mri"
+    mri_python: str = sys.executable  # interpreter with the models/mri dependencies
+    mri_script: Path = REPO_ROOT / "models" / "mri" / "src" / "predict_scan.py"
+    mri_max_upload_mb: int = 4096
+    mri_eddy_threads: int = 2
+    mri_timeout_hours: float = 6.0
 
 
 @lru_cache

@@ -56,7 +56,14 @@ class RunRecorder:
         events_url: str | None = None,
         clock: Any = time.time,
         jobs: int = 1,
+        hash_ids: bool = True,
     ) -> None:
+        # hash_ids=False is for runs whose items are not people (e.g. the training sets
+        # "t1", "dti", "paired"). A purely numeric ID looks like a PPMI subject ID, so it is
+        # refused there rather than written out in clear.
+        if not hash_ids and any(str(s).isdigit() for s in subjects):
+            raise ValueError("hash_ids=False is only for non-person items, not subject IDs")
+        self._id = pseudonym if hash_ids else str
         self.pipeline = pipeline
         self.clock = clock
         self.events_url = events_url
@@ -67,7 +74,7 @@ class RunRecorder:
         self._last_note: dict[tuple[str, str], float] = {}
         self._emit(
             "run_start",
-            subjects=[pseudonym(s) for s in subjects],
+            subjects=[self._id(s) for s in subjects],
             steps=steps,
             jobs=jobs,
         )
@@ -95,12 +102,12 @@ class RunRecorder:
                 log.warning("could not send event to %s: %s", self.events_url, exc)
 
     def subject_start(self, subject_id: str) -> None:
-        self._emit("subject_start", subject=pseudonym(subject_id))
+        self._emit("subject_start", subject=self._id(subject_id))
 
     @contextmanager
     def step(self, subject_id: str, step: str) -> Iterator[None]:
         """Time one step. Records a failure, then re-raises, if the step raises."""
-        sid = pseudonym(subject_id)
+        sid = self._id(subject_id)
         self._emit("step_start", subject=sid, step=step)
         start = self.clock()
         try:
@@ -124,7 +131,7 @@ class RunRecorder:
         text = " ".join(text.split())[:120]
         if not text or "/" in text or "\\" in text:
             return
-        key = (pseudonym(subject_id), step)
+        key = (self._id(subject_id), step)
         now = self.clock()
         if now - self._last_note.get(key, -1e9) < every_s:
             return
@@ -141,11 +148,19 @@ class RunRecorder:
         clean = {k: v for k, v in (metrics or {}).items() if isinstance(v, int | float)}
         self._emit(
             "subject_end",
-            subject=pseudonym(subject_id),
+            subject=self._id(subject_id),
             status=status,
             reason=reason,
             metrics=clean,
         )
+
+    def report(self, subject_id: str, data: dict[str, Any]) -> None:
+        """Attach a result summary to one item (used by model training).
+
+        Only aggregate numbers belong here (counts, metrics, control results), never
+        per-person rows. ``data`` must be JSON-serialisable.
+        """
+        self._emit("report", subject=self._id(subject_id), data=data)
 
     def run_end(self) -> None:
         self._emit("run_end")
@@ -165,6 +180,9 @@ class NullRecorder:
         return
 
     def subject_end(self, *args: Any, **kwargs: Any) -> None:  # noqa: D102
+        return
+
+    def report(self, *args: Any, **kwargs: Any) -> None:  # noqa: D102
         return
 
     def run_end(self) -> None:  # noqa: D102
@@ -261,6 +279,7 @@ def fold_events(events: list[dict], now: float, expected: dict[str, float] | Non
                     "reason": "",
                     "metrics": {},
                     "note": "",
+                    "report": None,
                 }
                 state["order"].append(s)
             continue
@@ -281,6 +300,8 @@ def fold_events(events: list[dict], now: float, expected: dict[str, float] | Non
             sub["step"], sub["step_started"] = None, None
             if not e["ok"]:
                 sub["failed_step"] = e["step"]
+        elif kind == "report":
+            sub["report"] = e.get("data")
         elif kind == "subject_end":
             sub.update(
                 state="done" if e["status"] == "ok" else "failed",
@@ -378,3 +399,132 @@ def fold_events(events: list[dict], now: float, expected: dict[str, float] | Non
         "steps": step_stats,
         "subjects": subs,
     }
+
+
+# ---------------------------------------------------------------- all runs together
+
+STOPPED_REASON = "run stopped before this item finished"
+
+
+def _run_start(events: list[dict]) -> dict | None:
+    return next((e for e in events if e.get("type") == "run_start"), None)
+
+
+def combine_runs(
+    runs: list[list[dict]], now: float, expected: dict[str, float] | None = None
+) -> dict:
+    """One view over every run of a pipeline, instead of only the newest run.
+
+    Each person (or training set) appears once, with the result of the most recent run that
+    actually worked on them. Someone queued in the newest run but not reached yet keeps
+    their earlier result. Someone a run started but never finished, in a run that is not the
+    newest, is shown as failed with ``STOPPED_REASON``.
+
+    A rerun that only reused earlier outputs (every step under ``CACHED_BELOW_S``) keeps
+    the step times of the earlier run that really did the work, marked ``reused``.
+
+    Live parts (status, elapsed time, time left, who is running now) come from the newest
+    run. Step averages use every run.
+    """
+    runs = sorted((r for r in runs if _run_start(r)), key=lambda r: _run_start(r)["t"])
+    if not runs:
+        return fold_events([], now, expected) | {"runs_combined": 0, "latest_run": None}
+    latest = fold_events(runs[-1], now, expected)
+
+    order: list[str] = []
+    steps: list[str] = []
+    chosen: dict[str, tuple[str, list[dict]]] = {}  # item -> (run id, its events)
+    real_steps: dict[str, dict[str, float]] = {}  # item -> step -> last real duration
+    for i, events in enumerate(runs):
+        start = _run_start(events)
+        steps += [s for s in start["steps"] if s not in steps]
+        order += [s for s in start["subjects"] if s not in order]
+        per_item: dict[str, list[dict]] = {}
+        for e in events:
+            if "subject" in e:
+                per_item.setdefault(e["subject"], []).append(e)
+        for item, evs in per_item.items():
+            for e in evs:
+                if e["type"] == "step_end" and e.get("ok") and e["seconds"] >= CACHED_BELOW_S:
+                    real_steps.setdefault(item, {})[e["step"]] = e["seconds"]
+            if i < len(runs) - 1 and not any(e["type"] == "subject_end" for e in evs):
+                evs = [
+                    *evs,
+                    {
+                        "t": evs[-1]["t"],
+                        "type": "subject_end",
+                        "subject": item,
+                        "status": "failed",
+                        "reason": STOPPED_REASON,
+                    },
+                ]
+            chosen[item] = (start["run"], evs)
+
+    first = _run_start(runs[0])
+    merged = [
+        {
+            "t": first["t"],
+            "run": "all",
+            "pipeline": first["pipeline"],
+            "type": "run_start",
+            "subjects": order,
+            "steps": steps,
+            "jobs": latest.get("jobs", 1),
+        }
+    ]
+    merged += sorted((e for _, evs in chosen.values() for e in evs), key=lambda e: e["t"])
+    if latest["status"] == "finished":
+        merged.append({"t": max(e["t"] for e in runs[-1]), "type": "run_end"})
+    state = fold_events(merged, now, expected)
+    for sub in state["subjects"]:
+        sub["from_run"] = chosen[sub["id"]][0] if sub["id"] in chosen else None
+        real = real_steps.get(sub["id"], {})
+        quick = sub["durations"] and all(v < CACHED_BELOW_S for v in sub["durations"].values())
+        if sub["state"] == "done" and quick and real:
+            sub["durations"] = {k: real.get(k, v) for k, v in sub["durations"].items()}
+            sub["reused"] = True
+    state.update(
+        run="all",
+        status=latest["status"],
+        started=latest["started"],
+        elapsed_seconds=latest["elapsed_seconds"],
+        eta_seconds=latest["eta_seconds"],
+        runs_combined=len(runs),
+        latest_run=latest["run"],
+    )
+    return state
+
+
+def training_history(runs: list[list[dict]]) -> list[dict]:
+    """Every training result ever reported, newest first (one row per run and set)."""
+    rows = []
+    for events in runs:
+        for e in events:
+            if e.get("type") != "report" or not isinstance(e.get("data"), dict):
+                continue
+            r = e["data"]
+            main = next(
+                (m for m in r.get("models", []) if m.get("model") == r.get("main_model")), None
+            )
+            if main is None:
+                continue
+            rows.append(
+                {
+                    "run": e["run"],
+                    "t": e["t"],
+                    "set": r.get("name"),
+                    "valid": r.get("valid"),
+                    "n": r.get("n"),
+                    "n_pd": r.get("n_pd"),
+                    "n_features": r.get("n_features"),
+                    "split": r.get("split", {}),
+                    "model": main["model"],
+                    "auc_mean": main.get("auc_mean"),
+                    "auc_ci": main.get("auc_ci"),
+                    "bal_acc_mean": main.get("bal_acc_mean"),
+                    "sensitivity": main.get("sensitivity"),
+                    "specificity": main.get("specificity"),
+                    "auc_vs_age_sex": main.get("auc_vs_age_sex"),
+                }
+            )
+    return sorted(rows, key=lambda r: r["t"], reverse=True)

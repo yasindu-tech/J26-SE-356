@@ -6,7 +6,17 @@ import json
 from pathlib import Path
 
 import pytest
-from progress import NullRecorder, RunRecorder, fold_events, latest_run, pseudonym, read_events
+from progress import (
+    STOPPED_REASON,
+    NullRecorder,
+    RunRecorder,
+    combine_runs,
+    fold_events,
+    latest_run,
+    pseudonym,
+    read_events,
+    training_history,
+)
 
 
 class Clock:
@@ -196,3 +206,106 @@ def test_reused_steps_still_count_as_done(tmp_path: Path) -> None:
         clock.now += 0.1
     st = fold_events(read_events(rec.path), now=clock.now)
     assert st["steps"][0]["done"] == 1 and st["steps"][0]["avg_seconds"] is None
+
+
+def test_report_is_attached_to_its_item(tmp_path: Path) -> None:
+    rec = RunRecorder("train", ["t1", "dti"], ["cv"], runs_dir=tmp_path, hash_ids=False)
+    rec.subject_start("t1")
+    rec.report("t1", {"n": 59, "valid": True})
+    rec.subject_end("t1", "ok", metrics={"auc": 0.61})
+    state = fold_events(read_events(rec.path), 2000.0)
+    t1, dti = state["subjects"]
+    assert (t1["id"], t1["report"], t1["metrics"]) == (
+        "t1",
+        {"n": 59, "valid": True},
+        {"auc": 0.61},
+    )
+    assert dti["report"] is None
+
+
+def test_clear_ids_refused_for_subject_like_ids(tmp_path: Path) -> None:
+    # hash_ids=False exists for training sets; a numeric PPMI-style ID must never go out clear
+    with pytest.raises(ValueError, match="non-person"):
+        RunRecorder("train", ["t1", "100890"], ["cv"], runs_dir=tmp_path, hash_ids=False)
+
+
+def test_null_recorder_accepts_reports() -> None:
+    NullRecorder().report("t1", {"n": 1})
+
+
+def _run(tmp_path: Path, t0: float, subjects: list[str]) -> tuple[RunRecorder, Clock]:
+    clock = Clock()
+    clock.now = t0
+    return RunRecorder("dti", subjects, ["eddy"], runs_dir=tmp_path, clock=clock), clock
+
+
+def _finish(rec: RunRecorder, clock: Clock, sid: str, status: str = "ok") -> None:
+    rec.subject_start(sid)
+    with rec.step(sid, "eddy"):
+        clock.now += 600
+    rec.subject_end(sid, status, "" if status == "ok" else "bad scan")
+
+
+def test_combined_view_latest_result_wins_and_earlier_people_stay(tmp_path: Path) -> None:
+    a, ca = _run(tmp_path, 1000.0, ["1", "2", "3"])
+    _finish(a, ca, "1")
+    _finish(a, ca, "2", "failed")
+    a.subject_start("3")  # run A was stopped while working on 3 (no run_end)
+    b, cb = _run(tmp_path, 9000.0, ["2", "4"])
+    _finish(b, cb, "2")  # rerun fixed 2
+    b.subject_start("4")  # 4 is being processed right now
+    state = combine_runs([read_events(a.path), read_events(b.path)], cb.now + 5)
+    by_id = {s["id"]: s for s in state["subjects"]}
+    assert (state["total"], state["done"], state["failed"], state["running"]) == (4, 2, 1, 1)
+    assert by_id[pseudonym("2")]["state"] == "done"
+    assert by_id[pseudonym("2")]["from_run"] == b.run_id
+    assert by_id[pseudonym("1")]["from_run"] == a.run_id
+    assert by_id[pseudonym("3")]["reason"] == STOPPED_REASON
+    assert (state["run"], state["latest_run"], state["status"]) == ("all", b.run_id, "running")
+    assert state["runs_combined"] == 2
+    assert state["steps"][0]["avg_seconds"] == 600.0
+
+
+def test_queued_in_newest_run_keeps_earlier_result(tmp_path: Path) -> None:
+    a, ca = _run(tmp_path, 1000.0, ["1"])
+    _finish(a, ca, "1")
+    a.run_end()
+    b, _ = _run(tmp_path, 9000.0, ["1", "2"])  # 1 is queued again but not reached yet
+    state = combine_runs([read_events(a.path), read_events(b.path)], 9001.0)
+    by_id = {s["id"]: s for s in state["subjects"]}
+    assert by_id[pseudonym("1")]["state"] == "done"
+    assert by_id[pseudonym("2")]["state"] == "waiting"
+
+
+def test_combined_view_with_no_runs() -> None:
+    state = combine_runs([], 1.0)
+    assert (state["total"], state["runs_combined"], state["latest_run"]) == (0, 0, None)
+
+
+def test_training_history_lists_every_reported_set(tmp_path: Path) -> None:
+    rows = []
+    for t0 in (1000.0, 2000.0):
+        clock = Clock()
+        clock.now = t0
+        rec = RunRecorder("train", ["t1"], ["cv"], runs_dir=tmp_path, clock=clock, hash_ids=False)
+        model = {"model": "lgbm_t1", "auc_mean": t0 / 4000, "auc_ci": [0.4, 0.8]}
+        rec.report("t1", {"name": "t1", "main_model": "lgbm_t1", "models": [model], "valid": True})
+        rows.append(read_events(rec.path))
+    history = training_history(rows)
+    assert [h["auc_mean"] for h in history] == [0.5, 0.25]  # newest first
+    assert history[0]["set"] == "t1" and history[0]["valid"] is True
+
+
+def test_reused_rerun_keeps_the_real_step_times(tmp_path: Path) -> None:
+    a, ca = _run(tmp_path, 1000.0, ["1"])
+    _finish(a, ca, "1")  # eddy really ran: 600 s
+    a.run_end()
+    b, cb = _run(tmp_path, 9000.0, ["1"])
+    b.subject_start("1")
+    with b.step("1", "eddy"):
+        cb.now += 0.2  # outputs existed, step reused
+    b.subject_end("1", "ok")
+    b.run_end()
+    sub = combine_runs([read_events(a.path), read_events(b.path)], 9999.0)["subjects"][0]
+    assert (sub["state"], sub["from_run"], sub["reused"]) == ("done", b.run_id, True)
+    assert sub["durations"] == {"eddy": 600}
