@@ -444,6 +444,8 @@ def predict_scan(
         "model_version": None,
         "model_set": None,
         "inputs": {"t1": {"found": False}, "dti": {"found": False}},
+        # which MRI parts produced the score (the availability mask fusion needs)
+        "availability": {"t1": False, "dti": False},
         "validation": {"usable": False, "problems": []},
         "feature_vector": None,
         "score": None,
@@ -564,6 +566,7 @@ def predict_scan(
         assert isinstance(parts, dict)
         result["validation"]["usable"] = True
         result["model_set"] = chosen.name
+        result["availability"] = {g: g in chosen.modalities for g in ("t1", "dti")}
         result["model_card"] = chosen.card
         cols = chosen.final.columns
         result["feature_vector"] = {

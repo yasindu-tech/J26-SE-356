@@ -167,6 +167,7 @@ def test_full_run_gives_vector_score_explanation_and_card(monkeypatch, tmp_path,
         "Not a diagnosis."
     )
     assert r["inputs"]["t1"]["found"] and not r["inputs"]["dti"]["found"]
+    assert r["availability"] == {"t1": True, "dti": False}
     assert "no DTI series" in " ".join(r["validation"]["problems"])
     done = json.loads(status.read_text())["done"]
     assert done == ["convert", "t1", "dti", "features", "score", "explain"]
