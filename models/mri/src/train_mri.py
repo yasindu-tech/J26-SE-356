@@ -53,6 +53,7 @@ import subprocess
 import sys
 import time
 import warnings
+from collections import Counter
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -62,6 +63,7 @@ from folds import assert_subject_disjoint, subject_folds
 from harmonise import (
     ComBat,
     ControlResult,
+    harmonisable_columns,
     label_permutation_control,
     out_of_fold_harmonise,
     site_predictability,
@@ -135,19 +137,31 @@ def best_single_feature(x: pd.DataFrame, y: np.ndarray) -> str:
 
 
 def harmonise_fold(
-    data: ModelData, train: np.ndarray, test: np.ndarray
+    data: ModelData, train: np.ndarray, test: np.ndarray, dropped: Counter | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """ComBat per modality, fitted on the training people only, applied to the test people."""
+    """ComBat per modality, fitted on the training people only, applied to the test people.
+
+    Columns ComBat cannot estimate from this fold's training people (no variance inside a
+    scanner group, e.g. pallidum CSF share is 0 for almost everyone) are left out of this
+    fold and counted in ``dropped``. The check uses the training rows only.
+    """
     cov = data.covariates()
     tr_parts, te_parts = [], []
     for g, cols in data.groups.items():
-        x = data.features[cols].to_numpy(dtype=float)
+        x_all = data.features[cols].to_numpy(dtype=float)
         b = data.batches[g]
+        keep = harmonisable_columns(x_all[train], b[train], cov[train])
+        if dropped is not None:
+            dropped.update(c for c, k in zip(cols, keep, strict=True) if not k)
+        kept = [c for c, k in zip(cols, keep, strict=True) if k]
+        if not kept:
+            raise RuntimeError(f"no {g} feature can be harmonised in this fold")
+        x = x_all[:, keep]
         combat = ComBat().fit(x[train], b[train], cov[train])
         tr_parts.append(
-            pd.DataFrame(combat.transform(x[train], b[train], cov[train]), columns=cols)
+            pd.DataFrame(combat.transform(x[train], b[train], cov[train]), columns=kept)
         )
-        te_parts.append(pd.DataFrame(combat.transform(x[test], b[test], cov[test]), columns=cols))
+        te_parts.append(pd.DataFrame(combat.transform(x[test], b[test], cov[test]), columns=kept))
     return pd.concat(tr_parts, axis=1), pd.concat(te_parts, axis=1)
 
 
@@ -157,11 +171,12 @@ def fit_predict_fold(
     test: np.ndarray,
     models: dict[str, list[str] | None],
     seed: int,
+    dropped: Counter | None = None,
 ) -> dict[str, np.ndarray]:
     """Test-set probabilities of every model, all learned from the training people only."""
     assert_subject_disjoint(train, test, data.subjects)
     y_tr = data.y[train]
-    h_tr, h_te = harmonise_fold(data, train, test)
+    h_tr, h_te = harmonise_fold(data, train, test, dropped)
     out = {}
     for name, groups in models.items():
         if groups is None:
@@ -172,6 +187,7 @@ def fit_predict_fold(
             continue
         cols = [c for g in groups for c in data.groups[g]]
         check_mri_features(cols)
+        cols = [c for c in cols if c in h_tr.columns]  # minus columns ComBat could not fit
         if name == "best_single":
             col = best_single_feature(h_tr[cols], y_tr)
             m = _logistic().fit(h_tr[[col]].to_numpy(), y_tr)
@@ -211,6 +227,7 @@ def run_cv(
     n_repeats: int = 10,
     seed: int = 0,
     on_fold=None,
+    dropped: Counter | None = None,
 ) -> dict[str, np.ndarray]:
     """Out-of-fold probabilities, shape (repeats, people), for every model.
 
@@ -223,7 +240,7 @@ def run_cv(
     folds = make_folds(run, labels, n_splits, n_repeats, seed)
     probs = {m: np.full((n_repeats, run.n), np.nan) for m in models}
     for i, f in enumerate(folds, 1):
-        pred = fit_predict_fold(run, f.train_idx, f.test_idx, models, seed + f.repeat)
+        pred = fit_predict_fold(run, f.train_idx, f.test_idx, models, seed + f.repeat, dropped)
         for m, p in pred.items():
             probs[m][f.repeat, f.test_idx] = p
         if on_fold is not None:
@@ -267,6 +284,8 @@ class SetReport:
     site_gate: dict[str, dict] = field(default_factory=dict)
     permutation: dict | None = None
     split: dict = field(default_factory=dict)
+    # feature -> number of fold fits it was left out of (ComBat could not estimate it)
+    dropped_features: dict[str, int] = field(default_factory=dict)
 
     @property
     def valid(self) -> bool:
@@ -326,6 +345,7 @@ def run_set(
     rec = recorder or NullRecorder()
     name = data.name
     models = models_for(data)
+    dropped: Counter = Counter()
     with rec.step(name, "cv"):
         probs = run_cv(
             data,
@@ -335,6 +355,7 @@ def run_set(
             n_repeats,
             seed,
             on_fold=lambda i, n: rec.note(name, "cv", f"fold {i} of {n}", every_s=2.0),
+            dropped=dropped,
         )
     with rec.step(name, "metrics"):
         report = SetReport(
@@ -353,11 +374,18 @@ def run_set(
     # with the same seed this is exactly repeat 0 of the CV above)
     folds = make_folds(data, data.y, n_splits, 1, seed)
     report.split = split_summary(data, folds, n_splits, n_repeats)
+    report.dropped_features = dict(sorted(dropped.items()))
     pairs = [(f.train_idx, f.test_idx) for f in folds]
     with rec.step(name, "site_gate"):
         for g, cols in data.groups.items():
             x = data.features[cols].to_numpy(dtype=float)
-            oof, _ = out_of_fold_harmonise(x, data.batches[g], pairs, data.covariates())
+            cov = data.covariates()
+            # the gate scores the columns the models can use: those ComBat can fit in every fold
+            usable = np.logical_and.reduce(
+                [harmonisable_columns(x[tr], data.batches[g][tr], cov[tr]) for tr, _ in pairs]
+            )
+            x = x[:, usable]
+            oof, _ = out_of_fold_harmonise(x, data.batches[g], pairs, cov)
             gate = site_prediction_gate(
                 oof, data.batches[g], gate_permutations, seed=seed, raise_on_fail=False
             )
@@ -434,6 +462,13 @@ def markdown(reports: list[SetReport], settings: dict) -> str:
             f"{r.n} people ({r.n_pd} PD, {r.n - r.n_pd} control), {r.n_features} features. "
             f"Scanner groups: {r.scanner_groups}"
         )
+        if r.dropped_features:
+            fits = r.split.get("fits_per_model", "?") if r.split else "?"
+            lines.append(
+                "Left out where ComBat could not estimate them (no variance inside a scanner "
+                "group of the training part), as fold fits out of "
+                f"{fits}: " + ", ".join(f"{k} ({v})" for k, v in r.dropped_features.items())
+            )
         if r.split:
             sp = r.split
             lines.append(

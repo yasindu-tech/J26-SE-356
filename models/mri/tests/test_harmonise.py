@@ -12,6 +12,7 @@ from harmonise import (
     PermutationControlError,
     SiteGateError,
     UnseenBatchError,
+    harmonisable_columns,
     label_permutation_control,
     out_of_fold_harmonise,
     site_predictability,
@@ -194,3 +195,15 @@ def test_permutation_keeps_one_label_per_person() -> None:
     for yy in seen:
         for s in "abcd":
             assert len(set(yy[subjects == s])) == 1
+
+
+def test_unharmonisable_columns_are_found_and_combat_would_refuse_them() -> None:
+    rng = np.random.default_rng(0)
+    batch = np.array(["A"] * 10 + ["B"] * 10)
+    x = rng.normal(size=(20, 5))
+    x[:, 1] = 0.0  # constant everywhere
+    x[:10, 2] = 0.0  # no variance inside scanner A (like pallidum CSF share)
+    assert list(harmonisable_columns(x, batch)) == [True, False, False, True, True]
+    with pytest.raises(HarmonisationError):
+        ComBat().fit(x, batch)
+    ComBat().fit(x[:, harmonisable_columns(x, batch)], batch)  # the usable part fits
