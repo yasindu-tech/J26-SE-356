@@ -15,6 +15,7 @@ to the latest run only, or to one earlier run.
     /dti    the same for DTI
     /t1features  T1 feature extraction (one row of numbers per person)
     /dtifeatures DTI feature extraction
+    /predict     single uploads scored by predict_scan.py (the app's MRI path)
     /train       model training: how the people were split, every model's metrics with
                  95% CIs, and the two mandatory controls (train_mri.py)
 
@@ -56,16 +57,20 @@ from progress import (
     training_history,
 )
 
-PIPELINES = ("t1", "dti", "t1features", "dtifeatures", "train")
+PIPELINES = ("t1", "dti", "t1features", "dtifeatures", "train", "predict")
 NAMES = {
     "t1": "T1 pipeline",
     "dti": "DTI pipeline",
     "t1features": "T1 features",
     "dtifeatures": "DTI features",
     "train": "Model training",
+    "predict": "Scan scoring",
 }
 # what one row of a run is: a person for the pipelines, a training set for training
-UNITS = {p: ("Person", "People") for p in PIPELINES} | {"train": ("Set", "Training sets")}
+UNITS = {p: ("Person", "People") for p in PIPELINES} | {
+    "train": ("Set", "Training sets"),
+    "predict": ("Upload", "Uploads"),
+}
 SAFE_ID = re.compile(r"^[a-z0-9_]{1,64}$")
 
 STEP_INFO = {
@@ -99,6 +104,14 @@ STEP_INFO = {
         "deepgrey": ("Deep grey matter", "Mean MD in the 8 regions used for T1."),
         "whole": ("Whole white matter", "Median FA and MD over all labelled white matter."),
     },
+    "predict": {
+        "convert": ("Convert", "dcm2niix on the upload; series sorted into T1 and DTI by content."),
+        "t1": ("T1 pipeline", "N4, skull removal, alignment and tissue labels, with checks."),
+        "dti": ("DTI pipeline", "Brain mask, eddy, FA and MD maps, alignment, with checks."),
+        "features": ("Features", "The same feature code as training."),
+        "score": ("Score", "Frozen ComBat and LightGBM from the model bundle, 95% interval."),
+        "explain": ("Explain", "Exact TreeSHAP contribution of every feature."),
+    },
     "train": {
         "cv": (
             "Cross-validate",
@@ -116,7 +129,7 @@ STEP_INFO = {
         ),
     },
 }
-NEXT_STAGES = ["Explain (SHAP)", "Predict a new scan"]
+NEXT_STAGES = ["Fusion with gait, finger tapping and voice"]
 
 
 def state_for(pipeline: str, runs_dir: Path, run: str | None = None) -> dict:
@@ -551,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     server.daemon_threads = True
     shown = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     print(
-        f"MRI pipeline dashboard: http://{shown}:{args.port}   (pages: /t1 /dti /t1features /dtifeatures /train, Ctrl+C)"
+        f"MRI pipeline dashboard: http://{shown}:{args.port}   (pages: /t1 /dti /t1features /dtifeatures /train /predict, Ctrl+C)"
     )
     with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()
