@@ -56,7 +56,14 @@ class RunRecorder:
         events_url: str | None = None,
         clock: Any = time.time,
         jobs: int = 1,
+        hash_ids: bool = True,
     ) -> None:
+        # hash_ids=False is for runs whose items are not people (e.g. the training sets
+        # "t1", "dti", "paired"). A purely numeric ID looks like a PPMI subject ID, so it is
+        # refused there rather than written out in clear.
+        if not hash_ids and any(str(s).isdigit() for s in subjects):
+            raise ValueError("hash_ids=False is only for non-person items, not subject IDs")
+        self._id = pseudonym if hash_ids else str
         self.pipeline = pipeline
         self.clock = clock
         self.events_url = events_url
@@ -67,7 +74,7 @@ class RunRecorder:
         self._last_note: dict[tuple[str, str], float] = {}
         self._emit(
             "run_start",
-            subjects=[pseudonym(s) for s in subjects],
+            subjects=[self._id(s) for s in subjects],
             steps=steps,
             jobs=jobs,
         )
@@ -95,12 +102,12 @@ class RunRecorder:
                 log.warning("could not send event to %s: %s", self.events_url, exc)
 
     def subject_start(self, subject_id: str) -> None:
-        self._emit("subject_start", subject=pseudonym(subject_id))
+        self._emit("subject_start", subject=self._id(subject_id))
 
     @contextmanager
     def step(self, subject_id: str, step: str) -> Iterator[None]:
         """Time one step. Records a failure, then re-raises, if the step raises."""
-        sid = pseudonym(subject_id)
+        sid = self._id(subject_id)
         self._emit("step_start", subject=sid, step=step)
         start = self.clock()
         try:
@@ -124,7 +131,7 @@ class RunRecorder:
         text = " ".join(text.split())[:120]
         if not text or "/" in text or "\\" in text:
             return
-        key = (pseudonym(subject_id), step)
+        key = (self._id(subject_id), step)
         now = self.clock()
         if now - self._last_note.get(key, -1e9) < every_s:
             return
@@ -141,11 +148,19 @@ class RunRecorder:
         clean = {k: v for k, v in (metrics or {}).items() if isinstance(v, int | float)}
         self._emit(
             "subject_end",
-            subject=pseudonym(subject_id),
+            subject=self._id(subject_id),
             status=status,
             reason=reason,
             metrics=clean,
         )
+
+    def report(self, subject_id: str, data: dict[str, Any]) -> None:
+        """Attach a result summary to one item (used by model training).
+
+        Only aggregate numbers belong here (counts, metrics, control results), never
+        per-person rows. ``data`` must be JSON-serialisable.
+        """
+        self._emit("report", subject=self._id(subject_id), data=data)
 
     def run_end(self) -> None:
         self._emit("run_end")
@@ -165,6 +180,9 @@ class NullRecorder:
         return
 
     def subject_end(self, *args: Any, **kwargs: Any) -> None:  # noqa: D102
+        return
+
+    def report(self, *args: Any, **kwargs: Any) -> None:  # noqa: D102
         return
 
     def run_end(self) -> None:  # noqa: D102
@@ -261,6 +279,7 @@ def fold_events(events: list[dict], now: float, expected: dict[str, float] | Non
                     "reason": "",
                     "metrics": {},
                     "note": "",
+                    "report": None,
                 }
                 state["order"].append(s)
             continue
@@ -281,6 +300,8 @@ def fold_events(events: list[dict], now: float, expected: dict[str, float] | Non
             sub["step"], sub["step_started"] = None, None
             if not e["ok"]:
                 sub["failed_step"] = e["step"]
+        elif kind == "report":
+            sub["report"] = e.get("data")
         elif kind == "subject_end":
             sub.update(
                 state="done" if e["status"] == "ok" else "failed",

@@ -196,3 +196,28 @@ def test_reused_steps_still_count_as_done(tmp_path: Path) -> None:
         clock.now += 0.1
     st = fold_events(read_events(rec.path), now=clock.now)
     assert st["steps"][0]["done"] == 1 and st["steps"][0]["avg_seconds"] is None
+
+
+def test_report_is_attached_to_its_item(tmp_path: Path) -> None:
+    rec = RunRecorder("train", ["t1", "dti"], ["cv"], runs_dir=tmp_path, hash_ids=False)
+    rec.subject_start("t1")
+    rec.report("t1", {"n": 59, "valid": True})
+    rec.subject_end("t1", "ok", metrics={"auc": 0.61})
+    state = fold_events(read_events(rec.path), 2000.0)
+    t1, dti = state["subjects"]
+    assert (t1["id"], t1["report"], t1["metrics"]) == (
+        "t1",
+        {"n": 59, "valid": True},
+        {"auc": 0.61},
+    )
+    assert dti["report"] is None
+
+
+def test_clear_ids_refused_for_subject_like_ids(tmp_path: Path) -> None:
+    # hash_ids=False exists for training sets; a numeric PPMI-style ID must never go out clear
+    with pytest.raises(ValueError, match="non-person"):
+        RunRecorder("train", ["t1", "100890"], ["cv"], runs_dir=tmp_path, hash_ids=False)
+
+
+def test_null_recorder_accepts_reports() -> None:
+    NullRecorder().report("t1", {"n": 1})
