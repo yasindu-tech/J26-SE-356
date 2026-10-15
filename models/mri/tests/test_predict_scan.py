@@ -32,7 +32,12 @@ def write_series(folder: Path, stem: str, shape, desc: str, model: str, bvals=No
     img = nib.Nifti1Image(np.zeros(shape, dtype=np.float32), np.eye(4))
     path = folder / f"{stem}.nii.gz"
     nib.save(img, str(path))
-    meta = {"SeriesDescription": desc, "SeriesNumber": int(stem[1]), "ManufacturerModelName": model}
+    # the key dcm2niix really writes (BIDS spelling, with an s)
+    meta = {
+        "SeriesDescription": desc,
+        "SeriesNumber": int(stem[1]),
+        "ManufacturersModelName": model,
+    }
     (folder / f"{stem}.json").write_text(json.dumps(meta))
     if bvals is not None:
         (folder / f"{stem}.bval").write_text(" ".join(map(str, bvals)))
@@ -191,3 +196,14 @@ def test_missing_age_or_sex_abstains(tmp_path, trained) -> None:
     assert r["status"] == "abstained" and "age and sex" in r["abstain_reason"]
     r = ps.predict_scan(tmp_path, 60.0, "X", tmp_path / "w", b)
     assert r["status"] == "abstained"
+
+
+def test_scanner_model_read_from_either_sidecar_spelling(tmp_path: Path) -> None:
+    bids = write_series(tmp_path, "s2_MPRAGE", (10, 10, 10), "MPRAGE", "TrioTim")
+    assert ps.classify(bids).model == "TrioTim"
+    old = write_series(tmp_path / "old", "s2_MPRAGE", (10, 10, 10), "MPRAGE", "x")
+    meta_path = old.with_name("s2_MPRAGE.json")
+    meta = json.loads(meta_path.read_text())
+    meta["ManufacturerModelName"] = meta.pop("ManufacturersModelName").replace("x", "Prisma")
+    meta_path.write_text(json.dumps(meta))
+    assert ps.classify(old).model == "Prisma"
