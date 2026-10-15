@@ -5,7 +5,11 @@ The T1 and DTI pipelines write a progress event for every person and step
 browser the moment it changes (Server-Sent Events, no page refresh).
 
 Pages:
-    /       overview of both pipelines
+    /       overview of every pipeline
+
+Every page combines all runs by default: each person (or training set) appears once, with
+the result of the most recent run that worked on them. The run menu on each page switches
+to the latest run only, or to one earlier run.
     /t1     T1 pipeline: counts, current person and step with a live timer,
             time per step, estimated time left, and every person's row
     /dti    the same for DTI
@@ -15,7 +19,7 @@ Pages:
                  95% CIs, and the two mandatory controls (train_mri.py)
 
 API (used by the pages, also handy for other tools):
-    GET  /api/state?pipeline=t1[&run=<id>]   current state as JSON
+    GET  /api/state?pipeline=t1[&run=latest|<id>] state as JSON (default: all runs combined)
     GET  /api/runs?pipeline=t1               list of runs
     GET  /api/stream?pipeline=t1             live updates (Server-Sent Events)
     POST /api/events                         receive events from a pipeline on another
@@ -42,7 +46,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from progress import RUNS_DIR, expected_step_seconds, fold_events, latest_run, read_events
+from progress import (
+    RUNS_DIR,
+    combine_runs,
+    expected_step_seconds,
+    fold_events,
+    latest_run,
+    read_events,
+    training_history,
+)
 
 PIPELINES = ("t1", "dti", "t1features", "dtifeatures", "train")
 NAMES = {
@@ -108,15 +120,23 @@ NEXT_STAGES = ["Explain (SHAP)", "Predict a new scan"]
 
 
 def state_for(pipeline: str, runs_dir: Path, run: str | None = None) -> dict:
-    """Live state of one run (the latest, unless a run ID is given)."""
-    path = runs_dir / f"{run}.jsonl" if run else latest_run(pipeline, runs_dir)
+    """State shown for a pipeline.
+
+    run=None      every run combined: each person once, with their most recent result
+    run="latest"  only the newest run
+    run=<id>      only that run
+    """
     # typical step times from every run of this pipeline, including the current one
     history = [read_events(p) for p in sorted(runs_dir.glob(f"{pipeline}_*.jsonl"))]
     expected = expected_step_seconds(history)
-    if path is None or not path.exists():
-        st = fold_events([], time.time(), expected)
+    if run is None:
+        st = combine_runs(history, time.time(), expected)
     else:
-        st = fold_events(read_events(path), time.time(), expected)
+        path = latest_run(pipeline, runs_dir) if run == "latest" else runs_dir / f"{run}.jsonl"
+        events = read_events(path) if path is not None and path.exists() else []
+        st = fold_events(events, time.time(), expected)
+    if pipeline == "train":
+        st["history"] = training_history(history)
     st["pipeline"] = pipeline
     st["step_info"] = {k: {"label": v[0], "explain": v[1]} for k, v in STEP_INFO[pipeline].items()}
     return st
@@ -218,7 +238,8 @@ def page(title: str, active: str, body: str, script: str) -> str:
 
 
 OVERVIEW_BODY = """<h1>MRI pipeline</h1>
-<div class="sub">T1 and DTI scans are cleaned in separate pipelines, turned into features, then used to train and test the model.</div>
+<div class="sub">T1 and DTI scans are cleaned in separate pipelines, turned into features, then used to train and test the model.
+Every card combines all runs: each person counts once, with their most recent result.</div>
 <div class="cards" id="cards"></div>
 <div class="panel next" style="margin-top:16px"><h2><span>Combined (next stages)</span><span class="muted">not started</span></h2>
 <div class="flow" id="next"></div></div>"""
@@ -231,7 +252,7 @@ const S = {};
 function card(p, s){
   const now = s.current ? `${s.current.id} · ${label(s, s.current.step||'')}` : (s.status==='finished'?'finished':'idle');
   return `<a href="/${p}" class="panel" style="display:block;color:inherit">
-   <h2><span>${NAMES[p]}</span><span class="muted">${s.status}</span></h2>
+   <h2><span>${NAMES[p]}</span><span class="muted">${s.runs_combined||0} run${s.runs_combined===1?'':'s'} · latest ${s.status}</span></h2>
    ${bar(s)}<div class="kpis" style="margin-top:12px">
    <div class="kpi"><div class="v">${s.done}/${s.total}</div><div class="l">done</div></div>
    <div class="kpi"><div class="v" style="color:var(--red)">${s.failed}</div><div class="l">failed</div></div>
@@ -267,11 +288,15 @@ const P = __P__, NAME = __NAME__, UNIT = __UNIT__; let S = null, filter = 'all',
 document.getElementById('title').textContent = NAME;
 async function loadRuns(){ const r = await (await fetch('/api/runs?pipeline='+P)).json();
   const sel = document.getElementById('runsel');
-  sel.innerHTML = '<option value="">latest</option>' + r.map(x=>`<option ${x===run?'selected':''}>${x}</option>`).join('');
+  sel.innerHTML = `<option value="">all runs combined</option><option value="latest" ${run==='latest'?'selected':''}>latest run only</option>`
+    + r.map(x=>`<option value="${x}" ${x===run?'selected':''}>${runDate(x)} (${x})</option>`).join('');
   sel.onchange = () => { location.search = sel.value ? '?run='+sel.value : ''; }; }
+function runDate(id){ const m = /_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/.exec(id||''); return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : (id||''); }
 function render(){
   if(!S) return; const s = S;
-  document.getElementById('runinfo').textContent = s.run ? `${s.run} · ${s.status}` : 'No run yet. Start the pipeline script.';
+  document.getElementById('runinfo').textContent = !s.run ? 'No run yet. Start the pipeline script.'
+    : s.run==='all' ? `All ${s.runs_combined} runs combined: each ${UNIT.toLowerCase()} once, with their most recent result · latest run ${runDate(s.latest_run)} is ${s.status}`
+    : `${runDate(s.run)} (${s.run}) · ${s.status}`;
   const k = [['Total',s.total],['Done',s.done,'var(--green)'],['Failed',s.failed,'var(--red)'],
     ['Running',s.running,'var(--yellow)'],['Waiting',s.waiting],['Elapsed',fmt(s.elapsed_seconds)],
     ['Avg / '+UNIT.toLowerCase(),fmt(s.avg_seconds_per_subject)],['Est. time left',fmt(s.eta_seconds)]];
@@ -305,15 +330,18 @@ function render(){
   document.getElementById('tabs').innerHTML = Object.entries(counts).map(([n,v])=>
     `<button class="${filter===n?'on':''}" onclick="filter='${n}';render()">${n} (${v})</button>`).join('');
   document.getElementById('thead').innerHTML = `<tr><th>${UNIT}</th><th>Status</th><th>Step</th>`+
-    s.steps.map(x=>`<th>${label(s,x.step)}</th>`).join('')+`<th>Total</th><th>Checks</th><th>Reason</th></tr>`;
+    s.steps.map(x=>`<th>${label(s,x.step)}</th>`).join('')+`<th>Total</th><th>Checks</th><th>Reason</th>`+
+    (s.run==='all' ? '<th>Result from run</th>' : '')+`</tr>`;
   const rows = s.subjects.filter(p=> filter==='all' || p.state===filter);
   document.getElementById('tbody').innerHTML = rows.map(p=>{
-    const total = p.started ? ((p.ended||Date.now()/1000) - p.started) : null;
+    const total = p.reused ? Object.values(p.durations).reduce((x,y)=>x+y,0)
+      : (p.started ? ((p.ended||Date.now()/1000) - p.started) : null);
     const m = Object.entries(p.metrics||{}).map(([a,b])=>`${a.replace(/_/g,' ')}: ${Math.round(b*1000)/1000}`).join('<br>');
     return `<tr><td>${p.id}</td><td><span class="badge ${p.state}">${p.state}</span></td>
      <td>${p.step? label(s,p.step) : (p.failed_step? '<span class="reason">'+label(s,p.failed_step)+'</span>' : '')}</td>`+
      s.steps.map(x=>`<td class="num">${p.durations[x.step]!==undefined?fmt(p.durations[x.step]):''}</td>`).join('')+
-     `<td class="num">${total!==null?fmt(total):''}</td><td class="muted">${m}</td><td class="reason">${p.reason||''}</td></tr>`; }).join('');
+     `<td class="num">${total!==null?fmt(total):''}</td><td class="muted">${m}</td><td class="reason">${p.reason||''}</td>`+
+     (s.run==='all' ? `<td class="muted">${p.from_run?runDate(p.from_run):''}${p.reused?'<br>(reused earlier outputs)':''}</td>` : '')+`</tr>`; }).join('');
   if (typeof renderExtra === 'function') renderExtra(s);
 }
 setInterval(()=>{ const d=(Date.now()-(window.tick0||Date.now()))/1000;
@@ -338,11 +366,24 @@ function aucBar(m){ const lo=0.3, hi=1, X=v=>Math.max(0,Math.min(100,100*(v-lo)/
    <div style="position:absolute;left:${X(m.auc_ci[0])}%;width:${X(m.auc_ci[1])-X(m.auc_ci[0])}%;top:6px;height:2px;background:var(--muted)"></div>
    <div style="position:absolute;left:calc(${X(m.auc_mean)}% - 5px);top:2px;width:10px;height:10px;border-radius:50%;background:var(--blue)"></div></div>`; }
 function verdict(ok, yes, no){ return `<span class="badge ${ok?'done':'failed'}">${ok?yes:no}</span>`; }
+function historyTable(s){
+  const h = s.history||[]; if(!h.length) return '';
+  return `<div class="panel"><h2><span>All training runs</span><span class="muted">newest first · main model of each set</span></h2>
+   <table><thead><tr><th>Run</th><th>Set</th><th>People</th><th>Split</th><th>Model</th><th>AUC (95% CI)</th>
+   <th>Balanced accuracy</th><th>Sens.</th><th>Spec.</th><th>AUC vs age + sex</th><th>Controls</th></tr></thead><tbody>`+
+   h.map(r=>{ const v=r.auc_vs_age_sex, sp=r.split||{};
+     return `<tr><td>${runDate(r.run)}</td><td>${esc(r.set)}</td><td class="num">${r.n} (${r.n_pd} PD)</td>
+      <td class="num">${sp.folds||'–'}×${sp.repeats||'–'}</td><td>${esc(MODEL_INFO[r.model]||r.model)}</td>
+      <td class="num">${f2(r.auc_mean)} (${r.auc_ci?f2(r.auc_ci[0])+'–'+f2(r.auc_ci[1]):'–'})</td>
+      <td class="num">${pc(r.bal_acc_mean)}</td><td class="num">${pc(r.sensitivity)}</td><td class="num">${pc(r.specificity)}</td>
+      <td class="num">${v?(v[0]>=0?'+':'')+f2(v[0]):'–'}</td><td>${verdict(r.valid,'valid','INVALID')}</td></tr>`; }).join('')+
+   `</tbody></table></div>`;
+}
 function renderExtra(s){
   const el = document.getElementById('extra');
   const sets = s.subjects.filter(p=>p.report);
-  if(!sets.length){ el.innerHTML = s.run ? '<div class="panel muted">Results appear here when the first set finishes.</div>'
-    : '<div class="panel muted">No training run yet. Start it with: python models/mri/src/train_mri.py</div>'; return; }
+  if(!sets.length){ el.innerHTML = (s.run ? '<div class="panel muted">Results appear here when the first set finishes.</div>'
+    : '<div class="panel muted">No training run yet. Start it with: python models/mri/src/train_mri.py</div>') + historyTable(s); return; }
   el.innerHTML = sets.map(p=>{ const r = p.report, sp = r.split||{};
     const main = r.models.find(m=>m.model===r.main_model) || r.models[r.models.length-1];
     const groups = Object.entries(r.scanner_groups).map(([g,c])=>`${esc(g)}: `+
@@ -368,7 +409,7 @@ function renderExtra(s){
     const pm = r.permutation ? `<div>Label permutation (${esc(r.permutation.model)}): shuffled diagnoses score
       ${pc(r.permutation.score)} balanced accuracy; limit ${pc(r.permutation.threshold)}
       ${verdict(r.permutation.passed,'pass','FAIL')}</div>` : '';
-    return `<div class="panel"><h2><span>Results · set "${esc(r.name)}"</span>${verdict(r.valid,'VALID','INVALID: do not quote')}</h2>
+    return `<div class="panel"><h2><span>Results · set "${esc(r.name)}"${p.from_run?` <span class="muted" style="font-weight:400">· run ${runDate(p.from_run)}</span>`:''}</span>${verdict(r.valid,'VALID','INVALID: do not quote')}</h2>
       <div class="kpis">${kp.map(k=>`<div class="kpi"><div class="v">${k[0]}</div><div class="l">${k[1]}</div></div>`).join('')}</div>
       <div class="muted" style="font-size:12px;margin-bottom:10px">Scanner groups used as ComBat batches: ${groups}.
         Every person is scored once per repeat, by models that never saw them.
@@ -379,7 +420,7 @@ function renderExtra(s){
       <div style="margin-top:12px;font-size:13px;line-height:1.9">${gates}${pm}</div>
       <div class="muted" style="font-size:11px;margin-top:6px">Balanced accuracy, sensitivity and specificity use a 0.5
         threshold. PPV is at screening prevalence, not the 50/50 research set. Screening and triage only, not diagnosis.</div></div>`;
-  }).join('');
+  }).join('') + historyTable(s);
 }
 """
 
@@ -406,7 +447,9 @@ def make_handler(
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             pipe = q.get("pipeline", "")
             run = q.get("run") or None
-            if run is not None and (not SAFE_ID.match(run) or not run.startswith(pipe + "_")):
+            if run not in (None, "latest") and (
+                not SAFE_ID.match(run) or not run.startswith(pipe + "_")
+            ):
                 return self._json({"error": "bad run id"}, 400)
             if url.path == "/":
                 html = page(
