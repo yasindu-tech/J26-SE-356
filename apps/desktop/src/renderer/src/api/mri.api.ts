@@ -5,9 +5,10 @@ import type {
   MriAnalysisStatus,
   MriResult,
 } from "../mri/mriTypes";
-import { ApiError, apiFetch, requestHeaders, toApiError } from "./client";
+import { ApiError, apiFetch, refreshAccessToken, requestHeaders, toApiError } from "./client";
 
 const BASE = "/api/v1/mri/analyses";
+const UNAUTHORIZED = "HTTP_401_UPLOAD"; // internal: the upload hit an expired token
 
 export interface MriUploadInput {
   file: File; // a .zip of one person's DICOM files
@@ -25,6 +26,20 @@ export function uploadMriStudy(
   form.append("age", String(input.age));
   form.append("sex", input.sex);
 
+  return sendUpload(form, onProgress).catch(async (error: unknown) => {
+    // An expired access token: renew once, then send the same form again.
+    if (error instanceof ApiError && error.code === UNAUTHORIZED && (await refreshAccessToken())) {
+      return sendUpload(form, onProgress);
+    }
+    throw error;
+  });
+}
+
+
+function sendUpload(
+  form: FormData,
+  onProgress: (fraction: number) => void,
+): Promise<MriAnalysisCreated> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${API_BASE_URL}${BASE}`);
@@ -42,6 +57,7 @@ export function uploadMriStudy(
         body = null;
       }
       if (xhr.status === 202) resolve(body as MriAnalysisCreated);
+      else if (xhr.status === 401) reject(new ApiError(UNAUTHORIZED, "Your sign-in has expired."));
       else reject(toApiError(body, `Upload failed with status ${xhr.status}`));
     };
     xhr.onerror = () =>
