@@ -44,3 +44,13 @@ export function clearSession(): void {
 export function getAccessToken(): string | null {
   return currentTokens?.access_token ?? null;
 }
+
+export function getRefreshToken(): string | null {
+  return currentTokens?.refresh_token ?? null;
+}
+
+/** Swaps in a renewed token pair (the backend rotates the refresh token too).
+ * Ignored after sign-out, so a late renewal cannot bring a session back. */
+export function replaceTokens(tokens: TokenPair): void {
+  if (currentTokens) currentTokens = tokens;
+}
