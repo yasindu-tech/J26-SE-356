@@ -55,8 +55,11 @@ def test_state_follows_latest_run(server) -> None:
     base, runs = server
     rec = RunRecorder("t1", ["1", "2"], ["n4"], runs_dir=runs)
     rec.subject_start("1")
-    state = json.loads(get(base + "/api/state?pipeline=t1")[1])
-    assert (state["total"], state["running"], state["run"]) == (2, 1, rec.run_id)
+    state = json.loads(get(base + "/api/state?pipeline=t1")[1])  # default: all runs combined
+    assert (state["total"], state["running"], state["run"]) == (2, 1, "all")
+    assert state["latest_run"] == rec.run_id
+    latest = json.loads(get(base + "/api/state?pipeline=t1&run=latest")[1])
+    assert (latest["total"], latest["running"], latest["run"]) == (2, 1, rec.run_id)
     assert state["step_info"]["n4"]["label"] == "Even out brightness"
     assert json.loads(get(base + "/api/runs?pipeline=t1")[1]) == [rec.run_id]
 
@@ -116,3 +119,36 @@ def test_feature_extraction_run_is_shown(server) -> None:
     assert (state["total"], state["running"]) == (2, 1)
     assert state["step_info"]["tissue"]["label"] == "Tissue shares"
     assert get(base + "/api/state?pipeline=t1features&run=t1_20260101_000000")[0] == 400
+
+
+def test_training_page_shows_results(server) -> None:
+    base, runs = server
+    rec = RunRecorder("train", ["t1"], ["cv", "metrics"], runs_dir=runs, hash_ids=False)
+    rec.subject_start("t1")
+    rec.report("t1", {"name": "t1", "n": 59, "valid": True})
+    state = json.loads(get(base + "/api/state?pipeline=train")[1])
+    assert state["subjects"][0]["id"] == "t1"
+    assert state["subjects"][0]["report"]["n"] == 59
+    assert state["step_info"]["permutation"]["label"] == "Label permutation"
+    status, html = get(base + "/train")
+    assert status == 200
+    assert b"renderExtra" in html and b"Training sets" in html
+    # the person-based pages keep their wording and get no training script
+    t1_html = get(base + "/t1")[1]
+    assert b"People" in t1_html and b"renderExtra(s)" in t1_html and b"MODEL_INFO" not in t1_html
+
+
+def test_default_view_keeps_people_from_earlier_runs(server) -> None:
+    base, runs = server
+    first = RunRecorder("dti", ["1", "2"], ["eddy"], runs_dir=runs, clock=lambda: 1000.0)
+    for sid in ("1", "2"):
+        first.subject_start(sid)
+        first.subject_end(sid, "ok")
+    first.run_end()
+    second = RunRecorder("dti", ["3"], ["eddy"], runs_dir=runs, clock=lambda: 2000.0)
+    second.subject_start("3")
+    combined = json.loads(get(base + "/api/state?pipeline=dti")[1])
+    assert (combined["total"], combined["done"], combined["running"]) == (3, 2, 1)
+    assert combined["runs_combined"] == 2
+    latest = json.loads(get(base + "/api/state?pipeline=dti&run=latest")[1])
+    assert (latest["total"], latest["done"]) == (1, 0)

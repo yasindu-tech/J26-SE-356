@@ -120,7 +120,9 @@ def test_full_set_run_and_controls() -> None:
         d,
         n_splits=4,
         n_repeats=2,
-        n_permutations=5,
+        # 20 shuffles: with 5, the mean of the null scores is too noisy to compare with
+        # the 0.55 limit (its spread on 40 people is about 0.08 per shuffle)
+        n_permutations=20,
         permutation_repeats=1,
         gate_permutations=20,
         n_boot=200,
@@ -130,6 +132,37 @@ def test_full_set_run_and_controls() -> None:
     assert gate["passed"]  # and ComBat removes it
     assert report.permutation["passed"] and report.permutation["model"] == "lgbm_t1"
     assert report.valid
+
+
+def test_progress_and_summary_reach_the_dashboard(tmp_path: Path) -> None:
+    from progress import RunRecorder, fold_events, read_events
+
+    d = cohort(n=40, signal=2.0)
+    rec = RunRecorder("train", ["t1"], tm.TRAIN_STEPS, runs_dir=tmp_path, hash_ids=False)
+    rec.subject_start("t1")
+    report, _ = tm.run_set(
+        d,
+        n_splits=4,
+        n_repeats=2,
+        n_permutations=3,
+        permutation_repeats=1,
+        gate_permutations=10,
+        n_boot=100,
+        recorder=rec,
+    )
+    rec.subject_end("t1", "ok")
+    state = fold_events(read_events(rec.path), 1e12)
+    item = state["subjects"][0]
+    assert set(item["durations"]) == set(tm.TRAIN_STEPS)
+    summary = item["report"]
+    assert summary["main_model"] == "lgbm_t1" and summary["n"] == 40
+    sp = summary["split"]
+    assert (sp["folds"], sp["repeats"], sp["fits_per_model"]) == (4, 2, 8)
+    assert sp["train_people"] == [30, 30] and sp["test_people"] == [10, 10]
+    assert {m["model"] for m in summary["models"]} == {"age_sex", "best_single", "lgbm_t1"}
+    # only aggregates leave the run: no pseudonyms, no per-person scores
+    text = rec.path.read_text()
+    assert not any(s in text for s in d.subjects)
 
 
 def test_failed_control_marks_report_invalid_and_raises() -> None:
@@ -159,8 +192,42 @@ def test_outputs_have_no_raw_ids_and_mark_validity(tmp_path: Path) -> None:
     assert list(preds.columns[:2]) == ["subject", "y"] and len(preds) == 40
 
 
-def test_scanner_stratification_only_when_every_cell_fits() -> None:
-    d = cohort(n=40)
-    assert tm.fold_strata(d, 5) is not None  # 10 people per (label, scanner) cell
-    d.batches["t1"] = np.array(["A"] * 38 + ["B"] * 2)
-    assert tm.fold_strata(d, 5) is None  # B has too few people: label only
+def test_small_scanner_group_always_keeps_two_in_training() -> None:
+    # The real failure: a scanner group of 3 landed 2 people in one test fold, leaving 1 in
+    # training, and ComBat refused to fit. Dealt folds keep at most 1 of 3 per test fold.
+    d = cohort(n=36)
+    d.batches["t1"] = np.array(["A"] * 12 + ["B"] * 9 + ["C"] * 6 + ["D"] * 6 + ["E"] * 3)
+    for seed in range(20):
+        for f in tm.make_folds(d, d.y, 5, 2, seed):
+            train_counts = pd.Series(d.batches["t1"][f.train_idx]).value_counts()
+            assert len(train_counts) == 5 and train_counts.min() >= 2
+    probs = tm.run_cv(d, tm.models_for(d), n_splits=5, n_repeats=2)
+    assert not np.isnan(probs["lgbm_t1"]).any()
+
+
+def test_fold_groups_join_every_modality() -> None:
+    d = cohort(n=8)
+    d.batches = {"t1": np.array(["A", "B"] * 4), "dti": np.array(["X"] * 4 + ["Y"] * 4)}
+    assert list(tm.fold_groups(d)[:2]) == ["A|X", "B|X"]
+
+
+def test_column_combat_cannot_fit_is_left_out_and_reported() -> None:
+    # Real case: pallidum CSF share is 0 for 36 of 37 people, so inside some scanner groups
+    # it has no variance and ComBat refuses the whole fold.
+    d = cohort(n=40, signal=2.0, cols=[*T1_COLS[:5], "R_pallidum_csf_frac"])
+    d.features["R_pallidum_csf_frac"] = 0.0
+    d.features.loc[0, "R_pallidum_csf_frac"] = 0.0015
+    report, probs = tm.run_set(
+        d,
+        n_splits=4,
+        n_repeats=1,
+        n_permutations=3,
+        permutation_repeats=1,
+        gate_permutations=10,
+        n_boot=100,
+    )
+    assert report.dropped_features == {"R_pallidum_csf_frac": 4}  # every fold fit
+    assert not np.isnan(probs["lgbm_t1"]).any()
+    assert "R_pallidum_csf_frac (4)" in tm.markdown(
+        [report], {"time": "t", "commit": "c", "folds": 4, "repeats": 1}
+    )

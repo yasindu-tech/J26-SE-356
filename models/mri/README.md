@@ -22,6 +22,10 @@ DTI: motion + eddy correction → brain extraction → tensor fitting → FA/MD/
 comparator) → Grad-CAM / M3D-CAM + SHAP → faithfulness testing → frozen
 external validation on NTUA and BrainLat.
 
+## Setup notes
+- LightGBM on a Mac needs the OpenMP runtime: `brew install libomp` (otherwise
+  `import lightgbm` fails with `Library not loaded: @rpath/libomp.dylib`).
+
 ## Known problems
 - **n≈210 PD is small for 3D deep learning** — radiomics + gradient boosting is
   the primary route; deep models are comparators only. 3D transformers are

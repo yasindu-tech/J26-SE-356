@@ -35,6 +35,34 @@ uvicorn app.main:app --reload --port 8000 --app-dir services/backend
 pytest services/backend
 ```
 
+## MRI analyses
+
+`POST /api/v1/mri/analyses` takes one person's MRI as a zip of DICOM files plus age and
+sex (multipart form), and answers `202` with an analysis ID. The analysis runs
+`models/mri/src/predict_scan.py` in a separate process, one at a time
+(`app/workers/mri_runner.py`). It takes minutes for T1 and much longer with DTI.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/mri/analyses` | your analyses, newest first |
+| `GET /api/v1/mri/analyses/{id}` | status and progress: steps, done, current step, note |
+| `GET /api/v1/mri/analyses/{id}/result` | the `MriResult`: feature vector (raw and harmonised), raw score in log-odds with 95% interval, explanation, model card. `409` until finished |
+
+Before the first analysis, the MRI model bundle must exist (`python models/mri/src/mri_bundle.py`)
+and the backend's Python needs the MRI dependencies, FSL, ANTs, dcm2niix and the SynthStrip
+Docker wrapper (see `models/mri/README.md`).
+
+- **Where files go:** uploads and working files live under `data/backend/mri/<id>/`, which
+  is git-ignored.
+- **When they are deleted:** the DICOM zip and every converted image are deleted when the
+  analysis ends. The status and result files are deleted once their result has been stored
+  in the database.
+- **Settings** (environment variables): `MRI_WORK_DIR`, `MRI_PYTHON`, `MRI_MAX_UPLOAD_MB`,
+  `MRI_EDDY_THREADS`, `MRI_TIMEOUT_HOURS`.
+- **Prototype limits:** this stands in for the Redis queue and ML worker in Backend-Spec,
+  with the same submit-then-poll contract. An analysis that is running when the backend
+  restarts is marked failed.
+
 ## Database migrations
 
 Schema changes go through Alembic, never `Base.metadata.create_all()` outside
