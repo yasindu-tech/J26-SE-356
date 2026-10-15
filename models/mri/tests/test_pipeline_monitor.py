@@ -116,3 +116,20 @@ def test_feature_extraction_run_is_shown(server) -> None:
     assert (state["total"], state["running"]) == (2, 1)
     assert state["step_info"]["tissue"]["label"] == "Tissue shares"
     assert get(base + "/api/state?pipeline=t1features&run=t1_20260101_000000")[0] == 400
+
+
+def test_training_page_shows_results(server) -> None:
+    base, runs = server
+    rec = RunRecorder("train", ["t1"], ["cv", "metrics"], runs_dir=runs, hash_ids=False)
+    rec.subject_start("t1")
+    rec.report("t1", {"name": "t1", "n": 59, "valid": True})
+    state = json.loads(get(base + "/api/state?pipeline=train")[1])
+    assert state["subjects"][0]["id"] == "t1"
+    assert state["subjects"][0]["report"]["n"] == 59
+    assert state["step_info"]["permutation"]["label"] == "Label permutation"
+    status, html = get(base + "/train")
+    assert status == 200
+    assert b"renderExtra" in html and b"Training sets" in html
+    # the person-based pages keep their wording and get no training script
+    t1_html = get(base + "/t1")[1]
+    assert b"People" in t1_html and b"renderExtra(s)" in t1_html and b"MODEL_INFO" not in t1_html

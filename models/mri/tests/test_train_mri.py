@@ -132,6 +132,37 @@ def test_full_set_run_and_controls() -> None:
     assert report.valid
 
 
+def test_progress_and_summary_reach_the_dashboard(tmp_path: Path) -> None:
+    from progress import RunRecorder, fold_events, read_events
+
+    d = cohort(n=40, signal=2.0)
+    rec = RunRecorder("train", ["t1"], tm.TRAIN_STEPS, runs_dir=tmp_path, hash_ids=False)
+    rec.subject_start("t1")
+    report, _ = tm.run_set(
+        d,
+        n_splits=4,
+        n_repeats=2,
+        n_permutations=3,
+        permutation_repeats=1,
+        gate_permutations=10,
+        n_boot=100,
+        recorder=rec,
+    )
+    rec.subject_end("t1", "ok")
+    state = fold_events(read_events(rec.path), 1e12)
+    item = state["subjects"][0]
+    assert set(item["durations"]) == set(tm.TRAIN_STEPS)
+    summary = item["report"]
+    assert summary["main_model"] == "lgbm_t1" and summary["n"] == 40
+    sp = summary["split"]
+    assert (sp["folds"], sp["repeats"], sp["fits_per_model"]) == (4, 2, 8)
+    assert sp["train_people"] == [30, 30] and sp["test_people"] == [10, 10]
+    assert {m["model"] for m in summary["models"]} == {"age_sex", "best_single", "lgbm_t1"}
+    # only aggregates leave the run: no pseudonyms, no per-person scores
+    text = rec.path.read_text()
+    assert not any(s in text for s in d.subjects)
+
+
 def test_failed_control_marks_report_invalid_and_raises() -> None:
     r = tm.SetReport("t1", 10, 5, 3, {}, [], {"t1": {"passed": False}}, {"passed": True})
     assert not r.valid

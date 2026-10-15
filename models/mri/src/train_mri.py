@@ -35,6 +35,10 @@ is marked INVALID and the run exits with an error: those numbers must not be quo
 LightGBM uses fixed, small-data settings (shallow trees, many-sample leaves). There is no
 hyperparameter tuning in this version; tuning would need its own inner loop.
 
+Progress and results also go to the monitoring dashboard (pipeline_monitor.py, page
+/train): the step each set is on, how the people were split, every model's metrics and both
+controls. Only counts and metrics are sent, never per-person rows.
+
 Command line (writes data/processed/results/<time>/):
 
     python models/mri/src/train_mri.py                       # every set whose features exist
@@ -65,6 +69,7 @@ from harmonise import (
 )
 from metrics import auc, balanced_accuracy, paired_difference_ci, summarise
 from mri_contract import check_mri_features
+from progress import NullRecorder, RunRecorder
 from training_data import DEFAULT_LABELS, FEATURES, MIN_BATCH, SETS, ModelData, load_all
 
 REPO = Path(__file__).resolve().parents[3]
@@ -84,6 +89,7 @@ LGBM_PARAMS = {
     "verbose": -1,
 }
 MAIN_MODEL = {"t1": "lgbm_t1", "dti": "lgbm_dti", "paired": "lgbm_t1dti"}
+TRAIN_STEPS = ["cv", "metrics", "site_gate", "permutation"]
 
 
 class ResultsInvalid(RuntimeError):
@@ -192,11 +198,13 @@ def run_cv(
     n_splits: int = 5,
     n_repeats: int = 10,
     seed: int = 0,
+    on_fold=None,
 ) -> dict[str, np.ndarray]:
     """Out-of-fold probabilities, shape (repeats, people), for every model.
 
     ``y`` replaces the true labels (used by the permutation control); the folds are then
-    built on the replaced labels too, as a real run would.
+    built on the replaced labels too, as a real run would. ``on_fold(done, total)`` is
+    called after each fold (progress reporting only).
     """
     labels = data.y if y is None else np.asarray(y)
     run = replace(data, y=labels)
@@ -204,10 +212,12 @@ def run_cv(
         run.subjects, labels, n_splits, n_repeats, seed, strata=fold_strata(run, n_splits)
     )
     probs = {m: np.full((n_repeats, run.n), np.nan) for m in models}
-    for f in folds:
+    for i, f in enumerate(folds, 1):
         pred = fit_predict_fold(run, f.train_idx, f.test_idx, models, seed + f.repeat)
         for m, p in pred.items():
             probs[m][f.repeat, f.test_idx] = p
+        if on_fold is not None:
+            on_fold(i, len(folds))
     for m, p in probs.items():
         if np.isnan(p).any():
             raise RuntimeError(f"{m}: some people were never scored")
@@ -246,6 +256,7 @@ class SetReport:
     models: list[ModelReport] = field(default_factory=list)
     site_gate: dict[str, dict] = field(default_factory=dict)
     permutation: dict | None = None
+    split: dict = field(default_factory=dict)
 
     @property
     def valid(self) -> bool:
@@ -300,48 +311,98 @@ def run_set(
     gate_permutations: int = 100,
     n_boot: int = 2000,
     seed: int = 0,
+    recorder: RunRecorder | NullRecorder | None = None,
 ) -> tuple[SetReport, dict[str, np.ndarray]]:
+    rec = recorder or NullRecorder()
+    name = data.name
     models = models_for(data)
-    probs = run_cv(data, models, None, n_splits, n_repeats, seed)
-    report = SetReport(
-        name=data.name,
-        n=data.n,
-        n_pd=int(data.y.sum()),
-        n_features=data.features.shape[1],
-        scanner_groups={g: pd.Series(b).value_counts().to_dict() for g, b in data.batches.items()},
-        models=summarise_models(data.y, probs, n_boot, seed),
-    )
+    with rec.step(name, "cv"):
+        probs = run_cv(
+            data,
+            models,
+            None,
+            n_splits,
+            n_repeats,
+            seed,
+            on_fold=lambda i, n: rec.note(name, "cv", f"fold {i} of {n}", every_s=2.0),
+        )
+    with rec.step(name, "metrics"):
+        report = SetReport(
+            name=name,
+            n=data.n,
+            n_pd=int(data.y.sum()),
+            n_features=data.features.shape[1],
+            scanner_groups={
+                g: {str(k): int(v) for k, v in pd.Series(b).value_counts().items()}
+                for g, b in data.batches.items()
+            },
+            models=summarise_models(data.y, probs, n_boot, seed),
+        )
 
-    # site gate on out-of-fold harmonised features (one repeat of the same kind of folds)
+    # site gate on out-of-fold harmonised features (one repeat of the same kind of folds;
+    # with the same seed this is exactly repeat 0 of the CV above)
     folds = subject_folds(
         data.subjects, data.y, n_splits, 1, seed, strata=fold_strata(data, n_splits)
     )
+    report.split = split_summary(data, folds, n_splits, n_repeats)
     pairs = [(f.train_idx, f.test_idx) for f in folds]
-    for g, cols in data.groups.items():
-        x = data.features[cols].to_numpy(dtype=float)
-        oof, _ = out_of_fold_harmonise(x, data.batches[g], pairs, data.covariates())
-        gate = site_prediction_gate(
-            oof, data.batches[g], gate_permutations, seed=seed, raise_on_fail=False
-        )
-        report.site_gate[g] = _control(gate) | {
-            "before_harmonisation": site_predictability(x, data.batches[g], seed)
-        }
+    with rec.step(name, "site_gate"):
+        for g, cols in data.groups.items():
+            x = data.features[cols].to_numpy(dtype=float)
+            oof, _ = out_of_fold_harmonise(x, data.batches[g], pairs, data.covariates())
+            gate = site_prediction_gate(
+                oof, data.batches[g], gate_permutations, seed=seed, raise_on_fail=False
+            )
+            report.site_gate[g] = _control(gate) | {
+                "before_harmonisation": site_predictability(x, data.batches[g], seed)
+            }
 
     # label permutation control: the whole pipeline for the main model on shuffled labels
-    main = MAIN_MODEL[data.name]
+    main = MAIN_MODEL[name]
+    done = [0]
 
     def evaluate(y_perm: np.ndarray) -> float:
         p = run_cv(data, {main: models[main]}, y_perm, n_splits, permutation_repeats, seed)[main]
+        done[0] += 1
+        rec.note(name, "permutation", f"shuffle {done[0]} of {n_permutations}", every_s=2.0)
         return float(np.mean([balanced_accuracy(y_perm, r) for r in p]))
 
-    perm = label_permutation_control(
-        evaluate, data.y, data.subjects, n_permutations, seed=seed, raise_on_fail=False
-    )
+    with rec.step(name, "permutation"):
+        perm = label_permutation_control(
+            evaluate, data.y, data.subjects, n_permutations, seed=seed, raise_on_fail=False
+        )
     report.permutation = _control(perm) | {"model": main}
+    rec.report(name, dashboard_summary(report))
     return report, probs
 
 
+def split_summary(data: ModelData, folds, n_splits: int, n_repeats: int) -> dict:
+    """How the people were divided: sizes of the training and test parts of each fold."""
+    train = [len(f.train_idx) for f in folds]
+    test = [len(f.test_idx) for f in folds]
+    test_pd = [int(data.y[f.test_idx].sum()) for f in folds]
+    return {
+        "folds": n_splits,
+        "repeats": n_repeats,
+        "fits_per_model": n_splits * n_repeats,
+        "train_people": [min(train), max(train)],
+        "test_people": [min(test), max(test)],
+        "test_pd": [min(test_pd), max(test_pd)],
+        "stratified_by_scanner": fold_strata(data, n_splits) is not None,
+    }
+
+
+def dashboard_summary(report: SetReport) -> dict:
+    """What the dashboard shows for one set: counts, split, metrics and controls only."""
+    summary = asdict(report) | {"valid": report.valid, "main_model": MAIN_MODEL[report.name]}
+    return json.loads(json.dumps(summary, default=float))
+
+
 # ------------------------------------------------------------------ report
+
+
+def _span(pair) -> str:
+    return str(pair[0]) if pair[0] == pair[1] else f"{pair[0]}-{pair[1]}"
 
 
 def _fmt_ci(ci) -> str:
@@ -363,6 +424,12 @@ def markdown(reports: list[SetReport], settings: dict) -> str:
             f"{r.n} people ({r.n_pd} PD, {r.n - r.n_pd} control), {r.n_features} features. "
             f"Scanner groups: {r.scanner_groups}"
         )
+        if r.split:
+            sp = r.split
+            lines.append(
+                f"Split: each fold trains on {_span(sp['train_people'])} people and tests on "
+                f"{_span(sp['test_people'])} ({_span(sp['test_pd'])} PD)."
+            )
         lines += [
             "",
             "| Model | AUC mean +- SD | AUC 95% CI | Bal. acc mean +- SD | Bal. acc 95% CI "
@@ -462,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bootstrap", type=int, default=2000)
     ap.add_argument("--min-batch", type=int, default=MIN_BATCH)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--events-url", default=None, help="send progress to a remote dashboard")
     args = ap.parse_args(argv)
 
     sets = load_all(args.labels, args.features, args.min_batch)
@@ -485,21 +553,38 @@ def main(argv: list[str] | None = None) -> int:
         "lightgbm": LGBM_PARAMS,
     }
     reports, probs = [], {}
+    rec = RunRecorder("train", chosen, TRAIN_STEPS, hash_ids=False, events_url=args.events_url)
+    print("watch live: python models/mri/src/pipeline_monitor.py, then open /train")
     for name in chosen:
         print(f"[{name}] {sets[name].n} people: cross-validating, then the two controls ...")
-        r, p = run_set(
-            sets[name],
-            args.folds,
-            args.repeats,
-            args.permutations,
-            args.permutation_repeats,
-            args.gate_permutations,
-            args.bootstrap,
-            args.seed,
+        rec.subject_start(name)
+        try:
+            r, p = run_set(
+                sets[name],
+                args.folds,
+                args.repeats,
+                args.permutations,
+                args.permutation_repeats,
+                args.gate_permutations,
+                args.bootstrap,
+                args.seed,
+                recorder=rec,
+            )
+        except Exception as e:
+            rec.subject_end(name, "failed", type(e).__name__)
+            rec.run_end()
+            raise
+        main_model = next(m for m in r.models if m.model == MAIN_MODEL[name])
+        rec.subject_end(
+            name,
+            "ok" if r.valid else "failed",
+            "" if r.valid else "a mandatory control failed: do not quote",
+            metrics={"auc": main_model.auc_mean, "balanced_accuracy": main_model.bal_acc_mean},
         )
         reports.append(r)
         probs[name] = p
         print(f"[{name}] done ({'valid' if r.valid else 'INVALID'})")
+    rec.run_end()
     write_outputs(out_dir, reports, probs, sets, settings)
     print(f"report: {out_dir / 'report.md'}")
     try:
