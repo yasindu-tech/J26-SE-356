@@ -10,7 +10,7 @@ the keys. The tool never shows or prints a ref, file name, cell, rate, QC status
 count, and reads none of them: selection.csv is read for ref and list membership only.
 
 Keys: space play/pause | , . one frame back/forward | [ ] slower/faster (0.125x to 1x, start
-0.5x) | m mark a tap at this frame | u undo the last mark or edge | e add an edge partial | 1 2 3
+0.5x) | m mark a tap at this frame and pause (a held key marks once) | u undo the last mark or edge | e add an edge partial | 1 2 3
 confidence | n type a note (Enter keeps it, Esc cancels) | s save and next clip | q quit (the
 clip in progress is kept for --resume).
 
@@ -50,7 +50,7 @@ JPEG_QUALITY = 85
 CANVAS_MIN_WIDTH = 720
 LINE_HEIGHT = 22
 HELP = (
-    "space play/pause   , . step   [ ] speed   m mark   u undo   e edge",
+    "space play/pause   , . step   [ ] speed   m mark (pauses)   u undo   e edge",
     "1 2 3 confidence   n note   s save + next   q quit (resume later)",
 )
 TOOL_COLUMNS = ("ref", "set", "second_rater", "replaced_for")  # all the tool reads
@@ -281,7 +281,7 @@ def overlay_lines(
     here = "   [this frame is marked]" if i in marks else ""
     lines = [
         f"clip {k} of {n}   {player.times[i]:6.2f} s of {player.times[-1]:.2f} s   "
-        f"frame {i + 1}/{len(player.times)}   speed {player.speed:g}x   "
+        f"frame {i} (0-{len(player.times) - 1})   speed {player.speed:g}x   "
         + ("PLAY" if player.playing else "PAUSED"),
         f"taps marked {len(marks)}{here}   edge partials {count.edges()}   "
         f"confidence {count.confidence or '-'}   note {'yes' if count.note else 'no'}",
@@ -307,6 +307,77 @@ def compose(image: np.ndarray, lines: Sequence[str]) -> np.ndarray:
 # --------------------------------------------------------------------------- one clip
 
 
+@dataclass
+class Keys:
+    """Key handling without a window: ``handle`` applies one key and returns "save", "quit" or None."""
+
+    player: Player
+    count: Count
+    on_change: Callable[[], None]
+    typing: str | None = None
+    message: str = ""
+
+    def handle(self, key: int, now: float, shown: int) -> str | None:
+        """``shown`` is the frame index on screen when the key arrived; a mark uses it."""
+        count, player = self.count, self.player
+        self.message = ""
+        if self.typing is not None:
+            self._type(key)
+            return None
+        ch = chr(key) if 0 <= key < 256 else ""
+        if ch == " ":
+            player.toggle(now)
+        elif ch in (",", "."):
+            player.step(-1 if ch == "," else 1)
+        elif ch in ("[", "]"):
+            player.change_speed(-1 if ch == "[" else 1, now)
+        elif ch == "m":
+            # Pause on the marked frame: a held key then repeats on the same frame and is ignored.
+            player.playing, player.index = False, shown
+            if count.mark(shown):
+                self.on_change()
+            else:
+                self.message = "this frame is already marked"
+        elif ch == "u":
+            if count.undo():
+                self.on_change()
+            else:
+                self.message = "nothing to undo"
+        elif ch == "e":
+            count.edge()
+            self.on_change()
+        elif ch in ("1", "2", "3"):
+            count.confidence = int(ch)
+            self.on_change()
+        elif ch == "n":
+            self.typing = count.note
+        elif ch == "s":
+            if count.confidence is None:
+                self.message = "set the confidence (1, 2 or 3) before saving"
+            else:
+                return "save"
+        elif ch == "q":
+            self.on_change()
+            return "quit"
+        return None
+
+    def _type(self, key: int) -> None:
+        typing = self.typing or ""
+        if key in (10, 13):
+            problem = mc.note_problem(typing)
+            if problem:
+                self.message = f"note not kept: {problem}"
+            else:
+                self.count.note, self.typing = typing.strip(), None
+                self.on_change()
+        elif key == 27:
+            self.typing = None
+        elif key in (8, 127):
+            self.typing = typing[:-1]
+        elif 32 <= key < 127:
+            self.typing = typing + chr(key)
+
+
 def count_clip(
     ui: UI,
     clip: Clip,
@@ -317,65 +388,18 @@ def count_clip(
     clock: Callable[[], float],
 ) -> str:
     """Play and count one clip until the rater saves ("save") or quits ("quit")."""
-    player = Player(clip.times)
-    typing: str | None = None
-    message = ""
+    keys = Keys(Player(clip.times), count, on_change)
     while True:
         now = clock()
-        i = player.tick(now)
-        ui.show(compose(clip.image(i), overlay_lines(k, n, player, count, typing, message)))
+        i = keys.player.tick(now)
+        lines = overlay_lines(k, n, keys.player, count, keys.typing, keys.message)
+        ui.show(compose(clip.image(i), lines))
         key = ui.key(10)
         if key < 0:
             continue
-        message = ""
-        if typing is not None:
-            if key in (10, 13):
-                problem = mc.note_problem(typing)
-                if problem:
-                    message = f"note not kept: {problem}"
-                else:
-                    count.note, typing = typing.strip(), None
-                    on_change()
-            elif key == 27:
-                typing = None
-            elif key in (8, 127):
-                typing = typing[:-1]
-            elif 32 <= key < 127:
-                typing += chr(key)
-            continue
-        ch = chr(key) if 0 <= key < 256 else ""
-        if ch == " ":
-            player.toggle(now)
-        elif ch in (",", "."):
-            player.step(-1 if ch == "," else 1)
-        elif ch in ("[", "]"):
-            player.change_speed(-1 if ch == "[" else 1, now)
-        elif ch == "m":
-            if count.mark(i):
-                on_change()
-            else:
-                message = "this frame is already marked"
-        elif ch == "u":
-            if count.undo():
-                on_change()
-            else:
-                message = "nothing to undo"
-        elif ch == "e":
-            count.edge()
-            on_change()
-        elif ch in ("1", "2", "3"):
-            count.confidence = int(ch)
-            on_change()
-        elif ch == "n":
-            typing = count.note
-        elif ch == "s":
-            if count.confidence is None:
-                message = "set the confidence (1, 2 or 3) before saving"
-            else:
-                return "save"
-        elif ch == "q":
-            on_change()
-            return "quit"
+        done = keys.handle(key, now, i)
+        if done:
+            return done
 
 
 def result_row(rater: str, k: int, ref: str, clip: Clip, count: Count) -> dict[str, object]:
@@ -480,6 +504,7 @@ SELFTEST_KEYS = (
 SELFTEST_FPS = 30.0
 SELFTEST_SECONDS = 6.0
 SELFTEST_TAPS = 7
+REPEAT_FRAMES = 3  # marks closer than this look like key auto-repeat
 SELFTEST_EDGES = 1
 SELFTEST_PEAK_TIMES = (0.7, 1.3, 1.9, 2.5, 3.0, 4.0, 5.0)  # the hold peak is its middle
 
@@ -513,6 +538,18 @@ def make_selftest_clip() -> Clip:
     return make_clip(frames, (t * 1000).tolist())
 
 
+def selftest_diagnosis(marks: Sequence[int], expected: Sequence[int]) -> list[str]:
+    """Per mark: the nearest expected peak frame and the offset; marks closer than 3 frames."""
+    lines = []
+    for m in marks:
+        near = min(expected, key=lambda e: (abs(m - e), e))
+        lines.append(f"  mark {m}: nearest expected {near}, offset {m - near:+d}")
+    close = [(a, b) for a, b in zip(marks, marks[1:], strict=False) if b - a < REPEAT_FRAMES]
+    if close:
+        lines.append(f"  possible key repeat: marks closer than {REPEAT_FRAMES} frames: {close}")
+    return lines
+
+
 def selftest(ui: UI, clock: Callable[[], float]) -> int:
     clip = make_selftest_clip()
     count = Count(started_utc=mc.utc_now())
@@ -526,6 +563,9 @@ def selftest(ui: UI, clock: Callable[[], float]) -> int:
     print(f"  expected peak frames: {expected}")
     print(f"  your marked frames:   {marks}")
     ok = len(marks) == SELFTEST_TAPS and count.edges() == SELFTEST_EDGES
+    if not ok:
+        for line in selftest_diagnosis(marks, expected):
+            print(line)
     print("selftest passed" if ok else "selftest: counts differ, read the counting rule again")
     return 0 if ok else 1
 
