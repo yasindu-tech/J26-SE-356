@@ -345,3 +345,79 @@ def test_selftest_scores_a_correct_count(
 def test_selftest_reports_a_wrong_count(capsys: pytest.CaptureFixture[str]) -> None:
     assert tool.main(["--selftest"], ui_factory=lambda: FakeUI(["m", "3", "s"]), clock=Clock()) == 1
     assert "counts differ" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- key handler
+
+
+def keys_for(n: int = 30) -> tuple[tool.Keys, tool.Player, tool.Count]:
+    player, count = tool.Player(tiny_clip(n).times), tool.Count()
+    return tool.Keys(player, count, lambda: None), player, count
+
+
+def press(keys: tool.Keys, text: str, now: float = 0.0, shown: int = 0) -> list[str | None]:
+    return [keys.handle(ord(c), now, shown) for c in text]
+
+
+def test_repeated_mark_on_one_frame_is_one_mark() -> None:
+    keys, _, count = keys_for()
+    press(keys, "mmm", shown=5)
+    assert count.marks() == [5] and count.actions == [["m", 5]]
+    assert keys.message == "this frame is already marked"
+
+
+def test_held_key_while_playing_gives_one_mark_and_pauses() -> None:
+    keys, player, count = keys_for()
+    player.play(0.0)
+    assert player.playing
+    press(keys, "m", shown=7)
+    assert not player.playing and player.index == 7 and count.marks() == [7]
+    press(keys, "m" * 40, shown=7)  # auto-repeat: the video no longer moves
+    assert count.marks() == [7] and len(count.actions) == 1
+
+
+def test_two_different_frames_and_undo_and_edge() -> None:
+    keys, _, count = keys_for()
+    press(keys, "m", shown=3)
+    press(keys, "m", shown=9)
+    assert count.marks() == [3, 9]
+    press(keys, "e")
+    assert count.edges() == 1 and count.marks() == [3, 9]  # an edge is not a tap
+    press(keys, "u")  # undoes the edge
+    assert count.edges() == 0 and count.marks() == [3, 9]
+    press(keys, "u")  # undoes the last mark (9), not the first
+    assert count.marks() == [3]
+    press(keys, "uu")
+    assert count.marks() == [] and keys.message == "nothing to undo"
+
+
+def test_save_needs_confidence_and_quit_returns() -> None:
+    keys, _, _ = keys_for()
+    assert press(keys, "s") == [None] and "confidence" in keys.message
+    assert press(keys, "3s") == [None, "save"]
+    assert press(keys, "q") == ["quit"]
+
+
+def test_overlay_shows_the_zero_based_frame_and_the_rater_counts() -> None:
+    p, c = tool.Player(np.arange(10) / 30.0, index=4), tool.Count()
+    c.mark(4)
+    c.edge()
+    text = tool.overlay_lines(1, 1, p, c, None, "")
+    assert "frame 4 (0-9)" in text[0]
+    assert "taps marked 1" in text[1] and "edge partials 1" in text[1]
+
+
+def test_selftest_diagnosis_lists_offsets_and_possible_repeat() -> None:
+    expected = [21, 39, 57, 75, 90, 120, 150]
+    lines = tool.selftest_diagnosis([41, 73, 74, 89, 95], expected)
+    assert "  mark 41: nearest expected 39, offset +2" in lines
+    assert "  mark 74: nearest expected 75, offset -1" in lines
+    assert any("possible key repeat" in x and "(73, 74)" in x for x in lines)
+    assert not any("possible key repeat" in x for x in tool.selftest_diagnosis([21, 39], expected))
+
+
+def test_failed_selftest_prints_the_diagnosis(capsys: pytest.CaptureFixture[str]) -> None:
+    keys: list[int | str] = [".", "m", "m", ".", "m", "3", "s"]
+    assert tool.main(["--selftest"], ui_factory=lambda: FakeUI(keys), clock=Clock()) == 1
+    out = capsys.readouterr().out
+    assert "nearest expected" in out and "possible key repeat" in out
