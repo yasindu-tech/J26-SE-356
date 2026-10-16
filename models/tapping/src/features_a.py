@@ -20,7 +20,7 @@ import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -159,8 +159,19 @@ def _atomic(final: Path, write: Any) -> None:
             tmp.unlink()
 
 
-def run(taps_dir: Path, out_dir: Path, summary_path: Path, docs_dir: Path) -> dict[str, Any]:
-    """Compute and write everything; returns the metadata. Raises Disagreement or InputProblem."""
+class Loaded(NamedTuple):
+    """The retained clips' tap tables and what identifies the taps that were read."""
+
+    refs: list[str]
+    tables: list[pd.DataFrame]
+    summary: pd.DataFrame
+    params_sha8: str
+    taps_tool: str
+
+
+def load_clips(taps_dir: Path, summary_path: Path, docs_dir: Path) -> Loaded:
+    """Read the taps of the QC retained clips (never a glob) and build their tap tables.
+    Raises Disagreement (exit 1) or InputProblem (exit 2)."""
     try:
         qc = load_qc(docs_dir)
     except QcError as err:
@@ -174,7 +185,7 @@ def run(taps_dir: Path, out_dir: Path, summary_path: Path, docs_dir: Path) -> di
     absent = [r for r in refs if r not in summary.index]
     if absent:
         raise InputProblem(f"{len(absent)} retained clips are not in taps_summary.csv")
-    tables, rows, seen = [], [], set()
+    tables, seen = [], set()
     versions: set[tuple[str, str]] = set()
     missing = 0
     for ref in refs:
@@ -187,9 +198,7 @@ def run(taps_dir: Path, out_dir: Path, summary_path: Path, docs_dir: Path) -> di
         table = tt.build_tap_table(taps)
         if len(table) != int(summary.at[ref, "n_taps"]):
             raise Disagreement("a taps file and taps_summary.csv disagree on the tap count")
-        row = clip_features(table, ref, summary.loc[ref])
         tables.append(table)
-        rows.append(row)
         seen.add(ref)
     if missing:
         raise InputProblem(f"{missing} retained clips have no taps file")
@@ -198,6 +207,13 @@ def run(taps_dir: Path, out_dir: Path, summary_path: Path, docs_dir: Path) -> di
     ((phash, tool),) = versions
     stale = sorted(p.stem for p in taps_dir.glob("*.parquet") if p.stem not in seen)
     print(f"ignored {len(stale)} taps files that are not in the QC retained list")
+    return Loaded(refs, tables, summary, phash, tool)
+
+
+def run(taps_dir: Path, out_dir: Path, summary_path: Path, docs_dir: Path) -> dict[str, Any]:
+    """Compute and write everything; returns the metadata. Raises Disagreement or InputProblem."""
+    refs, tables, summary, phash, tool = load_clips(taps_dir, summary_path, docs_dir)
+    rows = [clip_features(t, r, summary.loc[r]) for r, t in zip(refs, tables, strict=True)]
     full = pd.concat(tables, ignore_index=True)
     feats = pd.DataFrame(rows, columns=list(COLUMNS))
     meta_out = {
