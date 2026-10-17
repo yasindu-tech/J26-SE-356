@@ -68,6 +68,8 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
 11. **SHAP explanations** — `explain_shap.py`: global importance chart and the top
     three inputs for example walks, each in a plain-words sentence (`explain_words.py`),
     from the saved model.
+12. **Video to joints** — `video_to_joints.py`: a walking video in, the longest usable
+    walk (17 joints) and facts about the video out. One person in view only.
 
 ## Evaluation (CLAUDE.md section 3.4)
 - Headline: balanced accuracy and AUC (one-vs-rest), each with a bootstrap 95%
@@ -96,6 +98,7 @@ python models/gait/src/evaluate_cohorts.py       # by cohort, leave-one-cohort-o
 python models/gait/src/check_mediapipe_mapping.py  # video pipeline on KOA-PD-NM clips
 python models/gait/src/noise_check.py            # joint-noise check (needs the traces above)
 python models/gait/src/explain_shap.py           # SHAP charts of the saved model
+python models/gait/src/video_to_joints.py VIDEO    # joints and facts of one video
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
