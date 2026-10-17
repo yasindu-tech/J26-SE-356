@@ -22,7 +22,14 @@ from typing import cast
 import numpy as np
 from carepd_format import short_id
 from mediapipe_mapping import MIN_WALK_S, walks_from_trace
-from pose_probe import VideoInfo, probe_video, read_info, read_rgb_frames
+from pose_probe import (
+    LEG_IDX,
+    VISIBLE_THRESHOLD,
+    VideoInfo,
+    probe_video,
+    read_info,
+    read_rgb_frames,
+)
 
 MAX_SECONDS = 30.0
 DEFAULT_MODEL = Path(__file__).resolve().parents[1] / "artifacts" / "pose_landmarker_heavy.task"
@@ -49,6 +56,9 @@ class VideoWalk:
     unused_seconds: float  # usable video in the other stretches
     filled_frames: int  # walk frames replaced by interpolation
     facing_agreement: float  # see ``mediapipe_mapping.facing_agreement``
+    leg_visibility: (
+        float  # share of the walk's leg landmarks clearly visible (not found counts as no)
+    )
 
     @property
     def seconds(self) -> float:
@@ -115,6 +125,7 @@ def video_to_joints(
             f"{min_walk_s:g} s or more had the legs in clear view"
         )
     walk = max(walks, key=lambda w: w.joints.shape[0])
+    legs = trace.visibility[walk.start : walk.stop][:, list(LEG_IDX)]
     return VideoWalk(
         joints=walk.joints,
         fps=walk.fps,
@@ -130,6 +141,7 @@ def video_to_joints(
         unused_seconds=sum(w.seconds for w in walks if w is not walk),
         filled_frames=walk.filled_frames,
         facing_agreement=walk.facing_agreement,
+        leg_visibility=float(np.mean(legs >= VISIBLE_THRESHOLD)),
     )
 
 
@@ -156,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         f"walk {walk.seconds:.1f} s ({walk.start_s:.1f} to {walk.end_s:.1f} s); person found in "
         f"{walk.person_found:.0%} of frames; {walk.stretches} usable stretch(es), "
         f"{walk.unused_seconds:.1f} s unused; {walk.filled_frames} frames filled; "
-        f"facing {walk.facing_agreement:.0%}"
+        f"facing {walk.facing_agreement:.0%}; legs clear {walk.leg_visibility:.0%}"
     )
     if args.save:
         args.save.parent.mkdir(parents=True, exist_ok=True)
