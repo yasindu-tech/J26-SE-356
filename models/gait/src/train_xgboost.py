@@ -67,6 +67,7 @@ import gait_metrics as gm
 import numpy as np
 import pandas as pd
 import xgboost
+from explain_words import build_reference
 from feature_contract import check_feature_contract
 from gait_extract import FEATURE_NAMES
 from make_folds import (
@@ -590,16 +591,24 @@ def main(argv: list[str] | None = None) -> int:
                 + "".join(f"{r[CLASS_LABELS[c]]:>12.3f}" for c in gm.CLASSES)
                 + f"{r['overall']:>10.3f}"
             )
+        import shap
+
         final = fit_final_model(table, weighted=args.weighted)
+        x = _inputs(table)
+        words_reference = build_reference(
+            x,
+            shap_array(shap.TreeExplainer(final).shap_values(x)),
+            final.predict_proba(x).argmax(axis=1),
+        )
         bundle = save_bundle(
             final,
             args.out_dir / "bundle",
             {
                 **config,
                 "trained_on": f"all {table['subject_key'].nunique()} subjects, {len(table)} walks",
+                "explanation_reference": words_reference,
             },
         )
-        x = _inputs(table)
         same = np.array_equal(
             load_bundle(args.out_dir / "bundle").predict_proba(x), final.predict_proba(x)
         )

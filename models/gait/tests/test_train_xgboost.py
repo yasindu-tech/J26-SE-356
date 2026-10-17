@@ -315,6 +315,9 @@ def test_cli_runs_end_to_end_and_writes_files(
     assert info["features"] == list(FEATURE_NAMES)
     assert "never a result" in info["note"]
     assert f"Model bundle {info['model_version']}" in text and "reload identical" in text
+    reference = info["explanation_reference"]
+    assert set(reference["percentiles"]) == set(FEATURE_NAMES) == set(reference["steady"])
+    assert len(reference["strength_cuts"]) == 2
 
 
 def test_cli_rejects_folds_that_do_not_match_the_table(tmp_path: Path) -> None:
