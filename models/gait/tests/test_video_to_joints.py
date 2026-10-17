@@ -88,6 +88,25 @@ def test_the_walk_is_the_one_the_gait_16_path_gives_and_the_facts_are_filled(
     assert walk.person_found == pytest.approx(230 / 240)
     assert walk.stretches == 1 and walk.unused_seconds == 0.0
     assert walk.filled_frames == 10 and walk.facing_agreement == 1.0
+    assert walk.leg_visibility == pytest.approx(230 / 240)  # the 10 lost frames count as unclear
+
+
+def test_leg_visibility_counts_landmarks_that_are_not_clearly_visible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    trace = make_trace(8.0)
+    trace.visibility[:, 31:33] = 0.1  # both toes unclear: 8 of the 10 leg landmarks are clear
+    walk = run(Fake(monkeypatch, tmp_path, trace))
+    assert walk.leg_visibility == pytest.approx(0.8)
+
+
+def test_leg_visibility_counts_only_the_walk_not_the_rest_of_the_clip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    trace = make_trace(12.0, lost=(150, 180))  # the walk is the second stretch, frames 180 to 360
+    trace.visibility[:150, 23:33] = 0.1  # the first stretch (not the walk) has unclear legs
+    walk = run(Fake(monkeypatch, tmp_path, trace))
+    assert walk.start_s == 6.0 and walk.leg_visibility == 1.0
 
 
 def test_the_longest_stretch_is_the_walk_and_the_rest_is_reported_as_unused(
@@ -300,7 +319,9 @@ def patch_check(
     ref = walks_from_trace(trace)[0]
 
     def fake_walk(_p: Path, _m: Path, *, max_seconds: float | None = None) -> vj.VideoWalk:
-        return vj.VideoWalk(ref.joints + shift, ref.fps, 0, 8, 8, 8, False, 1920, 1080, 1.0, 1, 0, 0, 1)
+        return vj.VideoWalk(
+            ref.joints + shift, ref.fps, 0, 8, 8, 8, False, 1920, 1080, 1.0, 1, 0, 0, 1, 1.0
+        )
 
     monkeypatch.setattr(cvj, "video_to_joints", fake_walk)
     monkeypatch.setattr(cvj, "load_or_run", lambda *_a: (trace, True))
