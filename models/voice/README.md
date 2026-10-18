@@ -41,8 +41,35 @@ bootstrap CIs — a number this literature does not currently report.
 ## PP1 scope
 
 PP1 delivers an honest, tested voice-risk pipeline on the precomputed UCI-470
-feature table, with the leakage audit as the headline result. No audio is
-recorded or processed in PP1.
+feature table, with the leakage audit as the headline result. After review with
+the supervisor and team lead (Oct 2026), PP1 also shows **uploading an audio
+file of a sustained "aaah", extracting voice measures from it, scoring it and
+explaining the result** (D9-D13). No audio is recorded by the app in PP1.
+
+### Raw-audio flow (D9-D13)
+Any audio file (WAV, FLAC, OGG, MP3, M4A) → `audio_io.load_audio` (mono, 8 kHz)
+→ `audio_features.extract_voice_features` (find the vowel, quality gate, 56 named
+Praat/librosa features) → one of two models → `analyze_audio.py`: calibrated
+score, 95% CI, triage priority, SHAP top 5 and plain-language explanations
+(`audio_explain.py`).
+
+| Model (`--model`) | Trained on | Features | Script |
+|---|---|---|---|
+| `uci` (default) | UCI-470, 80% of people | the 16 Baseline measures Praat recomputes from audio (`uci_praat.py`) | `uci_transfer.py` |
+| `audio` | Figshare raw audio, 80% of people | the 56 audio features | `audio_model.py` |
+
+```bash
+python models/voice/src/build_audio_table.py   # features for every recording
+python models/voice/src/audio_evidence.py      # evidence for the audio model
+python models/voice/src/audio_model.py         # train the audio model
+python models/voice/src/uci_transfer.py        # UCI model on 16 Praat measures + transfer test
+python models/voice/src/analyze_audio.py recording.mp3 [--model audio]
+```
+Open `models/voice/artifacts/analysis_results.json` in the desktop app with
+**Open result file**. Demo the `audio` model only with files in
+`artifacts/holdout_audio_files.txt`; every Figshare file is unseen by the `uci`
+model. Read RESULTS.md first: the `uci` model does **not** transfer to telephone
+audio.
 
 ### Flow
 UCI-470 feature table (`data/raw/UCI-470/pd_speech_features.csv`, gitignored)
@@ -54,14 +81,19 @@ regression / LightGBM → Platt calibration + bootstrap-ensemble CI → SHAP top
 ### Decisions
 | # | Decision |
 |---|---|
-| D1 | Data is the UCI-470 table only. No audio and no feature extraction in PP1. |
+| D1 | The research evidence (leakage audit, ladder, fairness) uses the UCI-470 table. Raw audio is added for the upload demo (D9). |
 | D2 | The unit is the person. A person's 3 rows get one score (mean of the 3 probabilities). Metrics and bootstraps resample people, not rows. |
 | D3 | Final hold-out: 20% of people, chosen once, stratified by class and sex, seed 42. The demo model trains on the other 80%. Evidence numbers come from 5-fold person-level CV over all people. |
 | D4 | Models: L1 logistic regression and LightGBM, both with in-fold selection, balanced class weights, seed 42 everywhere. |
 | D5 | Result vector fields: `risk_score`, `ci_lower`, `ci_upper`, `triage_priority`, `availability_mask`, `shap_top5`, `sex_fairness_note`, `pipeline_version`, `quality_gate_passed`. |
 | D6 | `triage_priority` is `prioritised_referral` or `not_prioritised`. Never diagnosis, positive, negative or cleared. |
 | D7 | Gender is not an input to the main model. It is used only for the sex-only baseline and the fairness analysis. |
-| D8 | Mobile recording and live feature extraction are PP2. The desktop result card waits for the desktop branch to merge. |
+| D8 | Mobile recording is PP2. The desktop result card waits for the desktop branch to merge. |
+| D9 | The full UCI-470 model cannot score new audio: 22 of the 24 features it uses (TQWT, MFCC, wavelet) came from the authors' own tools and cannot be recomputed. Uploads are scored either by a UCI-470 model retrained on the 16 Baseline measures Praat recomputes (`uci_praat.py`), or by an audio model trained on raw audio. One extractor serves training and uploads. |
+| D10 | Task: sustained "aaah" only. All audio is resampled to 8 kHz (telephone band) so datasets and uploads are comparable. Any common format is accepted; the format is recorded and compressed files get an uncertainty note. |
+| D11 | Raw-audio data: Figshare voice samples (CC BY 4.0). NeuroVoz (access pending) and Italian PVS are added if they arrive. KCL has no sustained vowels, so it is not used. Age and sex are never voice-model inputs, but an age + sex baseline is mandatory because Figshare's healthy group is much younger. |
+| D12 | XAI for every output: SHAP top 5 in plain words, the value's place among healthy and PD training voices, uncertainty reasons, quality-gate reasons, and the model's overall feature use. Explanations say "the model used", never "causes". |
+| D13 | A measure whose values from new audio do not match the training data's scale (`uci_transfer.unit_check`) is never compared with training voices in an explanation; the result says so instead. If the main score falls outside its bootstrap range, the range is widened, never narrowed. |
 
 ### Definition of done
 1. `predict_voice(feature_row)` returns the full result vector for a held-out person.
@@ -76,7 +108,8 @@ regression / LightGBM → Platt calibration + bootstrap-ensemble CI → SHAP top
 10. No PHI, no data files, no secrets in commits.
 
 ### Out of scope for PP1
-Audio capture, feature extraction from audio, the mobile app, and deployment.
+Audio capture in the app, the mobile app, reading and free-speech tasks, and
+deployment.
 
 ### Setup
 ```bash

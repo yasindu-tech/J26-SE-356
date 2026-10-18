@@ -5,6 +5,8 @@
 **Question.** Can a plain walking video be turned into gait features that predict
 UPDRS gait severity (classes 0, 1, 2–3), with an explanation a clinician can read?
 This is screening and triage, never diagnosis.
+UPDRS gait severity (classes 0, 1, 2–3), with an explanation a clinician can read?
+This is screening and triage, never diagnosis.
 
 **Demo goal.** Walking video in → MediaPipe pose → joint mapping → gait features
 → severity prediction → SHAP explanation, shown in the desktop app.
@@ -86,6 +88,7 @@ balanced accuracy 0.553 (95% CI 0.503–0.602), AUC 0.750 (0.700–0.796); chanc
 good as XGBoost on these data. Subject-weighted, XGBoost scores 0.506.
 
 ## Run
+## Run
 ```
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt -r models/gait/requirements.txt
@@ -103,8 +106,31 @@ python models/gait/src/video_to_joints.py VIDEO    # joints and facts of one vid
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
 Subject IDs are shown only as short hashes.
+(git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
+Subject IDs are shown only as short hashes.
 
 ## Known limits
+- **Small sample.** 109 subjects; class 2–3 is the most common class for only
+  22 of them. Scores vary by about ±0.05 between folds.
+- **Cohort signature.** The features identify the cohort well, while the cohort
+  alone predicts the class only a little better than chance. Leave-one-cohort-out
+  (GAIT-20) shows that transfer to a cohort the model has not seen is weak: balanced
+  accuracy falls by 0.10 against cross-validation.
+- **Frame resolution.** Stride times are whole frames (33–40 ms, about 3% of a
+  stride), close to the size of `stride_time_cv` itself.
+- **No demographics.** CARE-PD gives no age, sex or height, so there is no
+  age-and-sex baseline.
+- **Domain gap.** CARE-PD poses are SMPL-derived; the demo uses MediaPipe on raw
+  video. Heel-strike detection is not validated on video and over-detects on
+  noisy ankle traces (the left/right flag catches some cases). MediaPipe output
+  differs slightly between machines.
+- **Demo recording.** One straight walk, side-on, 2–4 m from the camera, whole
+  body in frame, at least 10 s. Only one person is tracked; a second person in
+  the frame is not detected or rejected.
+- **Severity grading, not PD vs healthy.** The labels grade gait impairment (UPDRS gait) in the
+  four labelled cohorts, and none of them stores a healthy/PD group. The model therefore ranks
+  how impaired a walk is; it does not separate people with PD from people without. The closest
+  thing to an early sign here is class 0 against class 1 (subtle impairment against none).
 - **Small sample.** 109 subjects; class 2–3 is the most common class for only
   22 of them. Scores vary by about ±0.05 between folds.
 - **Cohort signature.** The features identify the cohort well, while the cohort
@@ -131,4 +157,5 @@ Subject IDs are shown only as short hashes.
 - Gait features overlap with MDS-UPDRS Part III motor items by nature. That is
   acceptable (raw measurement, not clinician rating) but must be stated before a
   reviewer states it.
+  
   
