@@ -70,6 +70,7 @@ def create_analysis(
     runner: MriRunner,
     settings: Settings,
     eddy_profile: str = "full",
+    subject_label: str | None = None,
 ) -> MriAnalysis:
     row = MriAnalysis(
         id=uuid.uuid4(),
@@ -78,6 +79,7 @@ def create_analysis(
         age=age,
         sex=sex,
         eddy_profile=eddy_profile,
+        subject_label=subject_label,
     )
     folder = _folder(settings, row.id)
     try:
@@ -150,6 +152,7 @@ def _status(row: MriAnalysis, progress: dict | None) -> MriAnalysisStatus:
         id=row.id,
         status=row.status,  # type: ignore[arg-type]
         eddy_profile=row.eddy_profile,  # type: ignore[arg-type]
+        subject_label=row.subject_label,
         created_at=row.created_at,
         finished_at=row.finished_at,
         steps=STEPS,

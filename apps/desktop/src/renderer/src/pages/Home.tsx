@@ -11,21 +11,22 @@ import {
 } from "../mri/mriView";
 import "./Home.css";
 
-// First screen after sign-in, from the approved design's "Home". The design's Home belongs
-// to the full assessment platform (patients, priorities, referrals); none of that exists
-// yet, so this page shows only what is real today: the clinician's own MRI analyses and
-// the way into a new one. Nothing here is a placeholder number.
+// First screen after sign-in, from the approved design's "Home". The design's metrics
+// (priorities, decisions, referrals, a monthly summary) belong to the combined result, which
+// is not built. The layout stays; the numbers are the real ones for today: this clinician's
+// assessments, each part separate. Gait, tapping and voice are not processed in this build,
+// so they show "—". Nothing here is a placeholder number.
 
 const RECENT_COUNT = 8;
 
 export function Home({
   clinician,
-  onNewAnalysis,
+  onNewAssessment,
   onOpenAnalysis,
   onSeeAll,
 }: {
   clinician: string;
-  onNewAnalysis: () => void;
+  onNewAssessment: () => void;
   onOpenAnalysis: (id: string) => void;
   onSeeAll: () => void;
 }) {
@@ -56,8 +57,8 @@ export function Home({
           year: "numeric",
         })}
         actions={
-          <button type="button" className="btn btn--primary" onClick={onNewAnalysis}>
-            + New MRI analysis
+          <button type="button" className="btn btn--primary" onClick={onNewAssessment}>
+            + New assessment
           </button>
         }
       />
@@ -77,7 +78,7 @@ export function Home({
                 <div key={item.id} className="home__progress-row">
                   <div>
                     <p className="home__progress-title">
-                      MRI analysis running — step {Math.min(item.done.length + 1, item.steps.length)} of{" "}
+                      {item.subject_label ? `${item.subject_label} · ` : ""}MRI part running — step {Math.min(item.done.length + 1, item.steps.length)} of{" "}
                       {item.steps.length}
                     </p>
                     <p className="note">
@@ -93,24 +94,27 @@ export function Home({
             </section>
           )}
 
-          <section className="card" aria-label="Recent analyses">
+          <section className="card" aria-label="Recent assessments">
             <div className="home__head">
-              <h2 className="card__title">Recent analyses</h2>
+              <h2 className="card__title">Recent assessments</h2>
               <button type="button" className="home__link" onClick={onSeeAll}>
-                All analyses
+                All assessments
               </button>
             </div>
             {items === null && !failed && <p className="note">Loading…</p>}
             {items !== null && items.length === 0 && (
-              <p className="note">None yet. Start one with “New MRI analysis”.</p>
+              <p className="note">None yet. Start one with “New assessment”.</p>
             )}
             {items !== null && items.length > 0 && (
               <table className="home__table">
                 <thead>
                   <tr>
+                    <th>Person</th>
                     <th>Started</th>
-                    <th>Status</th>
-                    <th>DTI motion correction</th>
+                    <th>Gait</th>
+                    <th>Tapping</th>
+                    <th>Voice</th>
+                    <th>MRI</th>
                     <th />
                   </tr>
                 </thead>
@@ -119,11 +123,15 @@ export function Home({
                     const label = statusLabel(item.status);
                     return (
                       <tr key={item.id}>
+                        <td className="mono">{item.subject_label ?? "No ID"}</td>
                         <td className="mono">{parseBackendTime(item.created_at).toLocaleString()}</td>
+                        <td className="home__none" title="Not in this build yet">—</td>
+                        <td className="home__none" title="Not in this build yet">—</td>
+                        <td className="home__none" title="Not in this build yet">—</td>
                         <td>
                           <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>
+                          {item.eddy_profile === "fast" && <span className="mri__tag"> Fast DTI</span>}
                         </td>
-                        <td>{item.eddy_profile === "fast" ? "Fast (not validated)" : "Full (standard)"}</td>
                         <td>
                           <button type="button" className="home__link" onClick={() => onOpenAnalysis(item.id)}>
                             {item.status === "queued" || item.status === "running" ? "Open →" : "View →"}
@@ -140,7 +148,7 @@ export function Home({
 
         <aside className="home__rail">
           <section className="card">
-            <p className="eyebrow">Your analyses</p>
+            <p className="eyebrow">Your assessments</p>
             {summary ? (
               <>
                 <p className="home__big">{summary.counted}</p>
@@ -151,9 +159,10 @@ export function Home({
                   <li><span>Failed</span><span className="mono">{summary.failed}</span></li>
                 </ul>
                 <p className="note">
-                  {summary.counted >= 100 ? "Counted over your 100 most recent." : "All of your analyses."} A
-                  “not scored” result means the model declined to score it (for example, an unseen
-                  scanner model); it is not a normal result.
+                  {summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them."} Each counts the MRI
+                  part. A “not scored” result means the model declined to score it (for example, an unseen
+                  scanner model); it is not a normal result. Gait, tapping and voice are not processed
+                  in this build.
                 </p>
               </>
             ) : (
@@ -165,7 +174,8 @@ export function Home({
             <p className="eyebrow">About this tool</p>
             <p className="home__text">
               A screening and triage aid for prioritising specialist review. It does not diagnose, and a
-              lower score is never a clearance.
+              lower score is never a clearance. Each part you upload is processed and shown on its own;
+              nothing is combined into one result.
             </p>
           </section>
         </aside>

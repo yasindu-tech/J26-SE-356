@@ -325,3 +325,33 @@ export function homeSummary(items: readonly MriAnalysisStatus[]): HomeSummary {
     failed: items.filter((i) => i.status === "failed").length,
   };
 }
+
+// -------------------------------------------------------------------- assessment
+
+/** A pseudonymous label: letters, digits, "-" and "_", up to 32. Mirrors the backend. */
+export function isValidSubjectLabel(value: string): boolean {
+  return /^[A-Za-z0-9_-]{1,32}$/.test(value);
+}
+
+export type PartKey = "gait" | "tapping" | "voice" | "mri";
+
+export interface PartInfo {
+  key: PartKey;
+  label: string;
+  /** What the clinician provides for this part. */
+  provides: string;
+  /** Whether this build can upload and process it. Only MRI can today. */
+  available: boolean;
+}
+
+/** The four parts of the platform, each processed and shown on its own. */
+export const PARTS: readonly PartInfo[] = [
+  { key: "gait", label: "Gait", provides: "A phone video of the person walking", available: false },
+  { key: "tapping", label: "Finger tapping", provides: "A phone recording of finger tapping", available: false },
+  { key: "voice", label: "Voice", provides: "A phone voice recording", available: false },
+  { key: "mri", label: "MRI", provides: "One person's T1 and DTI study (zipped DICOM)", available: true },
+];
+
+export const PART_NOT_BUILT = "Not in this build yet";
+export const NO_COMBINED_RESULT =
+  "Each part is processed on its own and shown on its own. There is no combined result: the step that would combine them is not built yet.";

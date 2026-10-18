@@ -164,6 +164,26 @@ def test_eddy_profile_defaults_to_full_and_fast_is_passed_on(
     assert status["eddy_profile"] == "fast"  # remembered for the history list too
 
 
+def test_subject_label_is_optional_and_remembered(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    h = auth(client)
+    assert upload(client, h).json()["subject_label"] is None
+    created = upload(client, h, subject_label="P-8F31A2")
+    assert created.status_code == 202 and created.json()["subject_label"] == "P-8F31A2"
+    status = client.get(f"/api/v1/mri/analyses/{created.json()['id']}", headers=h).json()
+    assert status["subject_label"] == "P-8F31A2"
+
+
+def test_subject_label_that_looks_like_a_name_is_rejected(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    _, runner = mri_env
+    for bad in ["Jane Doe", "a" * 33, "j@ne", ""]:
+        assert upload(client, auth(client), subject_label=bad).status_code == 422, bad
+    assert runner.jobs == []  # nothing was started
+
+
 def test_unknown_eddy_profile_is_a_validation_error(
     client: TestClient, seeded_clinician: Clinician, mri_env
 ) -> None:

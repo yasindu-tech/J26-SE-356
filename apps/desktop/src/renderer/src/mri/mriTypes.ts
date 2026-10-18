@@ -16,12 +16,15 @@ export interface MriAnalysisCreated {
   id: string;
   status: AnalysisStatus;
   eddy_profile: EddyProfile;
+  subject_label: string | null;
 }
 
 export interface MriAnalysisStatus {
   id: string;
   status: AnalysisStatus;
   eddy_profile: EddyProfile;
+  /** Pseudonymous label the clinician typed; never a name. */
+  subject_label: string | null;
   created_at: string;
   finished_at: string | null;
   steps: string[];

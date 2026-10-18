@@ -14,16 +14,22 @@ FINAL_STATUSES: tuple[str, ...] = ("scored", "abstained", "failed")
 EddyProfile = Literal["full", "fast"]
 
 
+# A pseudonymous label, not a name: letters, digits, "-" and "_" only.
+SUBJECT_LABEL_PATTERN = r"^[A-Za-z0-9_-]{1,32}$"
+
+
 class MriAnalysisCreated(BaseModel):
     id: uuid.UUID
     status: AnalysisStatus
     eddy_profile: EddyProfile = "full"
+    subject_label: str | None = None
 
 
 class MriAnalysisStatus(BaseModel):
     id: uuid.UUID
     status: AnalysisStatus
     eddy_profile: EddyProfile = "full"
+    subject_label: str | None = None
     created_at: datetime
     finished_at: datetime | None = None
     steps: list[str]  # every step, in order

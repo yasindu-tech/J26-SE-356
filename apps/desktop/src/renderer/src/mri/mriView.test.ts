@@ -14,6 +14,8 @@ import {
   greeting,
   homeSummary,
   isFinal,
+  isValidSubjectLabel,
+  PARTS,
   missingRows,
   modelSetLabel,
   parseBackendTime,
@@ -318,5 +320,19 @@ describe("home", () => {
     expect(s.inProgress.map((i) => i.id)).toEqual(["queued", "running"]);
     expect([s.scored, s.notScored, s.failed]).toEqual([1, 1, 1]);
     expect(homeSummary([]).counted).toBe(0);
+  });
+});
+
+describe("assessment parts", () => {
+  it("accepts a pseudonymous label and refuses anything that could be a name", () => {
+    expect(isValidSubjectLabel("P-8F31A2")).toBe(true);
+    expect(isValidSubjectLabel("Jane Doe")).toBe(false);
+    expect(isValidSubjectLabel("")).toBe(false);
+    expect(isValidSubjectLabel("a".repeat(33))).toBe(false);
+  });
+
+  it("lists the four parts and marks only MRI as available in this build", () => {
+    expect(PARTS.map((p) => p.key)).toEqual(["gait", "tapping", "voice", "mri"]);
+    expect(PARTS.filter((p) => p.available).map((p) => p.key)).toEqual(["mri"]);
   });
 });

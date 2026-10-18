@@ -53,6 +53,10 @@ sets the DTI motion-correction settings. `full` is what the model was trained on
 does fewer eddy iterations, is quicker, and is **not validated** against `full`; it is
 stored on the analysis and shown on the result so a score is never read without it.
 
+It also takes an optional `subject_label`: a pseudonymous label (letters, digits, `-` and `_`,
+up to 32 characters) so the app can group one person's analyses. A name or anything with a space
+is rejected. Never put a name or date of birth here.
+
 Before the first analysis, the MRI model bundle must exist (`python models/mri/src/mri_bundle.py`)
 and the backend's Python needs the MRI dependencies, FSL, ANTs, dcm2niix and the SynthStrip
 Docker wrapper (see `models/mri/README.md`).

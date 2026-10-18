@@ -16,6 +16,7 @@ export interface MriUploadInput {
   age: number;
   sex: "M" | "F";
   eddyProfile: EddyProfile; // "full" unless the clinician chose "fast"
+  subjectLabel?: string; // pseudonymous label (see isValidSubjectLabel); omitted when empty
 }
 
 /** Uploads the zip with progress (fetch cannot report upload progress, XHR can). */
@@ -28,6 +29,7 @@ export function uploadMriStudy(
   form.append("age", String(input.age));
   form.append("sex", input.sex);
   form.append("eddy_profile", input.eddyProfile);
+  if (input.subjectLabel) form.append("subject_label", input.subjectLabel);
 
   return sendUpload(form, onProgress).catch(async (error: unknown) => {
     // An expired access token: renew once, then send the same form again.

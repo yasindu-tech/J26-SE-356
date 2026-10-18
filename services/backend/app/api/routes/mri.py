@@ -15,6 +15,7 @@ from app.schemas.mri import (
     MriAnalysisList,
     MriAnalysisStatus,
     MriResult,
+    SUBJECT_LABEL_PATTERN,
 )
 from app.services import mri_service
 from app.workers.mri_runner import MriRunner
@@ -48,18 +49,27 @@ def create_analysis(
             "or 'fast' (fewer iterations, quicker, not validated against 'full')"
         ),
     ] = "full",
+    subject_label: Annotated[
+        str | None,
+        Form(
+            pattern=SUBJECT_LABEL_PATTERN,
+            description="Optional pseudonymous label to tell one person's analyses apart "
+            "(letters, digits, '-' and '_'; never a name)",
+        ),
+    ] = None,
     clinician: Clinician = Depends(get_current_clinician),
     db: Session = Depends(get_db),
     runner: MriRunner = Depends(get_mri_runner),
     settings: Settings = Depends(get_settings),
 ) -> MriAnalysisCreated:
     row = mri_service.create_analysis(
-        db, clinician, file.file, age, sex, runner, settings, eddy_profile
+        db, clinician, file.file, age, sex, runner, settings, eddy_profile, subject_label
     )
     return MriAnalysisCreated(
         id=row.id,
         status=row.status,  # type: ignore[arg-type]
         eddy_profile=row.eddy_profile,  # type: ignore[arg-type]
+        subject_label=row.subject_label,
     )
 
 

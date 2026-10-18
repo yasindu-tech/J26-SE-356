@@ -26,6 +26,9 @@ class MriAnalysis(Base):
     sex: Mapped[str] = mapped_column(String(1))  # "M" | "F"
     # "full" (what the model was trained on) | "fast" (fewer eddy iterations, not validated)
     eddy_profile: Mapped[str] = mapped_column(String(10), default="full", server_default="full")
+    # A pseudonymous label the clinician types to tell one person's analyses apart
+    # (letters, digits, "-" and "_" only; validated at the API). Never a name.
+    subject_label: Mapped[str | None] = mapped_column(String(32), default=None)
     error: Mapped[str | None] = mapped_column(String(500), default=None)
     result_json: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(), server_default=func.now())

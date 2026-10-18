@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { AppShell, type NavItem } from "../components/AppShell";
+import { Assessment } from "./Assessment";
 import { Home } from "./Home";
-import { MriAnalysis } from "./MriAnalysis";
 import { VoiceResults } from "./VoiceResults";
 
-// Signed-in area. Until assessments exist (Desktop-App-Spec.md), each module has its own
-// screen, reached from the left navigation of the shared frame.
+// Signed-in area: Home, then the assessment workflow (Setup, Analysis, Result) from the
+// approved design. Voice is not in the navigation: it is reached from the Voice part on the
+// setup screen, because its result is read from a file rather than processed here.
 
-type Module = "home" | "mri" | "voice";
+type Screen = "home" | "assessment" | "voice";
 
 const ICON = {
   width: 18,
@@ -19,7 +20,7 @@ const ICON = {
   "aria-hidden": true,
 } as const;
 
-const MODULES: readonly NavItem<Module>[] = [
+const NAV: readonly NavItem<"home" | "assessment">[] = [
   {
     key: "home",
     label: "Home",
@@ -30,58 +31,72 @@ const MODULES: readonly NavItem<Module>[] = [
     ),
   },
   {
-    key: "mri",
-    label: "MRI analysis",
+    key: "assessment",
+    label: "New assessment",
     icon: (
       <svg {...ICON}>
-        <circle cx="9" cy="9" r="6.5" />
-        <path d="M5.5 9.5c1-2.5 2-2.5 3-.5s2 2 3.5-1" />
-      </svg>
-    ),
-  },
-  {
-    key: "voice",
-    label: "Voice results",
-    icon: (
-      <svg {...ICON}>
-        <rect x="7" y="2.5" width="4" height="8" rx="2" />
-        <path d="M4 8.5a5 5 0 0 0 10 0M9 13.5v2" />
+        <path d="M9 3.5v11M3.5 9h11" />
       </svg>
     ),
   },
 ];
 
 export function Workspace({ clinician, onSignOut }: { clinician: string; onSignOut: () => void }) {
-  // After sign-in the clinician lands on Home. `openId` is an analysis Home asked to open.
-  const [module, setModule] = useState<Module>("home");
+  const [screen, setScreen] = useState<Screen>("home");
+  // `openId`: an analysis Home asked to open. `session` restarts the workflow at Setup.
   const [openId, setOpenId] = useState<string | null>(null);
+  const [session, setSession] = useState(0);
 
-  function go(next: Module): void {
+  function startAssessment(): void {
     setOpenId(null);
-    setModule(next);
+    setSession((n) => n + 1);
+    setScreen("assessment");
   }
 
   return (
     <AppShell
-      items={MODULES}
-      active={module}
-      onNavigate={go}
+      items={NAV}
+      active={screen === "home" ? "home" : "assessment"}
+      onNavigate={(key) => (key === "home" ? (setOpenId(null), setScreen("home")) : startAssessment())}
       clinician={clinician}
       onSignOut={onSignOut}
     >
-      {module === "home" && (
+      {screen === "home" && (
         <Home
           clinician={clinician}
-          onNewAnalysis={() => go("mri")}
+          onNewAssessment={startAssessment}
           onOpenAnalysis={(id) => {
             setOpenId(id);
-            setModule("mri");
+            setSession((n) => n + 1);
+            setScreen("assessment");
           }}
-          onSeeAll={() => go("mri")}
+          onSeeAll={startAssessment}
         />
       )}
-      {module === "mri" && <MriAnalysis openId={openId} />}
-      {module === "voice" && <VoiceResults />}
+      {/* Stays mounted while the voice file is open, so the setup form is not lost. */}
+      {(screen === "assessment" || screen === "voice") && (
+        <div hidden={screen === "voice"}>
+          <Assessment
+            key={session}
+            openId={openId}
+            onHome={() => {
+              setOpenId(null);
+              setScreen("home");
+            }}
+            onOpenVoice={() => setScreen("voice")}
+          />
+        </div>
+      )}
+      {screen === "voice" && (
+        <>
+          <div style={{ padding: "20px 32px 0" }}>
+            <button type="button" className="btn btn--outline" onClick={() => setScreen("assessment")}>
+              ← Back to the assessment
+            </button>
+          </div>
+          <VoiceResults />
+        </>
+      )}
     </AppShell>
   );
 }
