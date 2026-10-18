@@ -733,8 +733,7 @@ def main(
         return 2
     if landmarker_factory is None and not args.model.is_file():
         print(
-            f"error: hand landmarker model not found at {args.model}. "
-            f"{hl.MODEL_HINT}",
+            f"error: hand landmarker model not found at {args.model}. {hl.MODEL_HINT}",
             file=sys.stderr,
         )
         return 2
