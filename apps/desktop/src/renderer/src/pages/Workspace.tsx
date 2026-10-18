@@ -1,35 +1,57 @@
 import { useState } from "react";
+import { AppShell, type NavItem } from "../components/AppShell";
 import { MriAnalysis } from "./MriAnalysis";
 import { VoiceResults } from "./VoiceResults";
-import "./Workspace.css";
 
-// Signed-in area. Until assessments exist (Desktop-App-Spec.md), each module has
-// its own screen; this strip switches between them.
+// Signed-in area. Until assessments exist (Desktop-App-Spec.md), each module has its own
+// screen, reached from the left navigation of the shared frame.
 
 type Module = "mri" | "voice";
-const MODULES: readonly { key: Module; label: string }[] = [
-  { key: "mri", label: "MRI" },
-  { key: "voice", label: "Voice" },
+
+const ICON = {
+  width: 18,
+  height: 18,
+  viewBox: "0 0 18 18",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  "aria-hidden": true,
+} as const;
+
+const MODULES: readonly NavItem<Module>[] = [
+  {
+    key: "mri",
+    label: "MRI analysis",
+    icon: (
+      <svg {...ICON}>
+        <circle cx="9" cy="9" r="6.5" />
+        <path d="M5.5 9.5c1-2.5 2-2.5 3-.5s2 2 3.5-1" />
+      </svg>
+    ),
+  },
+  {
+    key: "voice",
+    label: "Voice results",
+    icon: (
+      <svg {...ICON}>
+        <rect x="7" y="2.5" width="4" height="8" rx="2" />
+        <path d="M4 8.5a5 5 0 0 0 10 0M9 13.5v2" />
+      </svg>
+    ),
+  },
 ];
 
-export function Workspace({ onSignOut }: { onSignOut: () => void }) {
+export function Workspace({ clinician, onSignOut }: { clinician: string; onSignOut: () => void }) {
   const [module, setModule] = useState<Module>("mri");
   return (
-    <div className="workspace">
-      <nav className="workspace__tabs" aria-label="Screening modules">
-        {MODULES.map((m) => (
-          <button
-            type="button"
-            key={m.key}
-            className={`workspace__tab${module === m.key ? " workspace__tab--on" : ""}`}
-            aria-current={module === m.key}
-            onClick={() => setModule(m.key)}
-          >
-            {m.label}
-          </button>
-        ))}
-      </nav>
-      {module === "mri" ? <MriAnalysis onSignOut={onSignOut} /> : <VoiceResults onSignOut={onSignOut} />}
-    </div>
+    <AppShell
+      items={MODULES}
+      active={module}
+      onNavigate={setModule}
+      clinician={clinician}
+      onSignOut={onSignOut}
+    >
+      {module === "mri" ? <MriAnalysis /> : <VoiceResults />}
+    </AppShell>
   );
 }

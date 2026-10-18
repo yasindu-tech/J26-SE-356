@@ -1,14 +1,25 @@
 import { describe, expect, it } from "vitest";
-import type { MriResult, MriScore } from "./mriTypes";
+import { initials } from "../components/initials";
+import type { MriDriver, MriResult, MriScore } from "./mriTypes";
 import {
   FAST_EDDY_NOTICE,
   axisPercent,
+  caveats,
+  driverBars,
+  driverSentence,
   eddyProfileOf,
+  formatClock,
+  formatElapsed,
   formatSigned,
   isFinal,
+  missingRows,
+  modelSetLabel,
+  parseBackendTime,
   readScore,
+  scoreBand,
   statusLabel,
   stepState,
+  updateActivity,
   vectorJson,
 } from "./mriView";
 
@@ -97,5 +108,194 @@ describe("formatting", () => {
     expect(formatSigned(0.456)).toBe("+0.46");
     expect(formatSigned(-1)).toBe("−1.00");
     expect(JSON.parse(vectorJson(["a", "b"], [1, 2]))).toEqual({ a: 1, b: 2 });
+  });
+});
+
+// ------------------------------------------------------------- redesign helpers
+
+describe("time", () => {
+  it("reads the backend's zone-less UTC time as UTC", () => {
+    expect(parseBackendTime("2026-10-18T12:00:00").toISOString()).toBe("2026-10-18T12:00:00.000Z");
+    expect(parseBackendTime("2026-10-18T12:00:00Z").toISOString()).toBe("2026-10-18T12:00:00.000Z");
+    expect(parseBackendTime("2026-10-18T12:00:00+05:30").toISOString()).toBe(
+      "2026-10-18T06:30:00.000Z",
+    );
+  });
+
+  it("formats elapsed time and never goes negative", () => {
+    expect(formatElapsed(134)).toBe("02:14");
+    expect(formatElapsed(3725)).toBe("1:02:05");
+    expect(formatElapsed(-5)).toBe("00:00");
+    expect(formatClock(new Date(2026, 9, 18, 9, 5, 7))).toBe("09:05:07");
+  });
+});
+
+describe("updateActivity", () => {
+  const status = {
+    created_at: "2026-10-18T12:00:00",
+    done: ["convert"],
+    current_step: "t1",
+    note: "T1: removing the skull",
+  };
+
+  it("lists what was reported, once", () => {
+    const first = updateActivity([], status, new Date("2026-10-18T12:00:20Z"));
+    expect(first.map((e) => e.text)).toEqual([
+      "Analysis requested",
+      "Convert DICOM: finished",
+      "T1: removing the skull",
+    ]);
+    const again = updateActivity(first, status, new Date("2026-10-18T12:00:30Z"));
+    expect(again).toHaveLength(3); // the same reports are not listed twice
+  });
+
+  it("adds a line when the note changes or a step finishes", () => {
+    const first = updateActivity([], status, new Date("2026-10-18T12:00:20Z"));
+    const next = updateActivity(
+      first,
+      { ...status, done: ["convert", "t1"], current_step: "dti", note: "DTI: correcting motion" },
+      new Date("2026-10-18T12:02:00Z"),
+    );
+    expect(next.map((e) => e.text).slice(3)).toEqual(["T1 pipeline: finished", "DTI: correcting motion"]);
+  });
+});
+
+describe("scoreBand", () => {
+  it("places the zero line, score and interval on the axis", () => {
+    const band = scoreBand(score(0, -2, 2));
+    expect(band.zero).toBe(50);
+    expect(band.point).toBe(50);
+    expect(band.low).toBe(25);
+    expect(band.high).toBe(75);
+    expect(band.width).toBe(50);
+  });
+
+  it("keeps a score beyond the axis on the axis", () => {
+    expect(scoreBand(score(9, 8, 10)).point).toBe(100);
+  });
+});
+
+describe("driver bars", () => {
+  const drivers: MriDriver[] = [
+    { feature: "a", label: "Left putamen", value: 1, contribution: 0.4, direction: "towards PD", text: "" },
+    { feature: "b", label: "Right caudate", value: 1, contribution: -0.2, direction: "towards control", text: "" },
+  ];
+
+  it("puts higher on one side and lower on the other, sized to the largest", () => {
+    const bars = driverBars(drivers);
+    expect(bars[0]).toMatchObject({ side: "higher", widthPct: 100 });
+    expect(bars[1]).toMatchObject({ side: "lower", widthPct: 50 });
+  });
+
+  it("states a contribution, never a cause", () => {
+    const text = driverSentence(drivers[0]);
+    expect(text).toContain("contributed +0.40 to the score");
+    expect(text.toLowerCase()).not.toMatch(/caus|because|due to/);
+  });
+});
+
+describe("what is missing", () => {
+  const input = (found: boolean, status?: string) => ({ found, ...(status ? { status } : {}) });
+
+  it("names a part that was not in the upload and what the result then is", () => {
+    const rows = missingRows({
+      status: "scored",
+      model_set: "t1",
+      availability: { t1: true, dti: false },
+      inputs: { t1: input(true, "ok"), dti: input(false) },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].key).toBe("dti");
+    expect(rows[0].detail).toBe("Not in the upload");
+    expect(rows[0].effect).toContain("T1 only model");
+    expect(rows[0].action).toBe("Upload a study that includes it");
+  });
+
+  it("says a failed part was found but did not pass, and offers a re-check", () => {
+    const [row] = missingRows({
+      status: "scored",
+      model_set: "dti",
+      availability: { t1: false, dti: true },
+      inputs: { t1: input(true, "failed"), dti: input(true, "ok") },
+    });
+    expect(row.detail).toContain("did not pass");
+    expect(row.action).toBe("Check the scan and upload again");
+  });
+
+  it("lists both parts when nothing was scored, and never counts them as zero", () => {
+    const rows = missingRows({
+      status: "abstained",
+      model_set: null,
+      availability: { t1: false, dti: false },
+      inputs: {},
+    });
+    expect(rows.map((r) => r.key)).toEqual(["t1", "dti"]);
+    expect(rows[0].effect).toContain("No MRI score was produced");
+    expect(rows[0].effect).toContain("nothing is counted as zero");
+  });
+
+  it("lists nothing when both parts were used", () => {
+    expect(
+      missingRows({
+        status: "scored",
+        model_set: "t1dti",
+        availability: { t1: true, dti: true },
+        inputs: {},
+      }),
+    ).toEqual([]);
+    expect(modelSetLabel("t1dti")).toBe("T1 + DTI");
+  });
+});
+
+describe("caveats", () => {
+  it("reports the training population, the limits and what is outside the range", () => {
+    const c = caveats({
+      model_card: {
+        training_people: { total: 37, pd: 21, control: 16 },
+        known_limits: ["Small sample."],
+      },
+      feature_vector: {
+        names: ["a", "b"],
+        labels: ["Left putamen", "Right caudate"],
+        raw: [1, 2],
+        harmonised: [1, 2],
+        scanner_batch: {},
+        outside_training_range: ["b", "zz"],
+      },
+    });
+    expect(c.population).toContain("37 people");
+    expect(c.population).toContain("21 with Parkinson");
+    expect(c.limits).toEqual(["Small sample."]);
+    expect(c.outsideRange).toEqual([
+      { name: "b", label: "Right caudate" },
+      { name: "zz", label: "zz" },
+    ]);
+  });
+
+  it("copes with a result that has no model card or vector", () => {
+    expect(caveats({ model_card: null, feature_vector: null })).toEqual({
+      population: null,
+      limits: [],
+      outsideRange: [],
+    });
+  });
+});
+
+describe("language rules", () => {
+  it("never reads a low score as a clearance, nor a high one as a diagnosis", () => {
+    const low = readScore(score(-2, -3, -1)).sentence;
+    const high = readScore(score(2, 1, 3)).sentence;
+    expect(low).toContain("never a clearance");
+    expect(high).toContain("not a diagnosis");
+    for (const s of [low, high]) expect(s.toLowerCase()).not.toMatch(/cleared|positive|negative/);
+  });
+});
+
+describe("initials", () => {
+  it("makes two letters from a username", () => {
+    expect(initials("j.fernando")).toBe("JF");
+    expect(initials("yasindu")).toBe("YA");
+    expect(initials("Dr J Fernando")).toBe("DJ");
+    expect(initials("  ")).toBe("?");
   });
 });

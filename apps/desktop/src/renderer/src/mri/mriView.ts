@@ -3,6 +3,8 @@ import {
   type AnalysisStatus,
   type EddyProfile,
   type FinalStatus,
+  type MriAnalysisStatus,
+  type MriDriver,
   type MriResult,
   type MriScore,
 } from "./mriTypes";
@@ -66,7 +68,7 @@ export function statusLabel(status: AnalysisStatus): { text: string; tone: Statu
 }
 
 export const EDDY_PROFILE_LABELS: Record<EddyProfile, string> = {
-  full: "Full (standard, matches how the model was trained)",
+  full: "Full (standard)",
   fast: "Fast (quicker, not validated)",
 };
 
@@ -95,7 +97,9 @@ export function readScore(score: MriScore): ScoreReading {
     score.value > 0 ? "towards PD" : score.value < 0 ? "towards control" : "on the boundary";
   const sentence = crosses
     ? "The 95% interval crosses 0, so the model cannot place this scan clearly on either side of its boundary."
-    : `The whole 95% interval is ${low > 0 ? "above" : "below"} 0: the copies of the model agree this scan leans ${lean}.`;
+    : low > 0
+      ? "The whole 95% interval is above 0: the copies of the model agree the score is on the higher-likelihood side of its boundary. That is a signal for review, not a diagnosis."
+      : "The whole 95% interval is below 0: the copies of the model agree the score is on the lower-likelihood side of its boundary. A lower score is never a clearance.";
   return { lean, intervalCrossesBoundary: crosses, sentence };
 }
 
@@ -116,4 +120,178 @@ export function formatSigned(value: number, digits = 2): string {
 export function vectorJson(names: readonly string[], values: readonly number[]): string {
   const entries = names.map((name, i) => [name, values[i]] as const);
   return JSON.stringify(Object.fromEntries(entries), null, 2);
+}
+
+// ------------------------------------------------------------ progress screen
+
+/** The backend sends UTC times without a zone ("2026-10-18T12:00:00"). */
+export function parseBackendTime(value: string): Date {
+  return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`);
+}
+
+/** Elapsed time as 02:14, or 1:02:14 once it passes an hour. Never negative. */
+export function formatElapsed(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`;
+}
+
+export function formatClock(at: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
+
+export interface ActivityEntry {
+  key: string; // what happened, so the same event is never listed twice
+  at: string; // ISO time this screen saw it
+  text: string;
+}
+
+/**
+ * The activity list: only what this screen has actually seen the backend report (a step
+ * finishing, a new progress note). It starts when the screen opens and is not a stored log.
+ */
+export function updateActivity(
+  log: readonly ActivityEntry[],
+  status: Pick<MriAnalysisStatus, "created_at" | "done" | "current_step" | "note">,
+  now: Date,
+): ActivityEntry[] {
+  const next = [...log];
+  const seen = new Set(log.map((e) => e.key));
+  const add = (key: string, text: string, at: Date): void => {
+    if (!seen.has(key)) {
+      seen.add(key);
+      next.push({ key, at: at.toISOString(), text });
+    }
+  };
+  add("requested", "Analysis requested", parseBackendTime(status.created_at));
+  for (const step of status.done) {
+    add(`done:${step}`, `${STEP_LABELS[step] ?? step}: finished`, now);
+  }
+  if (status.current_step && status.note) {
+    add(`note:${status.current_step}:${status.note}`, status.note, now);
+  }
+  return next;
+}
+
+// --------------------------------------------------------------------- result page
+
+export interface ScoreBand {
+  zero: number; // all values are 0–100, positions on the axis
+  point: number;
+  low: number;
+  high: number;
+  width: number;
+}
+
+/** Where the zero line, the score and its 95% interval sit on the axis. */
+export function scoreBand(score: MriScore, axis: readonly [number, number] = SCORE_AXIS): ScoreBand {
+  const low = axisPercent(score.interval_95[0], axis);
+  const high = axisPercent(score.interval_95[1], axis);
+  return {
+    zero: axisPercent(0, axis),
+    point: axisPercent(score.value, axis),
+    low,
+    high,
+    width: Math.max(0, high - low),
+  };
+}
+
+export interface DriverBar {
+  feature: string;
+  label: string;
+  contribution: number;
+  /** Which side of the zero line the bar is on, and how it is drawn: solid on the right
+   *  (pushed the score higher), outlined on the left (pushed it lower). Direction never
+   *  depends on colour alone. */
+  side: "higher" | "lower";
+  widthPct: number; // 0–100 of the bar lane, relative to the largest contribution shown
+}
+
+export function driverBars(drivers: readonly MriDriver[]): DriverBar[] {
+  const largest = Math.max(1e-9, ...drivers.map((d) => Math.abs(d.contribution)));
+  return drivers.map((d) => ({
+    feature: d.feature,
+    label: d.label,
+    contribution: d.contribution,
+    side: d.contribution >= 0 ? "higher" : "lower",
+    widthPct: (Math.abs(d.contribution) / largest) * 100,
+  }));
+}
+
+/** Attribution wording: what contributed to the prediction, never what caused anything. */
+export function driverSentence(d: Pick<MriDriver, "label" | "contribution">): string {
+  const dir = d.contribution >= 0 ? "higher" : "lower";
+  return `${d.label} contributed ${formatSigned(d.contribution)} to the score (pushed it ${dir}).`;
+}
+
+export const MODEL_SET_LABELS: Record<string, string> = {
+  t1: "T1 only",
+  dti: "DTI only",
+  t1dti: "T1 + DTI",
+};
+
+export function modelSetLabel(set: string | null): string {
+  return set ? (MODEL_SET_LABELS[set] ?? set.toUpperCase()) : "no";
+}
+
+export interface MissingRow {
+  key: "t1" | "dti";
+  what: string;
+  detail: string;
+  effect: string;
+  /** Label of the action offered, or null when there is nothing to do. */
+  action: string | null;
+}
+
+/** Each scan part that did not contribute, what that does to the result, what to do. */
+export function missingRows(result: Pick<MriResult, "availability" | "inputs" | "status" | "model_set">): MissingRow[] {
+  const rows: MissingRow[] = [];
+  for (const key of ["t1", "dti"] as const) {
+    if (result.availability[key]) continue;
+    const input = result.inputs[key];
+    const found = input?.found ?? false;
+    rows.push({
+      key,
+      what: key === "t1" ? "T1 scan" : "DTI scan",
+      detail: !found
+        ? "Not in the upload"
+        : input?.status === "ok"
+          ? "Found, but not used by the model that scored this scan"
+          : "Found, but it did not pass processing or its quality checks",
+      effect:
+        result.status === "scored"
+          ? `The score comes from the ${modelSetLabel(result.model_set)} model only. Scores from different models are not interchangeable, so compare a score only with scores from the same model.`
+          : "No MRI score was produced, and nothing is counted as zero or as normal.",
+      action: found ? "Check the scan and upload again" : "Upload a study that includes it",
+    });
+  }
+  return rows;
+}
+
+export interface Caveats {
+  population: string | null;
+  limits: string[];
+  outsideRange: { name: string; label: string }[];
+}
+
+/** The caveats block: who the model was trained on, its known limits, and anything in this
+ *  scan that falls outside what it saw in training. */
+export function caveats(
+  result: Pick<MriResult, "model_card" | "feature_vector">,
+): Caveats {
+  const people = result.model_card?.training_people;
+  const fv = result.feature_vector;
+  return {
+    population: people
+      ? `Trained on ${people.total} people (${people.pd} with Parkinson's disease, ${people.control} controls). With a sample this small the model's uncertainty is large.`
+      : null,
+    limits: result.model_card?.known_limits ?? [],
+    outsideRange: (fv?.outside_training_range ?? []).map((name) => {
+      const i = fv ? fv.names.indexOf(name) : -1;
+      return { name, label: fv && i >= 0 ? (fv.labels[i] ?? name) : name };
+    }),
+  };
 }
