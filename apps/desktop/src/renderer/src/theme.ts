@@ -1,4 +1,4 @@
-import { colors, radius, spacing } from "@pd-xai/shared";
+import { colors, fonts, radius, spacing } from "@pd-xai/shared";
 
 /**
  * Publishes the shared design tokens as CSS custom properties so plain CSS
@@ -16,6 +16,9 @@ export function applyTheme(): void {
   }
   for (const [name, value] of Object.entries(radius)) {
     root.setProperty(`--radius-${kebabCase(name)}`, `${value}px`);
+  }
+  for (const [name, value] of Object.entries(fonts)) {
+    root.setProperty(`--font-${kebabCase(name)}`, value);
   }
 }
 
