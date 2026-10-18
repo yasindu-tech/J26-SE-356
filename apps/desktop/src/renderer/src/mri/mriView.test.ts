@@ -13,6 +13,7 @@ import {
   formatSigned,
   greeting,
   homeSummary,
+  FAST_EDDY_WARNING,
   isFinal,
   isValidSubjectLabel,
   PARTS,
@@ -43,6 +44,10 @@ describe("eddyProfileOf", () => {
   it("is null when there was no DTI, or an older result did not record it", () => {
     expect(eddyProfileOf({ inputs: {} })).toBeNull();
     expect(eddyProfileOf(withDti())).toBeNull();
+  });
+
+  it("warns before a run, too, that the fast setting is not validated", () => {
+    expect(FAST_EDDY_WARNING).toContain("not been checked");
   });
 
   it("has a notice that says the fast setting is not validated", () => {

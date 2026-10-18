@@ -8,7 +8,7 @@ import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import {
   EDDY_PROFILE_LABELS,
-  FAST_EDDY_NOTICE,
+  FAST_EDDY_WARNING,
   NO_COMBINED_RESULT,
   PARTS,
   PART_NOT_BUILT,
@@ -43,12 +43,19 @@ function errorText(error: unknown, fallback: string): string {
 /** `openId`: open an existing analysis (Home links to one) instead of starting at Setup. */
 export function Assessment({
   openId = null,
+  eddyProfile,
+  confirmFast,
   onHome,
   onOpenVoice,
+  onOpenSettings,
 }: {
   openId?: string | null;
+  /** From Settings: the DTI motion correction new analyses use. */
+  eddyProfile: EddyProfile;
+  confirmFast: boolean;
   onHome: () => void;
   onOpenVoice: () => void;
+  onOpenSettings: () => void;
 }) {
   const [screen, setScreen] = useState<Screen>({ view: "setup" });
   const [label, setLabel] = useState<string | null>(null);
@@ -99,6 +106,9 @@ export function Assessment({
 
       {screen.view === "setup" && (
         <Setup
+          eddyProfile={eddyProfile}
+          confirmFast={confirmFast}
+          onOpenSettings={onOpenSettings}
           onOpenVoice={onOpenVoice}
           onStart={async (input) => {
             setError(null);
@@ -222,18 +232,24 @@ function megabytes(bytes: number): string {
 }
 
 function Setup({
+  eddyProfile,
+  confirmFast,
   onStart,
   onOpenVoice,
+  onOpenSettings,
 }: {
+  eddyProfile: EddyProfile;
+  confirmFast: boolean;
   onStart: (input: StartInput) => Promise<void>;
   onOpenVoice: () => void;
+  onOpenSettings: () => void;
 }) {
   const [label, setLabel] = useState("");
   const [age, setAge] = useState("");
   const [sex, setSex] = useState<"" | "M" | "F">("");
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [eddyProfile, setEddyProfile] = useState<EddyProfile>("full");
+  const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   function submit(event: React.FormEvent<HTMLFormElement>): void {
@@ -254,6 +270,11 @@ function Setup({
       setProblem("Choose the person's sex; the MRI part needs it.");
     } else {
       setProblem(null);
+      if (eddyProfile === "fast" && confirmFast && !confirming) {
+        setConfirming(true); // ask once; pressing the button again goes ahead
+        return;
+      }
+      setConfirming(false);
       void onStart({ file, age: years, sex, eddyProfile, ...(trimmed ? { subjectLabel: trimmed } : {}) });
     }
   }
@@ -363,23 +384,18 @@ function Setup({
               </span>
             )}
           </label>
-          <label className="mri__field">
-            <span className="mri__label">DTI motion correction</span>
-            <select
-              className="mri__input"
-              value={eddyProfile}
-              onChange={(e) => setEddyProfile(e.target.value === "fast" ? "fast" : "full")}
-            >
-              {(Object.keys(EDDY_PROFILE_LABELS) as EddyProfile[]).map((profile) => (
-                <option key={profile} value={profile}>
-                  {EDDY_PROFILE_LABELS[profile]}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className="asm__setting">
+            <span>
+              <span className="mri__label">DTI motion correction: </span>
+              {EDDY_PROFILE_LABELS[eddyProfile]}
+            </span>
+            <button type="button" className="asm__link" onClick={onOpenSettings}>
+              Change in Settings
+            </button>
+          </p>
           {eddyProfile === "fast" && (
             <p className="mri__notice" role="note">
-              {FAST_EDDY_NOTICE}
+              {FAST_EDDY_WARNING}
             </p>
           )}
         </div>
@@ -390,6 +406,15 @@ function Setup({
           {problem}
         </p>
       )}
+      {confirming && (
+        <p className="mri__notice" role="alert">
+          The fast DTI setting is not validated (see the note on the MRI card). Press &ldquo;Yes, start with Fast&rdquo; to go ahead, or{" "}
+          <button type="button" className="asm__link" onClick={onOpenSettings}>
+            change the setting
+          </button>
+          .
+        </p>
+      )}
 
       <section className="card asm__foot">
         <p className="note">
@@ -398,7 +423,7 @@ function Setup({
           analysis ends, and only the result is kept.
         </p>
         <button type="submit" className="btn btn--primary">
-          Start analysis
+          {confirming ? "Yes, start with Fast" : "Start analysis"}
         </button>
       </section>
     </form>

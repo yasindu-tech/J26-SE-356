@@ -205,3 +205,13 @@
   font-size: 32px;
   color: var(--color-neutral-600);
 }
+
+.asm__setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin: 0;
+  font-size: 14px;
+}

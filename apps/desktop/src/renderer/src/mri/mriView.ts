@@ -67,6 +67,10 @@ export function statusLabel(status: AnalysisStatus): { text: string; tone: Statu
   }
 }
 
+/** Before an analysis runs (Settings, confirmation): the same warning, in the future tense. */
+export const FAST_EDDY_WARNING =
+  "New analyses will use the fast DTI setting. It has not been checked against the standard (full) setting, so the DTI measurements, and the score, may differ from what the full setting would give.";
+
 export const EDDY_PROFILE_LABELS: Record<EddyProfile, string> = {
   full: "Full (standard)",
   fast: "Fast (quicker, not validated)",
