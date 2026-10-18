@@ -14,6 +14,8 @@ import {
   greeting,
   homeSummary,
   FAST_EDDY_WARNING,
+  ageFromYearOfBirth,
+  parseYearOfBirth,
   isFinal,
   isValidSubjectLabel,
   PARTS,
@@ -339,5 +341,20 @@ describe("assessment parts", () => {
   it("lists the four parts and marks only MRI as available in this build", () => {
     expect(PARTS.map((p) => p.key)).toEqual(["gait", "tapping", "voice", "mri"]);
     expect(PARTS.filter((p) => p.available).map((p) => p.key)).toEqual(["mri"]);
+  });
+});
+
+describe("year of birth", () => {
+  const now = new Date(2026, 9, 18);
+  it("works out the age the model needs", () => {
+    expect(ageFromYearOfBirth(1987, now)).toBe(39);
+  });
+  it("accepts a four-digit year of an adult and nothing else", () => {
+    expect(parseYearOfBirth("1987", now)).toBe(1987);
+    expect(parseYearOfBirth("2015", now)).toBeNull(); // 11 years old
+    expect(parseYearOfBirth("1900", now)).toBeNull(); // 126 years old
+    expect(parseYearOfBirth("87", now)).toBeNull();
+    expect(parseYearOfBirth("19.7", now)).toBeNull();
+    expect(parseYearOfBirth("", now)).toBeNull();
   });
 });

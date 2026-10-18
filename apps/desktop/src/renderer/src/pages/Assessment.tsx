@@ -12,8 +12,10 @@ import {
   NO_COMBINED_RESULT,
   PARTS,
   PART_NOT_BUILT,
+  ageFromYearOfBirth,
   isFinal,
   isValidSubjectLabel,
+  parseYearOfBirth,
 } from "../mri/mriView";
 import "./MriAnalysis.css";
 import "./Assessment.css";
@@ -25,31 +27,110 @@ import "./Assessment.css";
 // shown so the whole intended workflow is visible, and are marked as not built.
 
 type Screen =
-  | { view: "setup" }
+  | { view: "patient" }
+  | { view: "modalities" }
+  | { view: "review" }
   | { view: "uploading"; fraction: number }
   | { view: "analysis"; id: string }
   | { view: "result"; id: string; result: MriResult };
 
-const STAGES = ["Setup", "Analysis", "Result"] as const;
+// One screen per step, so nothing needs scrolling to find the next thing to do.
+const STAGES = ["Patient details", "Modalities", "Review", "Analysis", "Result"] as const;
+
+const STAGE_HINT: Record<Screen["view"], string> = {
+  patient: "Who is this assessment for?",
+  modalities: "Choose what to analyse. Each part is processed and shown separately.",
+  review: "Check everything, then start.",
+  uploading: "Sending the scan.",
+  analysis: "Each part is processed on its own.",
+  result: "Each part has its own result.",
+};
 
 function stageOf(view: Screen["view"]): number {
-  return view === "setup" || view === "uploading" ? 0 : view === "analysis" ? 1 : 2;
+  switch (view) {
+    case "patient":
+      return 0;
+    case "modalities":
+      return 1;
+    case "review":
+    case "uploading":
+      return 2;
+    case "analysis":
+      return 3;
+    case "result":
+      return 4;
+  }
 }
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-/** `openId`: open an existing analysis (Home links to one) instead of starting at Setup. */
+type Hand = "" | "right" | "left" | "unknown";
+
+interface Form {
+  label: string;
+  yearOfBirth: string;
+  sex: "" | "M" | "F";
+  /** Free text, kept on this screen only. Not sent anywhere in this build. */
+  reason: string;
+  /** "Screening consent explained and recorded" ticked. Not stored in this build. */
+  consent: boolean;
+  /** Free text, kept on this screen only; no model uses it. */
+  medication: string;
+  hand: Hand;
+  file: File | null;
+}
+
+const EMPTY_FORM: Form = {
+  label: "",
+  yearOfBirth: "",
+  sex: "",
+  reason: "",
+  consent: false,
+  medication: "",
+  hand: "",
+  file: null,
+};
+
+/** What is wrong with the patient details, or null when they are fine. */
+function patientProblem(form: Form): string | null {
+  const label = form.label.trim();
+  if (label !== "" && !isValidSubjectLabel(label)) {
+    return "The ID can use letters, digits, - and _ only (up to 32). Do not use a name.";
+  }
+  if (parseYearOfBirth(form.yearOfBirth, new Date()) === null) {
+    return "Enter a four-digit year of birth for an adult (18 to 110 years old); the MRI part needs it.";
+  }
+  if (form.sex === "") return "Choose the person's sex; the MRI part needs it.";
+  if (!form.consent) return "Confirm that screening consent was explained and recorded.";
+  return null;
+}
+
+/** What is wrong with the chosen parts, or null when at least one valid part is chosen. */
+function modalitiesProblem(form: Form): string | null {
+  if (!form.file) return "Add at least one part to analyse. In this build that is the MRI scan.";
+  if (!form.file.name.toLowerCase().endsWith(".zip")) {
+    return "Choose a .zip file holding one person's DICOM folder.";
+  }
+  if (form.file.size > MRI_MAX_UPLOAD_MB * 1024 * 1024) {
+    return `The zip is larger than ${MRI_MAX_UPLOAD_MB} MB.`;
+  }
+  return null;
+}
+
+/** `openId`: open an existing analysis (Home links to one) instead of starting at step 1. */
 export function Assessment({
   openId = null,
   eddyProfile,
   confirmFast,
+  clinician,
   onHome,
   onOpenVoice,
   onOpenSettings,
 }: {
   openId?: string | null;
+  clinician: string;
   /** From Settings: the DTI motion correction new analyses use. */
   eddyProfile: EddyProfile;
   confirmFast: boolean;
@@ -57,9 +138,11 @@ export function Assessment({
   onOpenVoice: () => void;
   onOpenSettings: () => void;
 }) {
-  const [screen, setScreen] = useState<Screen>({ view: "setup" });
+  const [screen, setScreen] = useState<Screen>({ view: "patient" });
+  const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [label, setLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!openId) return;
@@ -75,13 +158,59 @@ export function Assessment({
       .catch((e) => setError(errorText(e, "Could not open that analysis.")));
   }, [openId]);
 
+  function go(next: Screen): void {
+    setError(null);
+    setConfirming(false);
+    setScreen(next);
+  }
+
+  function next(from: "patient" | "modalities"): void {
+    const problem = from === "patient" ? patientProblem(form) : modalitiesProblem(form);
+    if (problem) {
+      setError(problem);
+    } else {
+      go({ view: from === "patient" ? "modalities" : "review" });
+    }
+  }
+
+  async function start(): Promise<void> {
+    const file = form.file;
+    const year = parseYearOfBirth(form.yearOfBirth, new Date());
+    if (!file || form.sex === "" || year === null) return; // already checked on the earlier steps
+    if (eddyProfile === "fast" && confirmFast && !confirming) {
+      setConfirming(true); // ask once; pressing the button again goes ahead
+      return;
+    }
+    const trimmed = form.label.trim();
+    setError(null);
+    setConfirming(false);
+    setLabel(trimmed || null);
+    setScreen({ view: "uploading", fraction: 0 });
+    try {
+      const created = await uploadMriStudy(
+        {
+          file,
+          age: ageFromYearOfBirth(year, new Date()),
+          sex: form.sex,
+          eddyProfile,
+          ...(trimmed ? { subjectLabel: trimmed } : {}),
+        },
+        (fraction) => setScreen({ view: "uploading", fraction }),
+      );
+      setScreen({ view: "analysis", id: created.id });
+    } catch (e) {
+      setError(errorText(e, "The upload failed."));
+      setScreen({ view: "review" });
+    }
+  }
+
   const stage = stageOf(screen.view);
 
   return (
     <div className="mri asm">
       <PageHeader
         title={label ? `Assessment ${label}` : "New assessment"}
-        subtitle="Upload any of the four parts. Each is processed and shown separately."
+        subtitle={STAGE_HINT[screen.view]}
         actions={
           <ol className="asm__stages" aria-label="Progress">
             {STAGES.map((name, i) => (
@@ -104,26 +233,30 @@ export function Assessment({
         </p>
       )}
 
-      {screen.view === "setup" && (
-        <Setup
+      {screen.view === "patient" && (
+        <PatientStep form={form} clinician={clinician} onChange={setForm} onNext={() => next("patient")} />
+      )}
+
+      {screen.view === "modalities" && (
+        <ModalitiesStep
+          form={form}
           eddyProfile={eddyProfile}
-          confirmFast={confirmFast}
-          onOpenSettings={onOpenSettings}
+          onChange={setForm}
           onOpenVoice={onOpenVoice}
-          onStart={async (input) => {
-            setError(null);
-            setLabel(input.subjectLabel ?? null);
-            setScreen({ view: "uploading", fraction: 0 });
-            try {
-              const created = await uploadMriStudy(input, (fraction) =>
-                setScreen({ view: "uploading", fraction }),
-              );
-              setScreen({ view: "analysis", id: created.id });
-            } catch (e) {
-              setError(errorText(e, "The upload failed."));
-              setScreen({ view: "setup" });
-            }
-          }}
+          onOpenSettings={onOpenSettings}
+          onBack={() => go({ view: "patient" })}
+          onNext={() => next("modalities")}
+        />
+      )}
+
+      {screen.view === "review" && (
+        <ReviewStep
+          form={form}
+          eddyProfile={eddyProfile}
+          confirming={confirming}
+          onOpenSettings={onOpenSettings}
+          onBack={() => go({ view: "modalities" })}
+          onStart={() => void start()}
         />
       )}
 
@@ -161,9 +294,9 @@ export function Assessment({
           <MriResultView
             result={screen.result}
             onNewAnalysis={() => {
-              setError(null);
               setLabel(null);
-              setScreen({ view: "setup" });
+              setForm(EMPTY_FORM);
+              go({ view: "patient" });
             }}
           />
           <section className="asm__others" aria-label="Parts that were not provided">
@@ -217,135 +350,204 @@ function PartsStrip({ mri }: { mri: MriState }) {
   );
 }
 
-// ------------------------------------------------------------------------ setup
-
-interface StartInput {
-  file: File;
-  age: number;
-  sex: "M" | "F";
-  eddyProfile: EddyProfile;
-  subjectLabel?: string;
-}
+// ----------------------------------------------------------------------- steps
 
 function megabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
 }
 
-function Setup({
+function StepButtons({
+  onBack,
+  onNext,
+  nextLabel,
+}: {
+  onBack?: () => void;
+  onNext: () => void;
+  nextLabel: string;
+}) {
+  return (
+    <div className="asm__buttons">
+      {onBack ? (
+        <button type="button" className="btn btn--outline" onClick={onBack}>
+          ← Back
+        </button>
+      ) : (
+        <span />
+      )}
+      <button type="button" className="btn btn--primary" onClick={onNext}>
+        {nextLabel}
+      </button>
+    </div>
+  );
+}
+
+/** Step 1: who the assessment is for, as in the approved design's Patient section. */
+function PatientStep({
+  form,
+  clinician,
+  onChange,
+  onNext,
+}: {
+  form: Form;
+  clinician: string;
+  onChange: (next: Form) => void;
+  onNext: () => void;
+}) {
+  return (
+    <form
+      className="card asm__step"
+      noValidate
+      aria-label="Patient"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onNext();
+      }}
+    >
+      <div className="mri__step-head">
+        <p className="eyebrow">Step 1 of 3 · Patient</p>
+        <h2 className="card__title">Patient details</h2>
+        <p className="note">
+          Pseudonymous ID only. No name or date of birth is asked for, so this screen can face the
+          patient.
+        </p>
+      </div>
+
+      <div className="asm__person">
+        <label className="mri__field">
+          <span className="mri__label">Pseudonymous ID</span>
+          <input
+            className="mri__input mono"
+            value={form.label}
+            maxLength={32}
+            placeholder="e.g. P-8F31A2"
+            onChange={(e) => onChange({ ...form, label: e.target.value })}
+          />
+        </label>
+        <label className="mri__field">
+          <span className="mri__label">Year of birth</span>
+          <input
+            className="mri__input mono"
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="e.g. 1987"
+            value={form.yearOfBirth}
+            onChange={(e) => onChange({ ...form, yearOfBirth: e.target.value })}
+          />
+        </label>
+        <label className="mri__field">
+          <span className="mri__label">Sex</span>
+          <select
+            className="mri__input"
+            value={form.sex}
+            onChange={(e) => onChange({ ...form, sex: e.target.value as Form["sex"] })}
+          >
+            <option value="">Choose…</option>
+            <option value="F">Female</option>
+            <option value="M">Male</option>
+          </select>
+        </label>
+      </div>
+
+      <dl className="asm__facts">
+        <dt>Clinician</dt>
+        <dd>{clinician}</dd>
+      </dl>
+
+      <label className="mri__field">
+        <span className="mri__label">Reason for the assessment</span>
+        <input
+          className="mri__input"
+          value={form.reason}
+          maxLength={200}
+          placeholder="e.g. slowness and right-hand tremor, 8 months"
+          onChange={(e) => onChange({ ...form, reason: e.target.value })}
+        />
+      </label>
+
+      <label className="asm__check">
+        <input
+          type="checkbox"
+          checked={form.consent}
+          onChange={(e) => onChange({ ...form, consent: e.target.checked })}
+        />
+        <span>Screening consent explained and recorded</span>
+      </label>
+
+      <label className="mri__field">
+        <span className="mri__label">
+          Current medication <span className="asm__muted">(affects interpretation)</span>
+        </span>
+        <input
+          className="mri__input"
+          value={form.medication}
+          maxLength={200}
+          placeholder="e.g. metoclopramide 10 mg"
+          onChange={(e) => onChange({ ...form, medication: e.target.value })}
+        />
+      </label>
+
+      <fieldset className="asm__hand">
+        <legend className="mri__label">Handedness</legend>
+        {(
+          [
+            ["right", "Right"],
+            ["left", "Left"],
+            ["unknown", "Unknown"],
+          ] as const
+        ).map(([value, text]) => (
+          <label key={value}>
+            <input
+              type="radio"
+              name="handedness"
+              checked={form.hand === value}
+              onChange={() => onChange({ ...form, hand: value })}
+            />
+            {text}
+          </label>
+        ))}
+      </fieldset>
+
+      <p className="note">
+        In this build only the ID, age and sex go to the analysis. The MRI part takes your year of
+        birth as age in years (within a year of the true age), and sex, because its scanner
+        adjustment was fitted with them. The reason, medication and handedness stay on this screen:
+        they are not saved or sent, and no model uses them. Do not type a name.
+      </p>
+      <StepButtons onNext={onNext} nextLabel="Next: Modalities →" />
+    </form>
+  );
+}
+
+/** Step 2: which parts to analyse. Only MRI can be uploaded in this build. */
+function ModalitiesStep({
+  form,
   eddyProfile,
-  confirmFast,
-  onStart,
+  onChange,
   onOpenVoice,
   onOpenSettings,
+  onBack,
+  onNext,
 }: {
+  form: Form;
   eddyProfile: EddyProfile;
-  confirmFast: boolean;
-  onStart: (input: StartInput) => Promise<void>;
+  onChange: (next: Form) => void;
   onOpenVoice: () => void;
   onOpenSettings: () => void;
+  onBack: () => void;
+  onNext: () => void;
 }) {
-  const [label, setLabel] = useState("");
-  const [age, setAge] = useState("");
-  const [sex, setSex] = useState<"" | "M" | "F">("");
-  const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  function submit(event: React.FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    const years = Number(age);
-    const trimmed = label.trim();
-    if (trimmed !== "" && !isValidSubjectLabel(trimmed)) {
-      setProblem("The ID can use letters, digits, - and _ only (up to 32). Do not use a name.");
-    } else if (!file) {
-      setProblem("Add at least one part to analyse. In this build that is the MRI scan.");
-    } else if (!file.name.toLowerCase().endsWith(".zip")) {
-      setProblem("Choose a .zip file holding one person's DICOM folder.");
-    } else if (file.size > MRI_MAX_UPLOAD_MB * 1024 * 1024) {
-      setProblem(`The zip is larger than ${MRI_MAX_UPLOAD_MB} MB.`);
-    } else if (!Number.isFinite(years) || years < 18 || years > 110) {
-      setProblem("Enter the person's age in years (18 to 110); the MRI part needs it.");
-    } else if (sex === "") {
-      setProblem("Choose the person's sex; the MRI part needs it.");
-    } else {
-      setProblem(null);
-      if (eddyProfile === "fast" && confirmFast && !confirming) {
-        setConfirming(true); // ask once; pressing the button again goes ahead
-        return;
-      }
-      setConfirming(false);
-      void onStart({ file, age: years, sex, eddyProfile, ...(trimmed ? { subjectLabel: trimmed } : {}) });
-    }
-  }
+  const file = form.file;
+  const setFile = (f: File | null) => onChange({ ...form, file: f });
 
   return (
-    <form className="asm__stack" onSubmit={submit} noValidate>
-      <section className="card">
-        <div className="mri__step-head">
-          <p className="eyebrow">Person</p>
-          <h2 className="card__title">Who is this for</h2>
-        </div>
-        <div className="asm__person">
-          <label className="mri__field">
-            <span className="mri__label">Pseudonymous ID</span>
-            <input
-              className="mri__input mono"
-              value={label}
-              maxLength={32}
-              placeholder="e.g. P-8F31A2"
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </label>
-          <label className="mri__field">
-            <span className="mri__label">Age (years)</span>
-            <input
-              className="mri__input mono"
-              type="number"
-              min={18}
-              max={110}
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-            />
-          </label>
-          <label className="mri__field">
-            <span className="mri__label">Sex</span>
-            <select
-              className="mri__input"
-              value={sex}
-              onChange={(e) => setSex(e.target.value as "" | "M" | "F")}
-            >
-              <option value="">Choose…</option>
-              <option value="F">Female</option>
-              <option value="M">Male</option>
-            </select>
-          </label>
-        </div>
-        <p className="note">
-          The ID is a label so you can find this person&rsquo;s analyses again. Use no name or date of
-          birth. Age and sex are needed by the MRI part, because its scanner adjustment (ComBat) was
-          fitted with them.
-        </p>
-      </section>
+    <section className="card asm__step">
+      <div className="mri__step-head">
+        <p className="eyebrow">Step 2 of 3</p>
+        <h2 className="card__title">Modalities</h2>
+      </div>
 
-      <section className="asm__parts" aria-label="The four parts">
-        {PARTS.filter((p) => !p.available).map((p) => (
-          <div key={p.key} className="asm__part asm__part--none">
-            <div className="asm__part-head">
-              <h3 className="asm__part-title">{p.label}</h3>
-              <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
-            </div>
-            <p className="note">{p.provides}.</p>
-            {p.key === "voice" ? (
-              <button type="button" className="asm__link" onClick={onOpenVoice}>
-                Open an existing voice result file →
-              </button>
-            ) : (
-              <p className="note">Will be processed on its own when its module is added.</p>
-            )}
-          </div>
-        ))}
-
+      <div className="asm__modalities">
         <div className="asm__part asm__part--mri">
           <div className="asm__part-head">
             <h3 className="asm__part-title">MRI</h3>
@@ -399,33 +601,107 @@ function Setup({
             </p>
           )}
         </div>
-      </section>
 
-      {problem && (
-        <p className="mri__error" role="alert">
-          {problem}
-        </p>
-      )}
+        <div className="asm__others-col">
+          {PARTS.filter((p) => !p.available).map((p) => (
+            <div key={p.key} className="asm__part asm__part--none asm__part--small">
+              <div className="asm__part-head">
+                <h3 className="asm__part-title">{p.label}</h3>
+                <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
+              </div>
+              <p className="note">{p.provides}.</p>
+              {p.key === "voice" && (
+                <button type="button" className="asm__link" onClick={onOpenVoice}>
+                  Open an existing voice result file →
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="note">{NO_COMBINED_RESULT}</p>
+      <StepButtons onBack={onBack} onNext={onNext} nextLabel="Next: Review →" />
+    </section>
+  );
+}
+
+/** Step 3: a last look, then start. */
+function ReviewStep({
+  form,
+  eddyProfile,
+  confirming,
+  onOpenSettings,
+  onBack,
+  onStart,
+}: {
+  form: Form;
+  eddyProfile: EddyProfile;
+  confirming: boolean;
+  onOpenSettings: () => void;
+  onBack: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <section className="card asm__step">
+      <div className="mri__step-head">
+        <p className="eyebrow">Step 3 of 3</p>
+        <h2 className="card__title">Review</h2>
+      </div>
+      <dl className="asm__review">
+        <div>
+          <dt>Pseudonymous ID</dt>
+          <dd className="mono">{form.label.trim() || "None given"}</dd>
+        </div>
+        <div>
+          <dt>Year of birth and sex</dt>
+          <dd className="mono">
+            {form.yearOfBirth} · {form.sex === "F" ? "Female" : "Male"}
+          </dd>
+        </div>
+        <div>
+          <dt>Consent</dt>
+          <dd>Explained and recorded (by you; not stored here)</dd>
+        </div>
+        <div>
+          <dt>MRI</dt>
+          <dd className="mono">
+            {form.file ? `${form.file.name} · ${megabytes(form.file.size)}` : "No file"}
+          </dd>
+        </div>
+        <div>
+          <dt>DTI motion correction</dt>
+          <dd>
+            {EDDY_PROFILE_LABELS[eddyProfile]}{" "}
+            <button type="button" className="asm__link" onClick={onOpenSettings}>
+              Change in Settings
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>Gait, tapping, voice</dt>
+          <dd>{PART_NOT_BUILT}</dd>
+        </div>
+      </dl>
       {confirming && (
         <p className="mri__notice" role="alert">
-          The fast DTI setting is not validated (see the note on the MRI card). Press &ldquo;Yes, start with Fast&rdquo; to go ahead, or{" "}
+          {FAST_EDDY_WARNING} Press &ldquo;Yes, start with Fast&rdquo; to go ahead, or go back and{" "}
           <button type="button" className="asm__link" onClick={onOpenSettings}>
             change the setting
           </button>
           .
         </p>
       )}
-
-      <section className="card asm__foot">
-        <p className="note">
-          {NO_COMBINED_RESULT} The scan is sent to the PD-XAI backend at{" "}
-          <span className="mono">{API_BASE_URL}</span>; the DICOM files are deleted there when the
-          analysis ends, and only the result is kept.
-        </p>
-        <button type="submit" className="btn btn--primary">
-          {confirming ? "Yes, start with Fast" : "Start analysis"}
-        </button>
-      </section>
-    </form>
+      <p className="note">
+        {NO_COMBINED_RESULT} The scan is sent to the PD-XAI backend at{" "}
+        <span className="mono">{API_BASE_URL}</span>; the DICOM files are deleted there when the
+        analysis ends, and only the result is kept.
+      </p>
+      <StepButtons
+        onBack={onBack}
+        onNext={onStart}
+        nextLabel={confirming ? "Yes, start with Fast" : "Start analysis"}
+      />
+    </section>
   );
 }

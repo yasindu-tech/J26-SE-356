@@ -359,3 +359,17 @@ export const PARTS: readonly PartInfo[] = [
 export const PART_NOT_BUILT = "Not in this build yet";
 export const NO_COMBINED_RESULT =
   "Each part is processed on its own and shown on its own. There is no combined result: the step that would combine them is not built yet.";
+
+/** The model needs an age in years; the form asks for year of birth (no date of birth is
+ *  collected). The result is within one year of the true age. */
+export function ageFromYearOfBirth(yearOfBirth: number, now: Date): number {
+  return now.getFullYear() - yearOfBirth;
+}
+
+/** A usable year of birth for an adult (18 to 110 years old this year), or null. */
+export function parseYearOfBirth(text: string, now: Date): number | null {
+  if (!/^\d{4}$/.test(text.trim())) return null;
+  const year = Number(text);
+  const age = ageFromYearOfBirth(year, now);
+  return age >= 18 && age <= 110 ? year : null;
+}

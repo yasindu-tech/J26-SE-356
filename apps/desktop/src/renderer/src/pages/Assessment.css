@@ -215,3 +215,131 @@
   margin: 0;
   font-size: 14px;
 }
+
+/* One step per screen: a card with its own Back / Next row. */
+.asm__step {
+  max-width: 980px;
+}
+
+.asm__buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.asm__modalities {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .asm__modalities {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.asm__others-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.asm__part--small {
+  gap: 6px;
+  padding: 14px 18px;
+}
+
+.asm__part--mri {
+  grid-column: auto;
+}
+
+.asm__review {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-size: 14px;
+}
+
+.asm__review div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.asm__review dt {
+  color: var(--color-neutral-600);
+}
+
+.asm__review dd {
+  margin: 0;
+  text-align: right;
+}
+
+.asm__facts {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.asm__facts dt {
+  color: var(--color-neutral-600);
+}
+
+.asm__facts dd {
+  margin: 0;
+}
+
+.asm__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.asm__check input {
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.asm__muted {
+  color: var(--color-neutral-600);
+  font-weight: 400;
+}
+
+.asm__hand {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.asm__hand label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 14px;
+  font-size: 14px;
+}
+
+.asm__hand input {
+  accent-color: var(--color-primary);
+}
+
+.asm__hand legend {
+  width: 100%;
+  padding: 0;
+  margin-bottom: 6px;
+}

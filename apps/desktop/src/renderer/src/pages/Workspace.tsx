@@ -119,6 +119,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
           <Assessment
             key={session}
             openId={openId}
+            clinician={clinician}
             eddyProfile={settings.mri.eddyProfile}
             confirmFast={settings.mri.confirmFast}
             onHome={() => {
