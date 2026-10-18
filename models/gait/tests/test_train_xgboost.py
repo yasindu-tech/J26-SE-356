@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import train_xgboost as tx
-import xgboost
 from feature_contract import FeatureContractError
 from gait_extract import FEATURE_NAMES
 
@@ -271,16 +270,6 @@ def test_shap_array_accepts_both_layouts() -> None:
     assert np.array_equal(tx.shap_array(as_list), arr)
 
 
-def test_final_model_round_trips(table: pd.DataFrame, tmp_path: Path) -> None:
-    model = tx.fit_final_model(table, params=FAST)
-    path = tmp_path / "m.json"
-    model.save_model(path)
-    again = xgboost.XGBClassifier()
-    again.load_model(path)
-    x = table[list(FEATURE_NAMES)].to_numpy(float)[:20]
-    assert np.allclose(model.predict_proba(x), again.predict_proba(x))
-
-
 # --------------------------------------------------------------------------- the command line
 def test_cli_missing_inputs_exit_2(tmp_path: Path) -> None:
     assert tx.main(["--table", str(tmp_path / "no.csv"), "--folds", str(tmp_path / "no2.csv")]) == 2
@@ -316,15 +305,16 @@ def test_cli_runs_end_to_end_and_writes_files(
         "metrics.csv",
         "metrics.json",
         "shap_mean_abs.csv",
-        "final_model.json",
-        "final_model_meta.json",
+        "bundle/model.json",
+        "bundle/bundle.json",
     ):
         assert (out / name).is_file()
     assert "Label-permutation control" in text and "at chance" in text
     assert "confusion matrix" in text
-    meta = json.loads((out / "final_model_meta.json").read_text())
-    assert meta["features"] == list(FEATURE_NAMES)
-    assert "never a result" in meta["note"]
+    info = json.loads((out / "bundle" / "bundle.json").read_text())
+    assert info["features"] == list(FEATURE_NAMES)
+    assert "never a result" in info["note"]
+    assert f"Model bundle {info['model_version']}" in text and "reload identical" in text
 
 
 def test_cli_rejects_folds_that_do_not_match_the_table(tmp_path: Path) -> None:

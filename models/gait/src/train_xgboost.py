@@ -42,11 +42,11 @@ Decisions:
    rung that fits). Scores always report both walk-level and subject-weighted results.
 7. *SHAP* is computed on the out-of-fold models of seed 0 (``TreeExplainer``, exact for trees),
    so every walk is explained by a model that never saw its subject. Values are in log-odds.
-8. *The final model* is fitted on all subjects, for the demo. Its own score is never a result:
-   it has seen every subject.
+8. *The final model* is fitted on all subjects and saved as a bundle (``model_bundle.py``) that is
+   reloaded and checked for identical predictions. Its own score is never a result.
 
 Writes to ``artifacts/models/xgboost/`` (git-ignored): ``oof_predictions.csv``, ``metrics.csv``,
-``metrics.json``, ``shap_mean_abs.csv``, ``final_model.json``, ``final_model_meta.json``.
+``metrics.json``, ``shap_mean_abs.csv``, ``bundle/`` (GAIT-22: model, feature list, version).
 Exit code 0 = ok, 1 = a fold problem or the permutation control failed, 2 = an input is missing.
 """
 
@@ -77,6 +77,7 @@ from make_folds import (
     walk_folds,
     walk_weights,
 )
+from model_bundle import load_bundle, save_bundle
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -590,20 +591,24 @@ def main(argv: list[str] | None = None) -> int:
                 + f"{r['overall']:>10.3f}"
             )
         final = fit_final_model(table, weighted=args.weighted)
-        final.save_model(args.out_dir / "final_model.json")
-        (args.out_dir / "final_model_meta.json").write_text(
-            json.dumps(
-                {
-                    **config,
-                    "features": list(FEATURE_NAMES),
-                    "classes": {str(c): CLASS_LABELS[c] for c in gm.CLASSES},
-                    "trained_on": f"all {table['subject_key'].nunique()} subjects, {len(table)} walks",
-                    "note": "fitted on every subject for the demo; its score is never a result",
-                },
-                indent=2,
-            )
+        bundle = save_bundle(
+            final,
+            args.out_dir / "bundle",
+            {
+                **config,
+                "trained_on": f"all {table['subject_key'].nunique()} subjects, {len(table)} walks",
+            },
         )
-        print(f"Final model (all subjects, for the demo): {args.out_dir / 'final_model.json'}")
+        x = _inputs(table)
+        same = np.array_equal(
+            load_bundle(args.out_dir / "bundle").predict_proba(x), final.predict_proba(x)
+        )
+        print(
+            f"Model bundle {bundle.version}: {args.out_dir / 'bundle'}; reload "
+            f"{'identical' if same else 'DIFFERENT'}"
+        )
+        if not same:
+            failed.append("the reloaded bundle predicts differently")
 
     print(f"\nWrote {args.out_dir} in {time.time() - started:.0f} s.")
     return 1 if failed else 0
