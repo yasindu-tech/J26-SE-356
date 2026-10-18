@@ -6,7 +6,7 @@ import "./AppShell.css";
 
 // The signed-in frame from the approved desktop design: a teal top bar (brand, the
 // "screening aid" reminder, connection state, who is signed in) and a left navigation.
-// Only places that exist are listed. The design also shows Home, Assessments, Referrals,
+// Only places that exist are listed. The design also shows Assessments, Referrals,
 // Audit log and Settings; they are added here when the screens behind them exist, so
 // nothing in the navigation is a dead link.
 

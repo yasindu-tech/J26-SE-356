@@ -295,3 +295,33 @@ export function caveats(
     }),
   };
 }
+
+// ------------------------------------------------------------------------- home
+
+/** "Good morning" / "Good afternoon" / "Good evening" from the local hour. */
+export function greeting(now: Date): string {
+  const h = now.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+export interface HomeSummary {
+  /** Analyses counted (the most recent ones the page loaded). */
+  counted: number;
+  inProgress: MriAnalysisStatus[];
+  scored: number;
+  notScored: number;
+  failed: number;
+}
+
+/** Counts for the home page, from real analyses only. Queued and running are "in progress". */
+export function homeSummary(items: readonly MriAnalysisStatus[]): HomeSummary {
+  return {
+    counted: items.length,
+    inProgress: items.filter((i) => i.status === "queued" || i.status === "running"),
+    scored: items.filter((i) => i.status === "scored").length,
+    notScored: items.filter((i) => i.status === "abstained").length,
+    failed: items.filter((i) => i.status === "failed").length,
+  };
+}

@@ -40,7 +40,8 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-export function MriAnalysis() {
+/** `openId`: open this analysis straight away (the home page links to one). */
+export function MriAnalysis({ openId = null }: { openId?: string | null }) {
   const [screen, setScreen] = useState<Screen>({ view: "new" });
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<MriAnalysisStatus[]>([]);
@@ -69,6 +70,15 @@ export function MriAnalysis() {
       setError(errorText(e, "Could not load that result."));
     }
   }
+
+  useEffect(() => {
+    if (!openId) return;
+    getMriStatus(openId)
+      .then((item) => openAnalysis(item))
+      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    // Only when the requested analysis changes; openAnalysis is recreated each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
 
   const selectedId = "id" in screen ? screen.id : null;
   const showRail = screen.view !== "result";

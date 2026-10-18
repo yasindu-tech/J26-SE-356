@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initials } from "../components/initials";
-import type { MriDriver, MriResult, MriScore } from "./mriTypes";
+import type { MriAnalysisStatus, MriDriver, MriResult, MriScore } from "./mriTypes";
 import {
   FAST_EDDY_NOTICE,
   axisPercent,
@@ -11,6 +11,8 @@ import {
   formatClock,
   formatElapsed,
   formatSigned,
+  greeting,
+  homeSummary,
   isFinal,
   missingRows,
   modelSetLabel,
@@ -297,5 +299,24 @@ describe("initials", () => {
     expect(initials("yasindu")).toBe("YA");
     expect(initials("Dr J Fernando")).toBe("DJ");
     expect(initials("  ")).toBe("?");
+  });
+});
+
+describe("home", () => {
+  const item = (status: MriAnalysisStatus["status"]) =>
+    ({ id: status, status }) as unknown as MriAnalysisStatus;
+
+  it("greets by the hour", () => {
+    expect(greeting(new Date(2026, 9, 18, 9))).toBe("Good morning");
+    expect(greeting(new Date(2026, 9, 18, 14))).toBe("Good afternoon");
+    expect(greeting(new Date(2026, 9, 18, 20))).toBe("Good evening");
+  });
+
+  it("counts what is in progress and what finished, and counts a non-score as not scored", () => {
+    const s = homeSummary([item("queued"), item("running"), item("scored"), item("abstained"), item("failed")]);
+    expect(s.counted).toBe(5);
+    expect(s.inProgress.map((i) => i.id)).toEqual(["queued", "running"]);
+    expect([s.scored, s.notScored, s.failed]).toEqual([1, 1, 1]);
+    expect(homeSummary([]).counted).toBe(0);
   });
 });

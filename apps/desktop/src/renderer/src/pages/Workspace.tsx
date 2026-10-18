@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { AppShell, type NavItem } from "../components/AppShell";
+import { Home } from "./Home";
 import { MriAnalysis } from "./MriAnalysis";
 import { VoiceResults } from "./VoiceResults";
 
 // Signed-in area. Until assessments exist (Desktop-App-Spec.md), each module has its own
 // screen, reached from the left navigation of the shared frame.
 
-type Module = "mri" | "voice";
+type Module = "home" | "mri" | "voice";
 
 const ICON = {
   width: 18,
@@ -19,6 +20,15 @@ const ICON = {
 } as const;
 
 const MODULES: readonly NavItem<Module>[] = [
+  {
+    key: "home",
+    label: "Home",
+    icon: (
+      <svg {...ICON}>
+        <path d="M2.5 8.5 9 3l6.5 5.5M4.5 7.5V15h9V7.5" />
+      </svg>
+    ),
+  },
   {
     key: "mri",
     label: "MRI analysis",
@@ -42,16 +52,36 @@ const MODULES: readonly NavItem<Module>[] = [
 ];
 
 export function Workspace({ clinician, onSignOut }: { clinician: string; onSignOut: () => void }) {
-  const [module, setModule] = useState<Module>("mri");
+  // After sign-in the clinician lands on Home. `openId` is an analysis Home asked to open.
+  const [module, setModule] = useState<Module>("home");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  function go(next: Module): void {
+    setOpenId(null);
+    setModule(next);
+  }
+
   return (
     <AppShell
       items={MODULES}
       active={module}
-      onNavigate={setModule}
+      onNavigate={go}
       clinician={clinician}
       onSignOut={onSignOut}
     >
-      {module === "mri" ? <MriAnalysis /> : <VoiceResults />}
+      {module === "home" && (
+        <Home
+          clinician={clinician}
+          onNewAnalysis={() => go("mri")}
+          onOpenAnalysis={(id) => {
+            setOpenId(id);
+            setModule("mri");
+          }}
+          onSeeAll={() => go("mri")}
+        />
+      )}
+      {module === "mri" && <MriAnalysis openId={openId} />}
+      {module === "voice" && <VoiceResults />}
     </AppShell>
   );
 }
