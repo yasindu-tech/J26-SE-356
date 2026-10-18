@@ -1,4 +1,11 @@
-import { MRI_STEPS, type AnalysisStatus, type FinalStatus, type MriScore } from "./mriTypes";
+import {
+  MRI_STEPS,
+  type AnalysisStatus,
+  type EddyProfile,
+  type FinalStatus,
+  type MriResult,
+  type MriScore,
+} from "./mriTypes";
 
 // Pure helpers for the MRI screen, kept out of the components so they can be tested.
 
@@ -56,6 +63,22 @@ export function statusLabel(status: AnalysisStatus): { text: string; tone: Statu
       return exhaustive;
     }
   }
+}
+
+export const EDDY_PROFILE_LABELS: Record<EddyProfile, string> = {
+  full: "Full (standard, matches how the model was trained)",
+  fast: "Fast (quicker, not validated)",
+};
+
+/** Shown whenever the fast DTI setting was used, so a score is never read without it. */
+export const FAST_EDDY_NOTICE =
+  "DTI motion correction ran with the fast setting. It has not been checked against the " +
+  "standard (full) setting, so the DTI measurements, and this score, may differ from what " +
+  "the full setting would give.";
+
+/** Which eddy setting produced a result's DTI features; null when there was no DTI. */
+export function eddyProfileOf(result: Pick<MriResult, "inputs">): EddyProfile | null {
+  return result.inputs["dti"]?.eddy?.profile ?? null;
 }
 
 export interface ScoreReading {

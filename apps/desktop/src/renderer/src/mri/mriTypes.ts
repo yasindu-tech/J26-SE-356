@@ -8,14 +8,20 @@ export type FinalStatus = Extract<AnalysisStatus, "scored" | "abstained" | "fail
 export const MRI_STEPS = ["convert", "t1", "dti", "features", "score", "explain"] as const;
 export type MriStep = (typeof MRI_STEPS)[number];
 
+/** DTI motion correction (eddy). "full" is what the model was trained on; "fast" does fewer
+ *  iterations and has not been validated against "full". */
+export type EddyProfile = "full" | "fast";
+
 export interface MriAnalysisCreated {
   id: string;
   status: AnalysisStatus;
+  eddy_profile: EddyProfile;
 }
 
 export interface MriAnalysisStatus {
   id: string;
   status: AnalysisStatus;
+  eddy_profile: EddyProfile;
   created_at: string;
   finished_at: string | null;
   steps: string[];
@@ -77,6 +83,7 @@ export interface MriSeriesInput {
   voxel_mm?: number[];
   status?: string;
   checks?: Record<string, number | boolean | null>;
+  eddy?: { profile: EddyProfile | null; seconds: number | null }; // DTI only
   qc_image?: string | null; // data: URL of the QC picture
 }
 

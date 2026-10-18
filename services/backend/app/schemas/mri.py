@@ -9,16 +9,21 @@ from pydantic import BaseModel, ConfigDict
 
 AnalysisStatus = Literal["queued", "running", "scored", "abstained", "failed"]
 FINAL_STATUSES: tuple[str, ...] = ("scored", "abstained", "failed")
+# DTI motion-correction (eddy) settings. "full" is what the model was trained on; "fast" does
+# fewer iterations and has NOT been validated against "full" (models/mri/src/preprocess_dti.py).
+EddyProfile = Literal["full", "fast"]
 
 
 class MriAnalysisCreated(BaseModel):
     id: uuid.UUID
     status: AnalysisStatus
+    eddy_profile: EddyProfile = "full"
 
 
 class MriAnalysisStatus(BaseModel):
     id: uuid.UUID
     status: AnalysisStatus
+    eddy_profile: EddyProfile = "full"
     created_at: datetime
     finished_at: datetime | None = None
     steps: list[str]  # every step, in order

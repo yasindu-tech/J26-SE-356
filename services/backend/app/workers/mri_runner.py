@@ -31,6 +31,7 @@ class MriJob:
     folder: Path  # data/backend/mri/<id>/ : upload.zip, status.json, result.json
     age: float
     sex: str
+    eddy_profile: str = "full"  # "full" | "fast", validated at the API
 
     @property
     def upload(self) -> Path:
@@ -71,6 +72,7 @@ class SubprocessRunner:
             "--status-file", str(job.status_file),
             "--work", str(job.folder / "work"),
             "--eddy-threads", str(s.mri_eddy_threads),
+            "--eddy-profile", job.eddy_profile,
         ]  # fmt: skip
 
     def run(self, job: MriJob) -> None:

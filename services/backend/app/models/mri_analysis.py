@@ -24,6 +24,8 @@ class MriAnalysis(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued")
     age: Mapped[float] = mapped_column(Float)
     sex: Mapped[str] = mapped_column(String(1))  # "M" | "F"
+    # "full" (what the model was trained on) | "fast" (fewer eddy iterations, not validated)
+    eddy_profile: Mapped[str] = mapped_column(String(10), default="full", server_default="full")
     error: Mapped[str | None] = mapped_column(String(500), default=None)
     result_json: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(), server_default=func.now())

@@ -1,6 +1,39 @@
 import { describe, expect, it } from "vitest";
-import type { MriScore } from "./mriTypes";
-import { axisPercent, formatSigned, isFinal, readScore, statusLabel, stepState, vectorJson } from "./mriView";
+import type { MriResult, MriScore } from "./mriTypes";
+import {
+  FAST_EDDY_NOTICE,
+  axisPercent,
+  eddyProfileOf,
+  formatSigned,
+  isFinal,
+  readScore,
+  statusLabel,
+  stepState,
+  vectorJson,
+} from "./mriView";
+
+function withDti(eddy?: { profile: "full" | "fast" | null; seconds: number | null }) {
+  return { inputs: { dti: { found: true, ...(eddy ? { eddy } : {}) } } } as Pick<
+    MriResult,
+    "inputs"
+  >;
+}
+
+describe("eddyProfileOf", () => {
+  it("reports the setting the DTI features were made with", () => {
+    expect(eddyProfileOf(withDti({ profile: "fast", seconds: 1500 }))).toBe("fast");
+    expect(eddyProfileOf(withDti({ profile: "full", seconds: 5000 }))).toBe("full");
+  });
+
+  it("is null when there was no DTI, or an older result did not record it", () => {
+    expect(eddyProfileOf({ inputs: {} })).toBeNull();
+    expect(eddyProfileOf(withDti())).toBeNull();
+  });
+
+  it("has a notice that says the fast setting is not validated", () => {
+    expect(FAST_EDDY_NOTICE).toContain("not been checked");
+  });
+});
 
 function score(value: number, low: number, high: number): MriScore {
   return {

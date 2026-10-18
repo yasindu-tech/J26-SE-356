@@ -4,9 +4,17 @@ import { ApiError } from "../api/client";
 import { getMriResult, getMriStatus, listMriAnalyses, uploadMriStudy } from "../api/mri.api";
 import { MriResultView } from "../components/MriResultView";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB, MRI_POLL_INTERVAL_MS } from "../constants/config";
-import type { MriAnalysisStatus, MriResult } from "../mri/mriTypes";
+import type { EddyProfile, MriAnalysisStatus, MriResult } from "../mri/mriTypes";
 import { MRI_STEPS } from "../mri/mriTypes";
-import { STEP_LABELS, isFinal, progressFraction, statusLabel, stepState } from "../mri/mriView";
+import {
+  EDDY_PROFILE_LABELS,
+  FAST_EDDY_NOTICE,
+  STEP_LABELS,
+  isFinal,
+  progressFraction,
+  statusLabel,
+  stepState,
+} from "../mri/mriView";
 import "./MriAnalysis.css";
 
 // MRI module screen: upload one person's DICOM study (zipped), watch it run,
@@ -101,6 +109,9 @@ export function MriAnalysis({ onSignOut }: { onSignOut: () => void }) {
               >
                 <span>{new Date(item.created_at + "Z").toLocaleString()}</span>
                 <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>
+                {item.eddy_profile === "fast" && (
+                  <span className="mri__tag mri__tag--neutral">Fast DTI</span>
+                )}
               </button>
             );
           })}
@@ -159,13 +170,19 @@ export function MriAnalysis({ onSignOut }: { onSignOut: () => void }) {
 // ------------------------------------------------------------------ upload form
 
 interface UploadFormProps {
-  onUpload: (input: { file: File; age: number; sex: "M" | "F" }) => Promise<void>;
+  onUpload: (input: {
+    file: File;
+    age: number;
+    sex: "M" | "F";
+    eddyProfile: EddyProfile;
+  }) => Promise<void>;
 }
 
 function UploadForm({ onUpload }: UploadFormProps) {
   const [file, setFile] = useState<File | null>(null);
   const [age, setAge] = useState("");
   const [sex, setSex] = useState<"" | "M" | "F">("");
+  const [eddyProfile, setEddyProfile] = useState<EddyProfile>("full");
   const [problem, setProblem] = useState<string | null>(null);
 
   function submit(event: React.FormEvent<HTMLFormElement>): void {
@@ -181,7 +198,7 @@ function UploadForm({ onUpload }: UploadFormProps) {
       setProblem("Choose the person's sex.");
     } else {
       setProblem(null);
-      void onUpload({ file, age: years, sex });
+      void onUpload({ file, age: years, sex, eddyProfile });
     }
   }
 
@@ -227,6 +244,25 @@ function UploadForm({ onUpload }: UploadFormProps) {
             </select>
           </label>
         </div>
+        <label className="mri__field">
+          <span className="mri__label">DTI motion correction</span>
+          <select
+            className="mri__input"
+            value={eddyProfile}
+            onChange={(e) => setEddyProfile(e.target.value === "fast" ? "fast" : "full")}
+          >
+            {(Object.keys(EDDY_PROFILE_LABELS) as EddyProfile[]).map((profile) => (
+              <option key={profile} value={profile}>
+                {EDDY_PROFILE_LABELS[profile]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {eddyProfile === "fast" && (
+          <p className="mri-result__notice" role="note">
+            {FAST_EDDY_NOTICE}
+          </p>
+        )}
         <p className="mri__muted mri__small">
           Age and sex are needed because the scanner adjustment (ComBat) was fitted with them. The
           scan is sent to the PD-XAI backend at {API_BASE_URL}; the DICOM files are deleted there
@@ -304,6 +340,11 @@ function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
         T1 takes a few minutes. DTI is much slower: the motion correction step (eddy) can run
         for an hour or more. You can leave this screen and come back from the list on the left.
       </p>
+      {status?.eddy_profile === "fast" && (
+        <p className="mri-result__notice" role="note">
+          {FAST_EDDY_NOTICE}
+        </p>
+      )}
       <div className="mri__meter" aria-label="Analysis progress">
         <div className="mri__meter-fill" style={{ width: `${progressFraction(done) * 100}%` }} />
       </div>

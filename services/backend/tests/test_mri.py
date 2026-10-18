@@ -148,6 +148,30 @@ def test_upload_runs_and_result_has_vector_score_and_explanation(
     assert {"mri_upload", "mri_result_view"} <= actions
 
 
+def test_eddy_profile_defaults_to_full_and_fast_is_passed_on(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    _, runner = mri_env
+    h = auth(client)
+    default = upload(client, h)
+    assert default.json()["eddy_profile"] == "full"
+    assert runner.jobs[-1].eddy_profile == "full"
+
+    fast = upload(client, h, eddy_profile="fast")
+    assert fast.status_code == 202 and fast.json()["eddy_profile"] == "fast"
+    assert runner.jobs[-1].eddy_profile == "fast"
+    status = client.get(f"/api/v1/mri/analyses/{fast.json()['id']}", headers=h).json()
+    assert status["eddy_profile"] == "fast"  # remembered for the history list too
+
+
+def test_unknown_eddy_profile_is_a_validation_error(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    _, runner = mri_env
+    assert upload(client, auth(client), eddy_profile="turbo").status_code == 422
+    assert runner.jobs == []  # nothing was started
+
+
 def test_progress_is_reported_while_running(
     client: TestClient, seeded_clinician: Clinician, mri_env
 ) -> None:
@@ -274,3 +298,10 @@ def test_runner_command_passes_age_sex_and_files(tmp_path: Path) -> None:
     assert cmd[cmd.index("--age") + 1] == "67.0" and cmd[cmd.index("--sex") + 1] == "M"
     assert cmd[cmd.index("--status-file") + 1].endswith("status.json")
     assert cmd[cmd.index("--eddy-threads") + 1] == "3"
+    assert cmd[cmd.index("--eddy-profile") + 1] == "full"  # the default is never fast
+
+
+def test_runner_command_passes_the_fast_profile(tmp_path: Path) -> None:
+    job = MriJob(analysis_id=uuid.uuid4(), folder=tmp_path, age=67.0, sex="M", eddy_profile="fast")
+    cmd = SubprocessRunner(Settings()).command(job)
+    assert cmd[cmd.index("--eddy-profile") + 1] == "fast"

@@ -1,6 +1,15 @@
 import { useState } from "react";
 import type { MriDriver, MriResult, MriScore, MriSeriesInput } from "../mri/mriTypes";
-import { SCORE_AXIS, axisPercent, formatSigned, readScore, statusLabel, vectorJson } from "../mri/mriView";
+import {
+  FAST_EDDY_NOTICE,
+  SCORE_AXIS,
+  axisPercent,
+  eddyProfileOf,
+  formatSigned,
+  readScore,
+  statusLabel,
+  vectorJson,
+} from "../mri/mriView";
 
 // The MRI module's output for one scan. It deliberately shows the raw model score
 // (log-odds) with its 95% interval rather than a percentage: the score is not
@@ -24,6 +33,11 @@ export function MriResultView({ result }: { result: MriResult }) {
           <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>
         </div>
         <Availability result={result} />
+        {eddyProfileOf(result) === "fast" && (
+          <p className="mri-result__notice" role="note">
+            {FAST_EDDY_NOTICE}
+          </p>
+        )}
         {result.status === "abstained" && (
           <p className="mri-result__notice">
             The module did not score this scan: {result.abstain_reason}. That is deliberate. A
