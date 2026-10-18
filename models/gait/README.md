@@ -57,7 +57,8 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
    no tuning) on the saved folds. The feature contract runs before every fit, the
    subject-wise split is asserted again at fit time, and a label-permutation
    control fails the run if it scores above chance. SHAP is computed on the
-   out-of-fold models. A final model fitted on all subjects is saved for the demo;
+   out-of-fold models. A final model fitted on all subjects is saved for the demo
+   as a bundle (`model_bundle.py`: model, input list, version; a reload is checked);
    it has seen every subject, so its own score is never reported.
 9. **Checks on the score** — `evaluate_cohorts.py`: scores inside each cohort,
    leave-one-cohort-out (train on three cohorts, test on the fourth) and ablations
@@ -87,7 +88,7 @@ python models/gait/src/check_env.py              # pose model loads
 python models/gait/src/count_labels.py           # label counts per cohort and class
 python models/gait/src/build_feature_table.py    # features of every CARE-PD walk
 python models/gait/src/make_folds.py             # subject-wise folds (prints a fingerprint)
-python models/gait/src/train_xgboost.py          # train, score, SHAP, final model
+python models/gait/src/train_xgboost.py          # train, score, SHAP, save the model bundle
 python models/gait/src/evaluate_cohorts.py       # by cohort, leave-one-cohort-out, ablations
 python models/gait/src/check_mediapipe_mapping.py  # video pipeline on KOA-PD-NM clips
 python models/gait/src/noise_check.py            # joint-noise check (needs the traces above)
