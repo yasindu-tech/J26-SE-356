@@ -26,11 +26,13 @@ from cv_splits import GuardFailure, InputProblem
 
 EXPECTED_REPEATS = 5
 PERMUTATION_MAX_MEAN_AUROC = 0.55  # the pre-registered rule, repeated here to re-check the file
+PERMUTED_MODELS = ("b1", "lgbm")  # models whose permutation control must exist and pass
 SHARED_KEYS = ("splits_sha8", "inner_sha8", "roles_sha8", "features_sha8", "target_status")
 METRICS = ("auroc", "balanced_accuracy", "sensitivity", "specificity", "mcc")
 PPV_COLUMNS = ("ppv_at_1pct", "ppv_at_2pct", "ppv_at_5pct")
 COUNT_COLUMNS = ("n_clips", "n_pos", "n_neg")
 OUT_TABLE = "baseline_table.csv"
+TITLE = "Baselines B0 and B1 on Set A (mean and sd over repeats; pooled out-of-fold predictions)"
 NOTE = "5 repeats reuse the same participants and are not independent evidence; CIs come in FT-38."
 TABLE_COLUMNS = [
     "target", "model", "feature_set", "n_repeats",
@@ -86,7 +88,7 @@ def load_entry(cv_root: Path, target: str, model: str, feature_set: str) -> dict
         if runs[column].nunique() != 1:
             raise GuardFailure(f"{where}: {column} differs between repeats")
     entry: dict[str, Any] = {"meta": meta, "runs": runs.sort_values("repeat"), "perm": None}
-    if model == "b1":
+    if model in PERMUTED_MODELS:
         entry["perm"] = load_permutation(folder, tag, where)
     return entry
 
@@ -169,10 +171,10 @@ def build_table(
     ), shared_by_target
 
 
-def render(table: pd.DataFrame, shared_by_target: dict[str, dict[str, Any]]) -> str:
-    lines = [
-        "Baselines B0 and B1 on Set A (mean and sd over repeats; pooled out-of-fold predictions)"
-    ]
+def render(
+    table: pd.DataFrame, shared_by_target: dict[str, dict[str, Any]], title: str = TITLE
+) -> str:
+    lines = [title]
     for target, shared in shared_by_target.items():
         lines.append(f"{target}: " + ", ".join(f"{k} {v}" for k, v in shared.items()))
     shown = ["target", "model", "n_repeats", "auroc_mean", "auroc_sd", "balanced_accuracy_mean",

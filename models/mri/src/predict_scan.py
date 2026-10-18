@@ -431,8 +431,13 @@ def predict_scan(
     recorder: RunRecorder | NullRecorder | None = None,
     status_file: Path | None = None,
     eddy_threads: int = 1,
+    eddy_profile: str = "full",
 ) -> dict:
-    """Run every step for one upload and return the MriResult. Never raises for bad input."""
+    """Run every step for one upload and return the MriResult. Never raises for bad input.
+
+    ``eddy_profile`` is "full" (what the model was trained on) or "fast" (fewer eddy
+    iterations, not yet validated: use it only to compare against "full").
+    """
     from preprocess_dti import DTIConfig, preprocess_dti
     from preprocess_t1 import preprocess_t1
 
@@ -504,7 +509,7 @@ def predict_scan(
                 problems.append("no DTI series with at least 6 directions at b~1000")
             else:
                 result["inputs"]["dti"] = {"found": True, **dti.summary()}
-                config = DTIConfig(eddy_threads=eddy_threads)
+                config = DTIConfig(eddy_threads=eddy_threads, eddy_profile=eddy_profile)
                 r = preprocess_dti(
                     dti.nifti,
                     SUBJECT,
@@ -521,7 +526,11 @@ def predict_scan(
                     "template_correlation": r.template_correlation,
                     "resampled_to_2mm": r.resampled,
                 }
-                result["inputs"]["dti"] |= {"status": r.status, "checks": checks}
+                result["inputs"]["dti"] |= {
+                    "status": r.status,
+                    "checks": checks,
+                    "eddy": {"profile": r.eddy_profile, "seconds": r.eddy_seconds},
+                }
                 result["inputs"]["dti"]["qc_image"] = _qc_picture(
                     work / "dti" / SUBJECT / f"{SUBJECT}_qc.png"
                 )
@@ -614,6 +623,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--work", type=Path, default=None, help="default: a temporary folder")
     ap.add_argument("--keep-work", action="store_true", help="keep converted and processed images")
     ap.add_argument("--eddy-threads", type=int, default=1)
+    ap.add_argument(
+        "--eddy-profile",
+        choices=["full", "fast"],
+        default="full",
+        help="fast = fewer eddy iterations, NOT validated yet (for comparison runs only)",
+    )
     ap.add_argument("--events-url", default=None)
     args = ap.parse_args(argv)
 
@@ -631,6 +646,7 @@ def main(argv: list[str] | None = None) -> int:
             recorder=rec,
             status_file=args.status_file,
             eddy_threads=args.eddy_threads,
+            eddy_profile=args.eddy_profile,
         )
     except BundleError as e:
         result = {
