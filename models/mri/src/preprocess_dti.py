@@ -76,8 +76,8 @@ DEFAULT_TABLE_OUT_FAST = REPO_ROOT / "data" / "interim" / "eddy_fast" / "dti_pre
 
 # Extra eddy options per profile. "full" adds nothing (FSL defaults, which is what every
 # trained feature used). "fast" does fewer iterations (FSL default is 5) and starts with a
-# smoothed conditioning filter. NOT validated on our scans yet: compare_dti_eddy.py measures
-# how far the features move before this profile is allowed near a trained model.
+# smoothed conditioning filter. NOT validated on our scans yet: compare its features with
+# the full profile's on the same people before it is used with a trained model.
 EDDY_PROFILES: dict[str, tuple[str, ...]] = {
     "full": (),
     "fast": ("--niter=2", "--fwhm=10,0"),
@@ -847,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
         choices=sorted(EDDY_PROFILES),
         default="full",
         help="full = FSL default settings (what the model was trained on); fast = "
-        "--niter=2 --fwhm=10,0, NOT validated: check it with compare_dti_eddy.py first",
+        "--niter=2 --fwhm=10,0, NOT validated: compare its features with full's first",
     )
     ap.add_argument("--subject", help="only this subject ID")
     ap.add_argument("--limit", type=int, default=0)

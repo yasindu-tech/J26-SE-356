@@ -434,7 +434,7 @@ def predict_scan(
     """Run every step for one upload and return the MriResult. Never raises for bad input.
 
     ``eddy_profile`` is "full" (what the model was trained on) or "fast" (fewer eddy
-    iterations, not yet validated: use it only to compare, see compare_dti_eddy.py).
+    iterations, not yet validated: use it only to compare against "full").
     """
     from preprocess_dti import DTIConfig, preprocess_dti
     from preprocess_t1 import preprocess_t1
