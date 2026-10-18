@@ -208,6 +208,9 @@ def test_cli_writes_charts_and_tables(
     ):
         assert (tmp_path / "shap" / name).stat().st_size > 0
     walks = pd.read_csv(tmp_path / "shap" / "example_walks.csv")
+    assert walks["sentence"].str.startswith("The model used ").all()
+    assert set(walks["strength"]) <= {"slightly", "moderately", "strongly"}
+    assert "The model used" in text
     assert set(walks["direction"]) <= {"towards", "away"}
     assert walks.groupby("walk")["rank"].apply(list).map(lambda r: r == [1, 2, 3]).all()
 
@@ -238,4 +241,18 @@ def test_cli_refuses_a_changed_model_file(trained: dict[str, Path], tmp_path: Pa
     shutil.copytree(trained["out"] / "bundle", tmp_path / "b")
     with (tmp_path / "b" / mb.MODEL_FILE).open("a") as f:
         f.write(" ")
+    assert es.main(cli(trained, tmp_path / "o", bundle=tmp_path / "b")) == 2
+
+
+def test_cli_refuses_a_bundle_without_the_words_reference(
+    trained: dict[str, Path], tmp_path: Path
+) -> None:
+    import json
+    import shutil
+
+    shutil.copytree(trained["out"] / "bundle", tmp_path / "b")
+    path = tmp_path / "b" / mb.INFO_FILE
+    info = json.loads(path.read_text())
+    del info["explanation_reference"]
+    path.write_text(json.dumps(info))
     assert es.main(cli(trained, tmp_path / "o", bundle=tmp_path / "b")) == 2

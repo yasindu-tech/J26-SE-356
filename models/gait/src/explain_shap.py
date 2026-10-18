@@ -21,13 +21,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import train_xgboost as tx
+from explain_words import TOP, WordedExplanation, describe
 from gait_extract import FEATURE_NAMES
 from make_folds import CLASS_LABELS
 from model_bundle import Bundle, BundleError, load_bundle
 
 DEFAULT_OUT = tx.GAIT_DIR / "artifacts" / "models" / "shap"
 DEFAULT_BUNDLE = tx.DEFAULT_OUT / "bundle"
-TOP = 3
 ADDITIVITY_TOL = 1e-4
 CLASS_COLORS = ("#0072B2", "#E69F00", "#009E73")
 TOWARDS, AWAY = "#0072B2", "#999999"
@@ -84,6 +84,10 @@ class Explainer:
             for j in order
         )
         return Explanation(predicted, tuple(float(p) for p in proba), top)
+
+    def in_words(self, x: np.ndarray) -> WordedExplanation:
+        """``explain`` with one plain-words sentence per input (needs the bundle's reference)."""
+        return describe(self.explain(x), self.bundle.reference)
 
 
 # --------------------------------------------------------------------------- tables
@@ -218,7 +222,8 @@ def plot_walks(examples: list[tuple[str, int, Explanation]], path: Path) -> None
         0.01,
         0.01,
         "Walks: right out of fold, median out-of-fold score, per class. The saved model has seen "
-        "them; this shows what the model used, not a cause.",
+        "them; this shows what the model used, not a cause. The first input is firm; the order "
+        "of the others is approximate.",
         fontsize=7.5,
         color="#555555",
     )
@@ -247,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     try:
         bundle = load_bundle(args.bundle)
+        bundle.reference  # noqa: B018 - refuses a bundle without the plain-words reference
     except BundleError as err:
         print(f"The bundle cannot be used: {err}")
         return 2
@@ -293,9 +299,10 @@ def main(argv: list[str] | None = None) -> int:
     rows = []
     for label, walk in picked.items():
         i = int(table.index[table["walk"] == walk][0])
+        words = explainer.in_words(x[i])
         exp = explainer.explain(x[i])
         examples.append((walk, label, exp))
-        for rank, c in enumerate(exp.top, start=1):
+        for rank, (c, e) in enumerate(zip(exp.top, words.entries, strict=True), start=1):
             rows.append(
                 {
                     "label_class": CLASS_LABELS[label],
@@ -306,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
                     "value": c.value,
                     "shap": c.shap,
                     "direction": c.direction,
+                    "strength": e.strength,
+                    "sentence": e.sentence,
                 }
             )
     missing = [CLASS_LABELS[c] for c in range(3) if c not in picked]
@@ -319,9 +328,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         plot_walks(examples, args.out_dir / "example_walks.png")
         print("\nExample walks:")
-        for walk, label, exp in examples:
-            parts = ", ".join(f"{c.feature} ({c.direction} {c.shap:+.2f})" for c in exp.top)
-            print(f"  {walk} ({CLASS_LABELS[label]}): {parts}")
+        for walk, label, _ in examples:
+            print(f"  {walk} ({CLASS_LABELS[label]}):")
+            for sentence in explainer.in_words(
+                x[int(table.index[table["walk"] == walk][0])]
+            ).sentences:
+                print(f"    {sentence}")
     print(f"\nWrote {args.out_dir}.")
 
     if error > ADDITIVITY_TOL:

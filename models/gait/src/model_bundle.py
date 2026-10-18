@@ -52,6 +52,13 @@ class Bundle:
     def features(self) -> tuple[str, ...]:
         return tuple(self.info["features"])
 
+    @property
+    def reference(self) -> dict[str, Any]:
+        """Training-walk numbers the plain-words step needs (written by ``train_xgboost.py``)."""
+        if "explanation_reference" not in self.info:
+            raise BundleError("the bundle has no explanation reference: rerun train_xgboost.py")
+        return dict(self.info["explanation_reference"])
+
     def predict_proba(self, x: np.ndarray) -> np.ndarray:
         """Class probabilities (rows x 3, uncalibrated) for one vector or a matrix of the inputs."""
         x = np.atleast_2d(np.asarray(x, dtype=float))
