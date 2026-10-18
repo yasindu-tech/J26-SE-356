@@ -75,6 +75,8 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
 13. **Quality gate** — `quality_gate.py`: decides whether a video's walk can be scored.
     Rejects on frame rate, leg visibility, filled-in share, facing and stride count, and
     says why in plain words. Warns that one person in view is assumed (nothing checks it yet).
+14. **Predict from video** — `predict_video.py`: video in, one result out (scores and
+    plain-words reasons, or a rejection with why).
 
 ## Evaluation (CLAUDE.md section 3.4)
 - Headline: balanced accuracy and AUC (one-vs-rest), each with a bootstrap 95%
@@ -106,6 +108,7 @@ python models/gait/src/noise_check.py            # joint-noise check (needs the 
 python models/gait/src/explain_shap.py           # SHAP charts of the saved model
 python models/gait/src/video_to_joints.py VIDEO    # joints and facts of one video
 python models/gait/src/quality_gate.py VIDEO       # accept or reject one video, with reasons
+python models/gait/src/predict_video.py VIDEO       # score one video (--json for the record)
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
