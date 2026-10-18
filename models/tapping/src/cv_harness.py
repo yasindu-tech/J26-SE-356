@@ -227,6 +227,7 @@ def tune(
     folds = inner_folds(train, y, groups, repeat, outer_fold)
     allowed = set(train.tolist())
     for fit, val in folds:
+        assert_disjoint(groups[fit], groups[val], f"inner repeat {repeat} outer {outer_fold}")
         if not (set(fit.tolist()) | set(val.tolist())) <= allowed:
             raise LeakageError(f"inner repeat {repeat} outer {outer_fold}: rows outside the part")
     val_all = np.concatenate([val for _, val in folds])
@@ -276,9 +277,16 @@ def refit_outer(
     train_positions: np.ndarray,
     feature_set: str = "A",
     target: str = cvs.DEFAULT_TARGET,
+    test_positions: np.ndarray | None = None,
 ) -> Any:
-    """Refit one outer fold from its stored best params (for FT-42); positions are ref-sorted."""
+    """Refit one outer fold from its stored best params (for FT-42); positions are ref-sorted.
+
+    Pass the fold's test positions to have the participant-overlap assertion run here too."""
     frame = canonical(frame)
+    if test_positions is not None:
+        groups = frame["participant"].to_numpy()
+        train_ids = groups[np.asarray(train_positions)]
+        assert_disjoint(train_ids, groups[np.asarray(test_positions)], "refit_outer")
     X, _ = design_matrix(frame, feature_set)
     y = target_labels(frame, target)
     return fit_final(model, params, X, y, np.asarray(train_positions))
