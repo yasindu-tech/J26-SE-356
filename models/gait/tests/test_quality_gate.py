@@ -78,8 +78,10 @@ def test_the_record_is_plain_json_and_copies_the_checks() -> None:
         ("filled_share", {"filled_frames": 49}, False),
         ("facing", {"facing_agreement": MIN_FACING_AGREEMENT}, True),
         ("facing", {"facing_agreement": MIN_FACING_AGREEMENT - 0.0001}, False),
-        ("frame_rate", {"fps": 15.0}, True),
-        ("frame_rate", {"fps": 14.9}, False),
+        ("frame_rate", {"fps": 20.0}, True),
+        ("frame_rate", {"fps": 19.9}, False),
+        ("frame_rate", {"fps": 60.0}, True),
+        ("frame_rate", {"fps": 60.1}, False),
     ],
 )
 def test_each_limit_is_inclusive_and_fails_just_beyond_it(
@@ -99,6 +101,18 @@ def test_strides_pass_at_the_limit_and_fail_below_it() -> None:
     assert short.reasons == ("The walk has 2 real strides on both feet; at least 3 are needed.",)
     assert check_walk(good(2.5), min_strides=2).passed
     assert not check_walk(good(8.0), min_strides=13).passed
+
+
+@pytest.mark.parametrize(("fps", "limit"), [(18.0, 20.0), (120.0, 60.0)])
+def test_a_frame_rate_outside_20_to_60_is_rejected_with_the_range_in_words(
+    fps: float, limit: float
+) -> None:
+    result = check_walk(good(fps=fps))
+    assert not result.passed and "strides" not in result.checks
+    assert result.reasons == (
+        f"The video has {fps:.0f} frames per second; 20 to 60 are supported.",
+    )
+    assert result.checks["frame_rate"] == {"value": fps, "limit": limit, "ok": False}
 
 
 def test_a_frame_rate_too_low_for_the_step_filter_is_rejected_without_a_crash() -> None:

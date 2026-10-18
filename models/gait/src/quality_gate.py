@@ -19,13 +19,13 @@ from typing import Any
 
 from carepd_format import short_id
 from cycles import CAREPD_MIN_STRIDES, segment_cycles
+from gait_extract import MAX_FPS, MIN_FPS  # the frame rates the model's inputs were made for
 from mediapipe_mapping import MIN_FACING_AGREEMENT
 from preprocess import detect_heel_strikes
 from video_to_joints import DEFAULT_MODEL, MAX_SECONDS, VideoError, VideoWalk, video_to_joints
 
 MIN_LEG_VISIBILITY = 0.80  # the good clips had 0.92 or more
 MAX_FILLED_SHARE = 0.20  # the good clips had 0.08 or less
-MIN_FPS = 15.0  # no data behind this one: step timing needs enough frames per second
 ONE_PERSON_ASSUMED = "One person in view is assumed: the video was not checked for other people."
 
 
@@ -59,8 +59,11 @@ def check_walk(
     """Judge one walk. ``people_in_view`` is a count from a person detector, if one was run."""
     if people_in_view is not None and people_in_view < 0:
         raise ValueError("people_in_view cannot be negative")
-    strides: int | None = None  # below MIN_FPS the step filter cannot run: the rate is the reason
-    if walk.fps >= MIN_FPS:
+    strides: int | None = (
+        None  # outside the supported frame rates the steps are not timed: the rate is the reason
+    )
+    in_range = MIN_FPS <= walk.fps <= MAX_FPS
+    if in_range:
         try:
             strides = segment_cycles(
                 detect_heel_strikes(walk.joints, walk.fps), min_strides
@@ -72,10 +75,10 @@ def check_walk(
         (
             "frame_rate",
             walk.fps,
-            MIN_FPS,
-            walk.fps >= MIN_FPS,
-            f"The video has {walk.fps:.0f} frames per second; at least {MIN_FPS:.0f} are needed "
-            "to time the steps.",
+            MAX_FPS if walk.fps > MAX_FPS else MIN_FPS,
+            in_range,
+            f"The video has {walk.fps:.0f} frames per second; {MIN_FPS:.0f} to {MAX_FPS:.0f} "
+            "are supported.",
         ),
         (
             "leg_visibility",
