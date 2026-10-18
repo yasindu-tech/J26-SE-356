@@ -60,10 +60,24 @@ def test_extract_features_equals_the_hand_assembled_gait14_and_gait15_features()
     by_hand = {**timing_features(check).as_dict(), **gait_features(joints, FPS, check).as_dict()}
     assert result.ok and result.reason == "" and result.flags == ()
     assert tuple(result.features) == FEATURE_NAMES
-    for name in FEATURE_NAMES:
-        assert result.features[name] == pytest.approx(by_hand[name])
-    np.testing.assert_allclose(result.vector(), [by_hand[n] for n in FEATURE_NAMES])
+    for name in FEATURE_NAMES:  # the same values, rounded once to the table precision
+        assert result.features[name] == round(by_hand[name], ge.DECIMALS)
+    np.testing.assert_allclose(result.vector(), [by_hand[n] for n in FEATURE_NAMES], atol=5e-7)
     assert set(result.experimental) == {"step_width_norm", "arm_swing_asymmetry"}
+
+
+def test_values_are_rounded_to_the_table_precision() -> None:
+    result = extract_features(full_walk(), FPS)
+    for value in (*result.features.values(), *result.experimental.values()):
+        assert value == round(value, ge.DECIMALS)
+        assert float(f"{value:.{ge.DECIMALS}f}") == value  # the table text reads back exactly
+
+
+def test_floating_point_noise_becomes_zero() -> None:
+    assert ge.rounded({"stride_time_cv": 1.4e-14, "cadence": 101.23456789}) == {
+        "stride_time_cv": 0.0,
+        "cadence": 101.234568,
+    }
 
 
 def test_checks_are_returned_but_are_not_model_inputs() -> None:
@@ -198,6 +212,22 @@ def test_cli_writes_both_tables_and_never_prints_subject_ids(
     assert "secretsubj" not in (tmp_path / "feature_table.csv").read_text()
     rejected = (tmp_path / "rejected_walks.csv").read_text()
     assert "secretsubj" not in rejected and "real strides" in rejected
+
+
+def test_a_walk_vector_equals_its_table_row_exactly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The demo path (``vector()``) must give the model the very numbers it was trained on."""
+    walks = synthetic_walks()[:3]
+    monkeypatch.setattr(bft, "load_all", lambda *a, **k: (walks, None))
+    assert bft.main(["--out-dir", str(tmp_path)]) == 0
+    with (tmp_path / "feature_table.csv").open() as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == len(walks)
+    for walk, row in zip(walks, rows, strict=True):
+        live = extract_features(walk.joints, float(walk.fps)).vector()
+        stored = np.array([float(row[n]) for n in FEATURE_NAMES])
+        assert np.array_equal(live, stored)
 
 
 def test_cli_leaves_unassessed_lr_difference_empty(
