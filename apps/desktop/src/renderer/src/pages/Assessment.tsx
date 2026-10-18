@@ -293,6 +293,7 @@ export function Assessment({
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
           <MriResultView
             result={screen.result}
+            label={label}
             onNewAnalysis={() => {
               setLabel(null);
               setForm(EMPTY_FORM);
