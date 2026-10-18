@@ -252,7 +252,9 @@ def classify(nifti: Path) -> Series | None:
         description=desc,
         series_number=int(meta.get("SeriesNumber", 0) or 0),
         manufacturer=str(meta.get("Manufacturer", "")),
-        model=str(meta.get("ManufacturerModelName", "")),
+        # dcm2niix writes the BIDS key "ManufacturersModelName"; older sidecars may use
+        # the DICOM keyword "ManufacturerModelName".
+        model=str(meta.get("ManufacturersModelName") or meta.get("ManufacturerModelName") or ""),
         field_strength=str(meta.get("MagneticFieldStrength", "")),
         voxel_mm=voxel,
         shape=shape,
