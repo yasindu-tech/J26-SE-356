@@ -26,6 +26,12 @@ Decisions (checked on 2,950 CARE-PD walks and 8 video clips, 12 Oct 2026, see
    longest stretch of usable frames (GAIT-16) and uses the KOA-PD-NM stride minimum. Turns and
    pauses inside a long clip are not cut out; record the demo as one straight walk of 10 s or
    more.
+5. *Values are rounded to ``DECIMALS`` (6) decimals here, once* (day-6 review, 14 Oct 2026). The
+   training table stores 6 decimals, so without this the demo would feed the model slightly
+   different numbers from the ones it was trained on: near a tree split that changed the class of
+   5 of 2,738 CARE-PD walks. Rounding here makes a walk's ``vector()`` equal its table row exactly,
+   and turns floating-point noise (a stride-time CV of 1e-14 for equal strides) into 0. Six
+   decimals is far below what the measurements resolve.
 
 Check values (``Checks``) are returned for the table and for the demo's warnings. They are never
 model inputs: ``n_strides`` and ``leg_length_m`` carry the capture-area effect and the cohort.
@@ -51,6 +57,7 @@ FEATURE_NAMES = (*TIMING_FEATURE_NAMES, *GAIT_FEATURE_NAMES)  # the eight model 
 MIN_FPS, MAX_FPS = 20.0, 60.0  # data runs at 25, 30 and 50 fps
 LR_MIN_STRIDES = 3  # real strides needed on EACH foot to judge the left/right difference
 LR_FLAG = 0.25  # flag a walk whose feet differ in median stride time by more than this share
+DECIMALS = 6  # every feature value is rounded to this, once, so the demo equals the training table
 
 Status = Literal["ok", "rejected"]
 
@@ -84,6 +91,11 @@ class WalkFeatures:
         if not self.ok:
             raise ValueError(f"no features: walk rejected ({self.reason})")
         return np.array([self.features[n] for n in FEATURE_NAMES])
+
+
+def rounded(values: dict[str, float]) -> dict[str, float]:
+    """The values rounded to ``DECIMALS`` decimals, the precision of the training table."""
+    return {name: round(float(v), DECIMALS) for name, v in values.items()}
 
 
 def rejected(reason: str, checks: Checks | None = None) -> WalkFeatures:
@@ -138,10 +150,10 @@ def extract_features(
         )
     return WalkFeatures(
         status="ok",
-        features={name: values[name] for name in FEATURE_NAMES},
+        features=rounded({name: values[name] for name in FEATURE_NAMES}),
         checks=checks,
         flags=tuple(flags),
-        experimental={name: gait.experimental_dict()[name] for name in EXPERIMENTAL_NAMES},
+        experimental=rounded({name: gait.experimental_dict()[name] for name in EXPERIMENTAL_NAMES}),
     )
 
 
