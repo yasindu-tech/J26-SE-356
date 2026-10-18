@@ -20,6 +20,9 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 testpaths = ["models", "services"]
 python_files = ["test_*.py"]
 addopts = "-q"
+filterwarnings = [
+    "ignore:The set_(bad|over|under) function will be deprecated:PendingDeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.11"
