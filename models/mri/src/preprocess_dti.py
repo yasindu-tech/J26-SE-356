@@ -52,6 +52,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -67,6 +68,20 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TABLE_IN = REPO_ROOT / "data" / "interim" / "mri_conversion_table.csv"
 DEFAULT_TABLE_OUT = REPO_ROOT / "data" / "interim" / "dti_preprocess_table.csv"
 DEFAULT_OUT = REPO_ROOT / "data" / "processed" / "dti"
+# The fast profile writes here by default so it can never overwrite or be mistaken for the
+# full-eddy results that the model was trained on (feature extraction globs data/interim
+# only, so this sub-folder is not picked up either).
+DEFAULT_OUT_FAST = REPO_ROOT / "data" / "processed" / "dti_fast"
+DEFAULT_TABLE_OUT_FAST = REPO_ROOT / "data" / "interim" / "eddy_fast" / "dti_preprocess_table.csv"
+
+# Extra eddy options per profile. "full" adds nothing (FSL defaults, which is what every
+# trained feature used). "fast" does fewer iterations (FSL default is 5) and starts with a
+# smoothed conditioning filter. NOT validated on our scans yet: compare_dti_eddy.py measures
+# how far the features move before this profile is allowed near a trained model.
+EDDY_PROFILES: dict[str, tuple[str, ...]] = {
+    "full": (),
+    "fast": ("--niter=2", "--fwhm=10,0"),
+}
 
 B0_MAX = 50.0  # volumes with b below this are treated as b0
 SHELL_TARGET = 1000.0
@@ -110,6 +125,7 @@ class DTIConfig:
     eddy_threads: int = 1  # eddy --nthr; only newer FSL builds support it
     repol: bool = True  # eddy outlier replacement: better data, somewhat slower
     target_voxel_mm: float = 2.0  # average finer scans down to this; 0 = keep native size
+    eddy_profile: str = "full"  # a key of EDDY_PROFILES
 
 
 @dataclass
@@ -137,6 +153,8 @@ class DTIResult:
     md_mni: str = ""
     transform_dir: str = ""
     qc_image: str = ""
+    eddy_profile: str = ""  # "full" or "fast": which eddy settings produced this person
+    eddy_seconds: float | None = None  # wall time of the eddy step; blank when reused
 
 
 # ---------------------------------------------------------------- choices (pure)
@@ -275,6 +293,11 @@ def eddy_arguments(
         f"--out={prefix}",
         "--data_is_shelled",
     ]
+    if config.eddy_profile not in EDDY_PROFILES:
+        raise StepError(
+            f"unknown eddy profile '{config.eddy_profile}', use one of {sorted(EDDY_PROFILES)}"
+        )
+    cmd.extend(EDDY_PROFILES[config.eddy_profile])
     if config.repol:
         cmd.append("--repol")
     if config.eddy_threads > 1:
@@ -630,8 +653,10 @@ def preprocess_dti(
             check_mask_volume(res.brain_mask_ml)
 
         with rec.step(subject_id, "eddy"):
+            res.eddy_profile = config.eddy_profile
             if not finished and (redo or not (corrected.exists() and rotated.exists())):
                 acqp, index = write_eddy_inputs(out, stem, pe_vec, res.readout_s, int(bvals.size))
+                eddy_started = time.monotonic()
                 corrected, rotated = run_eddy(
                     dwi,
                     mask,
@@ -643,6 +668,7 @@ def preprocess_dti(
                     config,
                     on_line=lambda line: rec.note(subject_id, "eddy", line),
                 )
+                res.eddy_seconds = round(time.monotonic() - eddy_started, 1)
             res.mean_abs_motion_mm, res.mean_rel_motion_mm = eddy_motion(prefix)
             check_motion(res.mean_abs_motion_mm)
 
@@ -804,8 +830,25 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--table", type=Path, default=DEFAULT_TABLE_IN)
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    ap.add_argument("--results", type=Path, default=DEFAULT_TABLE_OUT)
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=f"default: {_rel(DEFAULT_OUT)} (full) or {_rel(DEFAULT_OUT_FAST)} (fast)",
+    )
+    ap.add_argument(
+        "--results",
+        type=Path,
+        default=None,
+        help=f"default: {_rel(DEFAULT_TABLE_OUT)} (full) or {_rel(DEFAULT_TABLE_OUT_FAST)} (fast)",
+    )
+    ap.add_argument(
+        "--eddy-profile",
+        choices=sorted(EDDY_PROFILES),
+        default="full",
+        help="full = FSL default settings (what the model was trained on); fast = "
+        "--niter=2 --fwhm=10,0, NOT validated: check it with compare_dti_eddy.py first",
+    )
     ap.add_argument("--subject", help="only this subject ID")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--fa-template", type=Path, default=default_fa_template())
@@ -860,9 +903,19 @@ def main(argv: list[str] | None = None) -> int:
         help="skip eddy outlier replacement (faster; applies to everyone in the run)",
     )
     args = ap.parse_args(argv)
+    fast = args.eddy_profile != "full"
+    if args.out is None:
+        args.out = DEFAULT_OUT_FAST if fast else DEFAULT_OUT
+    if args.results is None:
+        args.results = DEFAULT_TABLE_OUT_FAST if fast else DEFAULT_TABLE_OUT
+    if fast and args.out.resolve() == DEFAULT_OUT.resolve():
+        # Existing people would be reused as-is (their full-eddy results), so the fast
+        # settings would silently never run, and anything new would mix the two.
+        ap.error(f"--eddy-profile {args.eddy_profile} must not write into {_rel(DEFAULT_OUT)}")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     config = DTIConfig(
+        eddy_profile=args.eddy_profile,
         fa_template=args.fa_template,
         eddy_command=args.eddy,
         eddy_threads=args.eddy_threads,
