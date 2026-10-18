@@ -205,6 +205,35 @@ def test_eddy_arguments_threads_and_repol() -> None:
     assert "--repol" in default and not any(a.startswith("--nthr") for a in default)
 
 
+def test_full_eddy_profile_adds_no_options() -> None:
+    p = Path("x")
+    cmd = d.eddy_arguments(p, p, p, p, p, p, p, d.DTIConfig())
+    assert not any(a.startswith(("--niter", "--fwhm")) for a in cmd)
+
+
+def test_fast_eddy_profile_sets_iterations_and_smoothing() -> None:
+    p = Path("x")
+    cmd = d.eddy_arguments(p, p, p, p, p, p, p, d.DTIConfig(eddy_profile="fast"))
+    assert "--niter=2" in cmd and "--fwhm=10,0" in cmd
+    assert "--repol" in cmd  # outlier replacement stays on
+
+
+def test_unknown_eddy_profile_is_rejected() -> None:
+    p = Path("x")
+    with pytest.raises(d.StepError, match="unknown eddy profile"):
+        d.eddy_arguments(p, p, p, p, p, p, p, d.DTIConfig(eddy_profile="turbo"))
+
+
+def test_fast_profile_cannot_write_into_the_full_results_folder() -> None:
+    with pytest.raises(SystemExit):
+        d.main(["--eddy-profile", "fast", "--out", str(d.DEFAULT_OUT)])
+
+
+def test_fast_profile_defaults_to_its_own_folders() -> None:
+    assert d.DEFAULT_OUT_FAST != d.DEFAULT_OUT
+    assert d.DEFAULT_TABLE_OUT_FAST.parent != d.DEFAULT_TABLE_OUT.parent
+
+
 def test_threads_requested_but_unsupported_is_reported(tmp_path: Path, monkeypatch) -> None:
     template = tmp_path / "t.nii.gz"
     template.write_bytes(b"x")
