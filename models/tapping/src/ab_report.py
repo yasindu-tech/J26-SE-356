@@ -83,7 +83,13 @@ def load_set(cv_root: Path, target: str, feature_set: str) -> dict[str, Any]:
     ):
         if not (folder / name).is_file():
             raise InputProblem(f"missing input: {kind} file for {where}")
-    entry = br.load_entry(cv_root, target, MODEL, feature_set)
+    # baseline_report words its refusals with "{target} {model}" only; name the feature set too
+    try:
+        entry = br.load_entry(cv_root, target, MODEL, feature_set)
+    except GuardFailure as err:
+        prefix = f"{target} {MODEL}: "
+        text = str(err)
+        raise GuardFailure(f"{where}: {text.removeprefix(prefix)}") from err
     perm = entry["perm"] or br.load_permutation(folder, tag, where)
     meta, runs = entry["meta"], entry["runs"]
     columns, grid = meta.get("columns"), meta.get("grid")
