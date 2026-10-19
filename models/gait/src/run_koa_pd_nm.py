@@ -61,13 +61,14 @@ class Clip:
     clip: str  # short hash of the path inside the dataset: the key for resuming
     group: str  # NM, PD or KOA
     level: str  # PD: ML, MD, SV; KOA: EL, MD, SV; NM: empty
-    person: str  # hashed group and ID: one person may have several clips
+    person: str  # hashed group, severity folder and ID: one person may have several clips
     trial: str
     known_two_people: bool
 
 
-def person_key(group: str, ident: str) -> str:
-    return "p-" + hashlib.sha1(f"{group}_{ident}".encode()).hexdigest()[:8]
+def person_key(group: str, level: str, ident: str) -> str:
+    """IDs restart in each severity folder (PD_ML/001 and PD_SV/001 are two people)."""
+    return "p-" + hashlib.sha1(f"{group}_{level}_{ident}".encode()).hexdigest()[:8]
 
 
 def parse(path: Path, data_dir: Path) -> Clip | None:
@@ -79,7 +80,7 @@ def parse(path: Path, data_dir: Path) -> Clip | None:
     level = parts[3] if len(parts) == 4 else ""
     rel = path.relative_to(data_dir).as_posix()
     return Clip(
-        path, short_id(rel), group, level, person_key(group, ident), trial,
+        path, short_id(rel), group, level, person_key(group, level, ident), trial,
         path.stem in KNOWN_TWO_PEOPLE,
     )  # fmt: skip
 

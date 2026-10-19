@@ -1,7 +1,7 @@
 """create gait_analyses
 
 Revision ID: 7c4e9f12ab36
-Revises: 3b7d2a91c4e0
+Revises: 5a8d3c1e7f94
 Create Date: 2026-10-18 16:30:00
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "7c4e9f12ab36"
-down_revision: str | Sequence[str] | None = "3b7d2a91c4e0"
+down_revision: str | Sequence[str] | None = "5a8d3c1e7f94"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
