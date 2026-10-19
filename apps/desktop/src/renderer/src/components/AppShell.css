@@ -1,0 +1,137 @@
+/* The signed-in frame. Values from the approved desktop design (top bar 56px, nav 220px,
+   44px nav rows); colours only through the shared tokens. */
+
+.shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-neutral-50);
+}
+
+.shell__bar {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: 0 var(--spacing-lg);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.shell__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.shell__logo {
+  width: 38px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.shell__logo img {
+  width: 28px;
+  height: 21px;
+  object-fit: contain;
+}
+
+.shell__spacer {
+  flex-grow: 1;
+}
+
+.shell__chip {
+  padding: 4px 10px;
+  border: 1px solid var(--color-on-primary-border);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.shell__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.shell__avatar {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-caution);
+  color: var(--color-neutral-900);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.shell__signout {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-on-primary-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-on-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.shell__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.shell__nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: 20px 12px;
+  border-right: 1px solid var(--color-neutral-200);
+  background: var(--color-surface);
+}
+
+.shell__nav-item {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-neutral-900);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.shell__nav-item--on {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.shell__nav-foot {
+  margin: auto 0 0;
+  padding: 0 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-neutral-600);
+}
+
+.shell__main {
+  min-width: 0;
+  overflow-y: auto;
+}

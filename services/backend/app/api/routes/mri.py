@@ -9,7 +9,14 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.models.clinician import Clinician
 from app.schemas.errors import ErrorResponse
-from app.schemas.mri import MriAnalysisCreated, MriAnalysisList, MriAnalysisStatus, MriResult
+from app.schemas.mri import (
+    EddyProfile,
+    MriAnalysisCreated,
+    MriAnalysisList,
+    MriAnalysisStatus,
+    MriResult,
+    SUBJECT_LABEL_PATTERN,
+)
 from app.services import mri_service
 from app.workers.mri_runner import MriRunner
 
@@ -35,13 +42,35 @@ def create_analysis(
         float, Form(ge=18, le=110, description="Years; a covariate of the scanner adjustment")
     ],
     sex: Annotated[Literal["M", "F"], Form(description="A covariate of the scanner adjustment")],
+    eddy_profile: Annotated[
+        EddyProfile,
+        Form(
+            description="DTI motion correction: 'full' (default, what the model was trained on) "
+            "or 'fast' (fewer iterations, quicker, not validated against 'full')"
+        ),
+    ] = "full",
+    subject_label: Annotated[
+        str | None,
+        Form(
+            pattern=SUBJECT_LABEL_PATTERN,
+            description="Optional pseudonymous label to tell one person's analyses apart "
+            "(letters, digits, '-' and '_'; never a name)",
+        ),
+    ] = None,
     clinician: Clinician = Depends(get_current_clinician),
     db: Session = Depends(get_db),
     runner: MriRunner = Depends(get_mri_runner),
     settings: Settings = Depends(get_settings),
 ) -> MriAnalysisCreated:
-    row = mri_service.create_analysis(db, clinician, file.file, age, sex, runner, settings)
-    return MriAnalysisCreated(id=row.id, status=row.status)  # type: ignore[arg-type]
+    row = mri_service.create_analysis(
+        db, clinician, file.file, age, sex, runner, settings, eddy_profile, subject_label
+    )
+    return MriAnalysisCreated(
+        id=row.id,
+        status=row.status,  # type: ignore[arg-type]
+        eddy_profile=row.eddy_profile,  # type: ignore[arg-type]
+        subject_label=row.subject_label,
+    )
 
 
 @router.get(

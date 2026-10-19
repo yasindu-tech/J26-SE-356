@@ -1,152 +1,51 @@
-/* MRI module screen. Colours, spacing and radii come from the shared tokens
-   (packages/shared/src/theme.ts via theme.ts); no new hex values here. */
+/* MRI screen: upload, progress and the history rail. Colours, spacing and radii come from
+   the shared tokens (packages/shared/src/theme.ts via theme.ts); no new hex values here.
+   Shared pieces (.card, .btn, .eyebrow, .note) live in components/PageHeader.css. */
 
 .mri {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--color-neutral-50);
-  color: var(--color-neutral-900);
-}
-
-.mri__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-xl);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.mri__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.mri__brand-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  object-fit: contain;
-  padding: 4px;
-}
-
-.mri__brand-text {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.mri__bar-title {
-  margin-left: var(--spacing-md);
-  padding-left: var(--spacing-md);
-  border-left: 1px solid rgba(255, 255, 255, 0.3);
-  font-size: 15px;
-}
-
-.mri__actions {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.mri__button {
-  padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-on-primary);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.mri__button--primary {
-  border-color: var(--color-surface);
-  background: var(--color-surface);
-  color: var(--color-primary);
-}
-
-.mri__button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  gap: 22px;
+  padding: 28px 32px 32px;
+  max-width: 1500px;
 }
 
 .mri__layout {
-  flex: 1;
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 28px;
+  align-items: start;
 }
 
-.mri__history {
-  border-right: 1px solid var(--color-neutral-200);
-  background: var(--color-surface);
-  padding: var(--spacing-md);
+.mri__layout--wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A narrow window puts the rail under the main column instead of squeezing both. */
+@media (max-width: 1100px) {
+  .mri__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mri__main,
+.mri__rail,
+.mri__tracking {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 16px;
+  min-width: 0;
 }
 
-.mri__history-title {
-  margin: 0 0 var(--spacing-sm);
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-neutral-600);
-}
-
-.mri__history-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-sm);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.mri__history-item--selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary-muted);
-}
-
-.mri__body {
-  padding: var(--spacing-xl);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-  max-width: 1100px;
-}
-
-.mri__panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.mri__panel-title {
+.mri__rail-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
 }
 
-.mri__muted {
+.mri__body-text {
   margin: 0;
-  color: var(--color-neutral-600);
-}
-
-.mri__small {
-  font-size: 13px;
-  margin: 0;
+  font-size: 14px;
 }
 
 .mri__error {
@@ -158,16 +57,139 @@
   background: var(--color-surface);
 }
 
-.mri__form {
+/* Amber is a border and tint only, with dark text. */
+.mri__notice {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--color-caution);
+  border-radius: 8px;
+  background: var(--color-caution-tint);
+  color: var(--color-neutral-900);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------------ history */
+
+.mri__history {
+  gap: var(--spacing-xs);
+}
+
+.mri__history-item {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  padding: 10px 12px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font-size: 13px;
+  text-align: left;
+}
+
+.mri__history-item--selected {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-tint);
+}
+
+.mri__history-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Status tags are not screening results (see mriView.ts), so they stay neutral or teal. */
+.mri__tag {
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-600);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mri__tag--working,
+.mri__tag--done {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+}
+
+.mri__tag--error {
+  border-color: var(--color-danger);
+  background: var(--color-surface);
+  color: var(--color-danger);
+}
+
+/* ------------------------------------------------------------------- upload */
+
+.mri__form {
   gap: var(--spacing-md);
+}
+
+.mri__step-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.mri__divider {
+  height: 1px;
+  background: var(--color-neutral-200);
+}
+
+.mri__drop {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: var(--spacing-md);
+  border: 2px dashed var(--color-neutral-300);
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+}
+
+.mri__drop--over,
+.mri__drop--has-file {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-tint);
+}
+
+.mri__drop-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.mri__drop-link {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.mri__drop-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.mri__drop-name {
+  color: var(--color-neutral-900);
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .mri__field {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: 6px;
 }
 
 .mri__field-row {
@@ -178,347 +200,195 @@
 
 .mri__label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .mri__input {
-  padding: 8px 10px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  background: var(--color-surface);
+  font-size: 14px;
 }
 
-.mri__submit {
-  align-self: flex-start;
-  padding: 10px 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
+.mri__form-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-200);
 }
 
-.mri__link-button {
-  border: none;
-  background: none;
-  color: var(--color-primary);
-  font-weight: 600;
-  cursor: pointer;
-}
+/* ----------------------------------------------------------------- progress */
 
 .mri__meter {
-  height: 10px;
-  border-radius: 999px;
-  background: var(--color-neutral-200);
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-neutral-100);
   overflow: hidden;
 }
 
 .mri__meter-fill {
   height: 100%;
-  background: var(--color-primary);
+  background: var(--color-primary-hover);
   transition: width 0.3s;
 }
 
-.mri__steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.mri__tracking-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md) var(--spacing-lg);
+}
+
+.mri__tracking-text {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 6px;
+  flex: 1 1 280px;
+  min-width: 0;
 }
 
-.mri__step {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-size: 15px;
-}
-
-.mri__step-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--color-neutral-200);
-  background: var(--color-surface);
-}
-
-.mri__step--done .mri__step-dot {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-
-.mri__step--current {
+.mri__tracking-title {
+  margin: 0;
+  font-size: 24px;
   font-weight: 600;
 }
 
-.mri__step--current .mri__step-dot {
-  border-color: var(--color-primary);
-  animation: mri-pulse 1.2s ease-in-out infinite;
+.mri__elapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
-.mri__step--stopped,
-.mri__step--waiting {
+.mri__elapsed-value {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.mri__segments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.mri__segment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
   color: var(--color-neutral-600);
 }
 
-.mri__step-note {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--color-neutral-600);
+.mri__segment-bar {
+  height: 8px;
+  border-radius: 2px;
+  background: var(--color-neutral-100);
+}
+
+.mri__segment:first-child .mri__segment-bar {
+  border-radius: 4px 0 0 4px;
+}
+
+.mri__segment:last-child .mri__segment-bar {
+  border-radius: 0 4px 4px 0;
+}
+
+.mri__segment--done .mri__segment-bar {
+  background: var(--color-primary-hover);
+}
+
+.mri__segment--done {
+  color: var(--color-neutral-900);
+}
+
+.mri__segment--current {
+  color: var(--color-neutral-900);
+  font-weight: 600;
+}
+
+.mri__segment--current .mri__segment-bar {
+  background: linear-gradient(
+    90deg,
+    var(--color-primary-hover) 55%,
+    var(--color-neutral-100) 55%
+  );
+  animation: mri-pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes mri-pulse {
   50% {
-    background: var(--color-primary-muted);
+    opacity: 0.55;
   }
 }
 
-/* Status tags: outside the screening palette on purpose (see mriView.ts) */
-
-.mri__tag {
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  border: 1px solid var(--color-neutral-200);
-  color: var(--color-neutral-600);
-  background: var(--color-neutral-50);
-}
-
-.mri__tag--working,
-.mri__tag--done {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-muted);
-}
-
-.mri__tag--error {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-  background: var(--color-surface);
-}
-
-/* Result */
-
-.mri-result {
+.mri__now {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-}
-
-.mri-result__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-}
-
-.mri-result__eyebrow {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-neutral-600);
-}
-
-.mri-result__section-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.mri-result__notice {
-  margin: 0;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  background: var(--color-neutral-50);
-  border: 1px solid var(--color-neutral-200);
-}
-
-.mri-result__problems {
-  margin: 0;
-  padding-left: var(--spacing-lg);
-  font-size: 13px;
-  color: var(--color-neutral-600);
-}
-
-.mri-result__chips {
-  display: flex;
-  gap: var(--spacing-sm);
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm) var(--spacing-lg);
+  padding: 14px 16px;
+  border: 1px solid var(--color-primary-hover);
+  border-radius: 8px;
 }
 
-.mri-result__chip {
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 13px;
-  border: 1px solid var(--color-neutral-200);
-  color: var(--color-neutral-600);
+.mri__now-text {
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.mri-result__chip--on {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-muted);
-}
-
-.mri-result__score-row {
+.mri__now-contact {
+  margin-left: auto;
   display: flex;
-  align-items: baseline;
-  gap: var(--spacing-md);
+  align-items: center;
+  gap: 8px;
 }
 
-.mri-result__score-value {
-  font-size: 36px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+.mri__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-success);
 }
 
-.mri-result__axis {
-  position: relative;
-  height: 24px;
-  border-radius: var(--radius-sm);
-  background: var(--color-neutral-50);
-  border: 1px solid var(--color-neutral-200);
+.mri__leave {
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-200);
 }
 
-.mri-result__axis-zero {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-left: 2px dashed var(--color-neutral-600);
-}
-
-.mri-result__axis-interval {
-  position: absolute;
-  top: 9px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--color-primary-muted);
-  border: 1px solid var(--color-primary);
-}
-
-.mri-result__axis-dot {
-  position: absolute;
-  top: 5px;
-  width: 14px;
-  height: 14px;
-  margin-left: -7px;
-  border-radius: 50%;
-  background: var(--color-primary);
-}
-
-.mri-result__axis-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--color-neutral-600);
-}
-
-.mri-result__drivers {
+.mri__activity {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 6px;
+  font-size: 12.5px;
 }
 
-.mri-result__driver {
-  display: grid;
-  grid-template-columns: minmax(220px, 2fr) 3fr minmax(150px, 1fr);
-  align-items: center;
-  gap: var(--spacing-md);
-  font-size: 14px;
-}
-
-.mri-result__driver-track {
-  height: 12px;
-  border-radius: 6px;
-  background: var(--color-neutral-50);
-  overflow: hidden;
-}
-
-.mri-result__driver-bar {
-  display: block;
-  height: 100%;
-}
-
-/* towards PD / towards control: the screening tokens, as the direction of a contribution */
-.mri-result__driver-bar--pd {
-  background: var(--color-attention);
-}
-
-.mri-result__driver-bar--control {
-  background: var(--color-calm);
-}
-
-.mri-result__driver-value {
-  font-variant-numeric: tabular-nums;
-  color: var(--color-neutral-600);
-}
-
-.mri-result__vector-actions {
+.mri__activity li {
   display: flex;
-  gap: var(--spacing-md);
+  gap: 12px;
 }
 
-.mri-result__table-wrap {
-  max-height: 420px;
-  overflow: auto;
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-sm);
-}
-
-.mri-result__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.mri-result__table th,
-.mri-result__table td {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--color-neutral-200);
-  text-align: left;
-}
-
-.mri-result__table th {
-  position: sticky;
-  top: 0;
-  background: var(--color-surface);
+.mri__activity-time {
   color: var(--color-neutral-600);
 }
 
-.mri-result__row--outside td:first-child::after {
-  content: " (outside training range)";
-  color: var(--color-attention);
-}
-
-.mri-result__inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-lg);
-}
-
-.mri-result__input-title {
-  margin: 0 0 var(--spacing-xs);
-  font-weight: 700;
-}
-
-.mri-result__checks {
-  margin: var(--spacing-xs) 0;
-  padding-left: var(--spacing-lg);
-  font-size: 13px;
-}
-
-.mri-result__qc {
-  width: 100%;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-neutral-200);
+@media (prefers-reduced-motion: reduce) {
+  .mri__segment--current .mri__segment-bar {
+    animation: none;
+  }
 }

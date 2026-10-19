@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "../constants/config";
 import type {
+  EddyProfile,
   MriAnalysisCreated,
   MriAnalysisList,
   MriAnalysisStatus,
@@ -14,6 +15,8 @@ export interface MriUploadInput {
   file: File; // a .zip of one person's DICOM files
   age: number;
   sex: "M" | "F";
+  eddyProfile: EddyProfile; // "full" unless the clinician chose "fast"
+  subjectLabel?: string; // pseudonymous label (see isValidSubjectLabel); omitted when empty
 }
 
 /** Uploads the zip with progress (fetch cannot report upload progress, XHR can). */
@@ -25,6 +28,8 @@ export function uploadMriStudy(
   form.append("file", input.file, input.file.name);
   form.append("age", String(input.age));
   form.append("sex", input.sex);
+  form.append("eddy_profile", input.eddyProfile);
+  if (input.subjectLabel) form.append("subject_label", input.subjectLabel);
 
   return sendUpload(form, onProgress).catch(async (error: unknown) => {
     // An expired access token: renew once, then send the same form again.
