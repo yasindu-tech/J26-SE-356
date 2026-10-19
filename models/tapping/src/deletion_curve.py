@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,11 @@ def shap_order(abs_shap: np.ndarray, names: Sequence[str]) -> np.ndarray:
     return by_name[sorted_cols]
 
 
+def reverse_order(order: np.ndarray) -> np.ndarray:
+    """The exact reverse of a deletion order (least important first)."""
+    return np.asarray(order)[..., ::-1]
+
+
 def random_orders(
     config_index: int, draw: int, repeats: int, n_clips: int, n_features: int
 ) -> np.ndarray:
@@ -77,7 +83,9 @@ def random_orders(
 
 def train_medians(x_train: np.ndarray) -> np.ndarray:
     """The deleted value of every feature: its median over the outer TRAINING rows."""
-    med = np.nanmedian(x_train, axis=0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # an all-NaN column is refused just below
+        med = np.nanmedian(x_train, axis=0)
     if np.isnan(med).any():
         raise GuardFailure("a feature has no value in the training rows: no median to delete to")
     return np.asarray(med, dtype=float)
@@ -129,8 +137,9 @@ def shap_abs_by_repeat(values: pd.DataFrame, frame: pd.DataFrame, cols: Sequence
 def compute_curves(
     frame: pd.DataFrame, splits: pd.DataFrame, oof: pd.DataFrame,
     best: dict[tuple[int, int], dict[str, Any]], abs_shap: np.ndarray, target: str, fs: str,
-    config_index: int, runs_auroc: Sequence[float], n_random: int = N_RANDOM,
+    config_index: int, runs_auroc: Sequence[float], n_random: int | None = None,
 ) -> dict[str, Any]:  # fmt: skip
+    n_random = N_RANDOM if n_random is None else n_random
     frame = cvs.canonical(frame)
     X, cols = ch.design_matrix(frame, fs)
     y = cvs.target_labels(frame, target)  # labels: only for the AUROC below
@@ -166,7 +175,7 @@ def compute_curves(
             x_test = X[test]
             max_oof = max(max_oof, float(np.max(np.abs(
                 est.predict_proba(x_test)[:, 1] - saved["proba"].to_numpy()[test]))))  # fmt: skip
-            orders = {"shap": shap_perm[repeat][test][None], "reverse": shap_perm[repeat][test][:, ::-1][None],
+            orders = {"shap": shap_perm[repeat][test][None], "reverse": reverse_order(shap_perm[repeat][test])[None],
                       "random": rand_perm[:, repeat][:, test]}  # fmt: skip
             for key, order in orders.items():
                 batch = np.stack([masked(x_test, medians, o) for o in order])  # (D, F+1, rows, F)
@@ -187,7 +196,7 @@ def compute_curves(
             raise GuardFailure(f"{key}: a (repeat, k, clip) cell was never evaluated")
     auc = {key: _auc(y, p) for key, p in proba.items()}
     change = {key: np.abs(m - m[..., :1, :]).mean(axis=-1) for key, m in margin.items()}
-    return {"auc": auc, "change": change, "cols": cols, "max_oof": max_oof, "n_features": n_f,
+    return {"auc": auc, "change": change, "proba": proba, "cols": cols, "max_oof": max_oof, "n_features": n_f,
             "runs_auroc": list(runs_auroc), "n_random": n_random}  # fmt: skip
 
 
@@ -307,8 +316,9 @@ def csv_bytes(frame: pd.DataFrame) -> bytes:
 
 def run_config(
     cv_root: Path, xai: Path, frame: pd.DataFrame, input_hashes: dict[str, str], config_index: int,
-    target: str, fs: str, n_random: int = N_RANDOM,
+    target: str, fs: str, n_random: int | None = None,
 ) -> dict[str, Any]:  # fmt: skip
+    n_random = N_RANDOM if n_random is None else n_random
     folder = cv_root / target
     paths = {"meta": folder / f"meta_{tsh.MODEL}_{fs}.json", "oof": folder / f"oof_{tsh.MODEL}_{fs}.csv",
              "best": folder / f"best_params_{tsh.MODEL}_{fs}.csv", "splits": folder / cvs.OUT_SPLITS,
