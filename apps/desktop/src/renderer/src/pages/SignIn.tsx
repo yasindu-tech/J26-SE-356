@@ -48,7 +48,7 @@ export function SignIn() {
     // Desktop-App-Spec.md) — this placeholder just proves the session works
     // end to end (real tokens issued, idle sign-out armed) until they do.
     // PP1: the module screens (MRI, voice) stand in for them for now.
-    return <Workspace onSignOut={handleSignOut} />;
+    return <Workspace clinician={username.trim() || "Clinician"} onSignOut={handleSignOut} />;
   }
 
   return (

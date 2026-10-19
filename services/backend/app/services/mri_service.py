@@ -69,8 +69,18 @@ def create_analysis(
     sex: str,
     runner: MriRunner,
     settings: Settings,
+    eddy_profile: str = "full",
+    subject_label: str | None = None,
 ) -> MriAnalysis:
-    row = MriAnalysis(id=uuid.uuid4(), clinician_id=clinician.id, status="queued", age=age, sex=sex)
+    row = MriAnalysis(
+        id=uuid.uuid4(),
+        clinician_id=clinician.id,
+        status="queued",
+        age=age,
+        sex=sex,
+        eddy_profile=eddy_profile,
+        subject_label=subject_label,
+    )
     folder = _folder(settings, row.id)
     try:
         save_upload(upload, folder / "upload.zip", settings.mri_max_upload_mb * CHUNK)
@@ -81,7 +91,9 @@ def create_analysis(
     _audit(db, clinician, "mri_upload", row.id)
     db.commit()
     db.refresh(row)
-    runner.submit(MriJob(analysis_id=row.id, folder=folder, age=age, sex=sex))
+    runner.submit(
+        MriJob(analysis_id=row.id, folder=folder, age=age, sex=sex, eddy_profile=eddy_profile)
+    )
     return row
 
 
@@ -139,6 +151,8 @@ def _status(row: MriAnalysis, progress: dict | None) -> MriAnalysisStatus:
     return MriAnalysisStatus(
         id=row.id,
         status=row.status,  # type: ignore[arg-type]
+        eddy_profile=row.eddy_profile,  # type: ignore[arg-type]
+        subject_label=row.subject_label,
         created_at=row.created_at,
         finished_at=row.finished_at,
         steps=STEPS,

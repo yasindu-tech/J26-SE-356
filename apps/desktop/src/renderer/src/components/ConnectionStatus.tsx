@@ -4,7 +4,8 @@ import "./ConnectionStatus.css";
 
 const POLL_INTERVAL_MS = 15_000;
 
-export function ConnectionStatus() {
+/** `onDark`: drawn on the teal top bar instead of a light background. */
+export function ConnectionStatus({ onDark = false }: { onDark?: boolean }) {
   const [state, setState] = useState<{ ok: boolean; latencyMs: number } | null>(null);
 
   useEffect(() => {
@@ -31,7 +32,10 @@ export function ConnectionStatus() {
         : "Backend · unreachable";
 
   return (
-    <div className="connection-status" data-ok={state?.ok ?? false}>
+    <div
+      className={`connection-status${onDark ? " connection-status--on-dark" : ""}`}
+      data-ok={state === null ? "pending" : state.ok}
+    >
       <span className="connection-status__dot" />
       {label}
     </div>

@@ -1,69 +1,9 @@
+/* Voice screen content. The top bar, navigation and page title row come from the shared
+   frame (AppShell, PageHeader); only this screen's own layout is here. */
+
 .voice-results {
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
-}
-
-.voice-results__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--spacing-md) var(--spacing-xl);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.voice-results__brand {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.voice-results__brand-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  object-fit: contain;
-  padding: 4px;
-}
-
-.voice-results__brand-text {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.voice-results__bar-title {
-  margin-left: var(--spacing-md);
-  padding-left: var(--spacing-md);
-  border-left: 1px solid rgba(255, 255, 255, 0.3);
-  font-size: 15px;
-}
-
-.voice-results__actions {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.voice-results__button {
-  padding: 8px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-on-primary);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.voice-results__button--primary {
-  border-color: var(--color-surface);
-  background: var(--color-surface);
-  color: var(--color-primary);
-}
-
-.voice-results__button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
 }
 
 .voice-results__body {
@@ -71,7 +11,10 @@
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: var(--spacing-xl);
+  padding: 28px 32px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
 .voice-results__error {

@@ -12,19 +12,36 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
   background: var(--color-neutral-50);
   color: var(--color-neutral-900);
   -webkit-font-smoothing: antialiased;
 }
 
-input {
+/* Numbers, IDs and codes: use the mono face with tabular figures. */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary-hover);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
