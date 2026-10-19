@@ -858,9 +858,16 @@ def test_identical_models_have_a_zero_paired_difference(with_r: dict[str, Any]) 
     for kind in ("oof", "runs"):  # make lgbm R an exact copy of lgbm A
         shutil.copy(folder / f"{kind}_lgbm_A.csv", folder / f"{kind}_lgbm_R.csv")
     meta = json.loads((folder / "meta_lgbm_A.json").read_text())
-    (folder / "meta_lgbm_R.json").write_text(
-        json.dumps({**meta, "feature_set": "R", "features_sha8": rf.PINNED_FEATURES_SHA8})
-    )
+    table_sha8 = cvs.sha8_of(
+        (with_r["ref"] / rf.OUT_FEATURES).read_bytes()
+    )  # the copy must name the current table
+    fake = {
+        **meta,
+        "feature_set": "R",
+        "features_sha8": rf.PINNED_FEATURES_SHA8,
+        "inputs_sha8": {"reference_features": table_sha8},
+    }
+    (folder / "meta_lgbm_R.json").write_text(json.dumps(fake))
     assert cli(with_r, "report", "--targets", "ge2") == 0
     r = report_table(with_r).query("subject == 'lgbm A minus lgbm R'").iloc[0]
     assert (
