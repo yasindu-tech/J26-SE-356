@@ -36,6 +36,7 @@ Counts (reproduce with the scripts below): 2,950 usable walks from 110 subjects;
    6 Hz zero-phase low-pass, heel strikes per foot; a stride counts only if its
    duration is plausible and the ankle really swings. At least 3 real strides
    in total, with at least one on each foot (video too).
+   in total, with at least one on each foot (video too).
 5. **Features** — `gait_extract.extract_features`, the single function used by
    training and the demo. Eight inputs: `stride_time_mean`, `cadence`,
    `stride_time_cv`, `step_length_norm`, `step_length_asymmetry`,
