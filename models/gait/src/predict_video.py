@@ -3,9 +3,9 @@
 Chains ``video_to_joints``, the quality gate, ``extract_features``, the saved model bundle and the
 plain-words SHAP sentences. A video that cannot be scored gets ``available: false`` and its reasons;
 nothing is raised for a bad video. Probabilities are uncalibrated model scores. One person in view
-is assumed unless a count is passed.
+is assumed unless a count is passed or the person who uploaded it confirmed it.
 
-    python models/gait/src/predict_video.py VIDEO [--people N] [--json]
+    python models/gait/src/predict_video.py VIDEO [--people N] [--json] [--out result.json]
 
 Exit code 0 = scored, 1 = not scored, 2 = the model bundle or pose model cannot be used.
 """
@@ -20,12 +20,18 @@ from typing import Any
 
 from carepd_format import short_id
 from explain_shap import DEFAULT_BUNDLE, Explainer
+from feature_contract import FeatureContractError, check_feature_contract
 from gait_extract import FEATURE_NAMES, MAX_FPS, MIN_FPS, extract_features
 from make_folds import CLASS_LABELS
 from model_bundle import BundleError, load_bundle
-from quality_gate import GateResult, check_walk, reject
+from quality_gate import ONE_PERSON_ASSUMED, GateResult, check_walk, reject
 from video_to_joints import DEFAULT_MODEL, MAX_SECONDS, VideoError, VideoWalk, video_to_joints
 
+SCHEMA_VERSION = "gait-result/1"
+LABEL_NAMES = ["UPDRS_GAIT", "severity", "score"]  # never model inputs (CLAUDE.md 3.1)
+ONE_PERSON_CONFIRMED = (
+    "You confirmed one person is walking. The video itself was not checked for other people."
+)
 SEVERITY_NOTE = "A summary of the three model scores on a 0 to 2 scale; not a UPDRS score."
 
 
@@ -51,12 +57,36 @@ class GaitPredictor:
             raise FileNotFoundError(f"pose model not found: {pose_model}")
         self.bundle = load_bundle(Path(bundle_dir))
         self.bundle.reference  # noqa: B018 - refuses a bundle without the plain-words reference
+        check_feature_contract(self.bundle.features, label_name=LABEL_NAMES)  # before any scoring
         self.explainer = Explainer(self.bundle)
         self.pose_model = Path(pose_model)
         self.max_seconds = max_seconds
 
-    def predict(self, path: Path, *, people_in_view: int | None = None) -> dict[str, Any]:
-        """The result record of one video (JSON-safe). ``people_in_view``: a detector's count."""
+    def predict(
+        self,
+        path: Path,
+        *,
+        people_in_view: int | None = None,
+        one_person_confirmed: bool = False,
+    ) -> dict[str, Any]:
+        """The result record of one video (JSON-safe).
+
+        ``people_in_view`` is a detector's count; ``one_person_confirmed`` says the person who
+        uploaded the video confirmed it shows one person walking (it changes the warning only).
+        """
+        record = self._predict(Path(path), people_in_view)
+        if one_person_confirmed:
+            record["warnings"] = [
+                ONE_PERSON_CONFIRMED if w == ONE_PERSON_ASSUMED else w for w in record["warnings"]
+            ]
+        return {
+            "modality": "gait",
+            "schema_version": SCHEMA_VERSION,
+            **record,
+            "one_person_confirmed": one_person_confirmed,
+        }
+
+    def _predict(self, path: Path, people_in_view: int | None) -> dict[str, Any]:
         tag = short_id(Path(path).name)  # never the file name
         try:
             walk = video_to_joints(Path(path), self.pose_model, max_seconds=self.max_seconds)
@@ -77,7 +107,6 @@ class GaitPredictor:
         words = self.explainer.in_words(x)
         proba = [float(p) for p in words.probabilities]
         return {
-            "modality": "gait",
             "available": True,
             "video": tag,
             "reasons": [],
@@ -100,7 +129,6 @@ class GaitPredictor:
         self, tag: str, gate: GateResult, walk: VideoWalk | None, extra: list[str]
     ) -> dict[str, Any]:
         return {
-            "modality": "gait",
             "available": False,
             "video": tag,
             "reasons": [*gate.reasons, *extra],
@@ -134,9 +162,13 @@ def default_predictor() -> GaitPredictor:
     return GaitPredictor()
 
 
-def predict_video(path: Path, *, people_in_view: int | None = None) -> dict[str, Any]:
+def predict_video(
+    path: Path, *, people_in_view: int | None = None, one_person_confirmed: bool = False
+) -> dict[str, Any]:
     """``GaitPredictor.predict`` with the default bundle and pose model, loaded once."""
-    return default_predictor().predict(path, people_in_view=people_in_view)
+    return default_predictor().predict(
+        path, people_in_view=people_in_view, one_person_confirmed=one_person_confirmed
+    )
 
 
 def show(record: dict[str, Any]) -> str:
@@ -169,13 +201,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-seconds", type=float, default=MAX_SECONDS)
     parser.add_argument("--people", type=int, help="people in view, if a detector counted them")
     parser.add_argument("--json", action="store_true", help="print the whole record as JSON")
+    parser.add_argument("--out", type=Path, help="also write the record to this JSON file")
+    parser.add_argument(
+        "--one-person-confirmed",
+        action="store_true",
+        help="the person who uploaded the video confirmed it shows one person walking",
+    )
     args = parser.parse_args(argv)
     try:
         predictor = GaitPredictor(args.bundle, args.model, args.max_seconds)
-    except (BundleError, FileNotFoundError) as err:
+    except (BundleError, FileNotFoundError, FeatureContractError) as err:
         print(f"Cannot start: {err}")
         return 2
-    record = predictor.predict(args.video, people_in_view=args.people)
+    record = predictor.predict(
+        args.video, people_in_view=args.people, one_person_confirmed=args.one_person_confirmed
+    )
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(record, indent=2))
     print(json.dumps(record, indent=2) if args.json else show(record))
     return 0 if record["available"] else 1
 
