@@ -52,6 +52,24 @@ class MriResultNotReadyError(AppError):
     status_code, code, message = 409, "MRI_RESULT_NOT_READY", "The MRI analysis has not finished"
 
 
+class GaitAnalysisNotFoundError(AppError):
+    # Also returned for another clinician's analysis, so IDs cannot be probed.
+    status_code, code, message = 404, "GAIT_ANALYSIS_NOT_FOUND", "Gait analysis not found"
+
+
+class GaitResultNotReadyError(AppError):
+    status_code, code, message = 409, "GAIT_RESULT_NOT_READY", "The gait analysis has not finished"
+
+
+class OnePersonNotConfirmedError(AppError):
+    # A form field the request did fill in, but not with the one accepted answer.
+    status_code, code, message = (
+        422,
+        "VALIDATION_ERROR",
+        "Confirm that the video shows one person walking, filmed from the side",
+    )
+
+
 class InvalidUploadError(AppError):
     status_code, code, message = 400, "INVALID_UPLOAD", "The upload must be a zip of DICOM files"
 
@@ -68,6 +86,8 @@ ERROR_CODES: tuple[str, ...] = (
     NotAuthenticatedError.code,
     MriAnalysisNotFoundError.code,
     MriResultNotReadyError.code,
+    GaitAnalysisNotFoundError.code,
+    GaitResultNotReadyError.code,
     InvalidUploadError.code,
     UploadTooLargeError.code,
     "VALIDATION_ERROR",
