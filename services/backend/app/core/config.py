@@ -43,6 +43,18 @@ class Settings(BaseSettings):
     mri_eddy_threads: int = 2
     mri_timeout_hours: float = 6.0
 
+    # Gait analyses (models/gait/src/predict_video.py runs as a separate process, one video at a
+    # time, in its own worker so a gait video never waits behind an MRI scan). The uploaded
+    # video is deleted as soon as the analysis ends.
+    gait_work_dir: Path = REPO_ROOT / "data" / "backend" / "gait"
+    gait_python: str = sys.executable  # interpreter with the models/gait dependencies
+    gait_script: Path = REPO_ROOT / "models" / "gait" / "src" / "predict_video.py"
+    gait_bundle_dir: Path = (
+        REPO_ROOT / "models" / "gait" / "artifacts" / "models" / "xgboost" / "bundle"
+    )
+    gait_max_upload_mb: int = 500
+    gait_timeout_minutes: float = 15.0
+
 
 @lru_cache
 def get_settings() -> Settings:

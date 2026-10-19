@@ -41,3 +41,17 @@ def get_mri_runner():  # noqa: ANN201 (returns the app-wide MriRunner)
 
         _mri_runner = SubprocessRunner(get_settings())
     return _mri_runner
+
+
+_gait_runner = None
+
+
+def get_gait_runner():  # noqa: ANN201 (returns the app-wide GaitRunner)
+    """The one background runner for gait analyses (tests override this dependency)."""
+    global _gait_runner
+    if _gait_runner is None:
+        from app.core.config import get_settings
+        from app.workers.gait_runner import SubprocessGaitRunner
+
+        _gait_runner = SubprocessGaitRunner(get_settings())
+    return _gait_runner
