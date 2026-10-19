@@ -106,6 +106,7 @@ python models/gait/src/explain_shap.py           # SHAP charts of the saved mode
 python models/gait/src/video_to_joints.py VIDEO    # joints and facts of one video
 python models/gait/src/quality_gate.py VIDEO       # accept or reject one video, with reasons
 python models/gait/src/predict_video.py VIDEO       # score one video (--json for the record)
+python models/gait/src/run_koa_pd_nm.py      # every KOA-PD-NM video through predict_video
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
