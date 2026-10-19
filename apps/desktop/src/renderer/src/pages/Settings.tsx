@@ -1,3 +1,4 @@
+import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import type { EddyProfile } from "../mri/mriTypes";
@@ -40,6 +41,10 @@ export function SettingsPage({
         <p className="eyebrow">General</p>
         <h2 className="card__title" id="settings-general">
           This app
+          <InfoTip label="About these settings">
+            The backend address is fixed when the app is built, so it cannot be changed here. You are
+            signed out automatically after a period without activity.
+          </InfoTip>
         </h2>
 
         <label className="settings__row">
@@ -76,16 +81,16 @@ export function SettingsPage({
             <dd className="mono">{__APP_VERSION__}</dd>
           </div>
         </dl>
-        <p className="note">
-          The backend address is fixed when the app is built, so it cannot be changed here. You are
-          signed out automatically after a period without activity.
-        </p>
       </section>
 
       <section className="card" aria-labelledby="settings-mri">
         <p className="eyebrow">MRI</p>
         <h2 className="card__title" id="settings-mri">
           MRI analysis
+          <InfoTip label="About these settings">
+            An analysis that already ran keeps the setting it used, and its result shows which one that
+            was.
+          </InfoTip>
         </h2>
 
         <label className="settings__row">
@@ -139,10 +144,6 @@ export function SettingsPage({
             <dd className="mono">{MRI_MAX_UPLOAD_MB} MB</dd>
           </div>
         </dl>
-        <p className="note">
-          An analysis that already ran keeps the setting it used, and its result shows which one that
-          was.
-        </p>
       </section>
     </div>
   );

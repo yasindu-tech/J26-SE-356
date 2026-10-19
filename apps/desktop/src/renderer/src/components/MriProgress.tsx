@@ -15,6 +15,7 @@ import {
   updateActivity,
   type ActivityEntry,
 } from "../mri/mriView";
+import { InfoTip } from "./InfoTip";
 import "../pages/MriAnalysis.css";
 
 // The MRI part's progress view: step bar, what the analysis service last reported, and an
@@ -99,7 +100,22 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
       <section className="card">
         <div className="mri__tracking-head">
           <div className="mri__tracking-text">
-            <h2 className="mri__tracking-title">MRI part: analysing the scan</h2>
+            <h2 className="mri__tracking-title">
+              MRI part: analysing the scan
+              <InfoTip label="Why does the DTI part take so long?">
+                <p>
+                  <strong>Why does the DTI part take so long?</strong>
+                </p>
+                <p>
+                  DTI holds dozens of diffusion images, and each one has to be straightened out
+                  before measuring. That motion correction (called eddy) is the slow step: from tens
+                  of minutes to over an hour on an ordinary computer. T1 takes a few minutes.
+                </p>
+                <p>
+                  Nothing is frozen. The line under the step bar changes as each stage reports in.
+                </p>
+              </InfoTip>
+            </h2>
             <p className="mri__body-text">
               This is normal and can take a while. You can carry on with the consultation; the
               result opens here when it is ready.
@@ -109,6 +125,10 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
             <span className="mri__elapsed-value mono">{formatElapsed(elapsed)}</span>
             <span className="note">
               elapsed{started ? ` · started ${formatClock(started)}` : ""}
+              <InfoTip label="Can I leave this screen?">
+                Leaving this screen does not stop the analysis. It continues in the background and
+                stays in Home.
+              </InfoTip>
             </span>
           </div>
         </div>
@@ -147,14 +167,16 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
           </span>
         </div>
 
-        <p className="note mri__leave">
-          Leaving this screen does not stop the analysis. It continues in the background and
-          stays in <strong>Home</strong>.
-        </p>
       </section>
 
       <section className="card">
-        <h2 className="mri__rail-title">Activity</h2>
+        <h2 className="mri__rail-title">
+          Activity
+          <InfoTip label="About this list">
+            Listed as this screen sees each report. It is not a stored log, and it starts when you
+            open this screen.
+          </InfoTip>
+        </h2>
         {activity.length === 0 ? (
           <p className="note">Nothing reported yet.</p>
         ) : (
@@ -167,27 +189,7 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
             ))}
           </ol>
         )}
-        <p className="note">
-          Listed as this screen sees each report. It is not a stored log, and it starts when you
-          open this screen.
-        </p>
       </section>
     </div>
-  );
-}
-
-export function WhySlowCard() {
-  return (
-    <section className="card">
-      <h2 className="mri__rail-title">Why does the DTI part take so long?</h2>
-      <p className="mri__body-text">
-        DTI holds dozens of diffusion images, and each one has to be straightened out before
-        measuring. That motion correction (called eddy) is the slow step: from tens of minutes
-        to over an hour on an ordinary computer. T1 takes a few minutes.
-      </p>
-      <p className="mri__body-text">
-        Nothing is frozen. The line under the step bar changes as each stage reports in.
-      </p>
-    </section>
   );
 }
