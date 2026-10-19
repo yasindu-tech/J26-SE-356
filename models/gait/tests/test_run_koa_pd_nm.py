@@ -75,7 +75,8 @@ def test_clip_names_give_group_level_person_and_trial(tmp_path: Path) -> None:
     nm = [c for c in clips if c.group == "NM"]
     assert {c.level for c in nm} == {""}
     assert nm[0].person == nm[1].person != nm[2].person  # one person, two clips
-    assert rk.person_key("NM", "001") != rk.person_key("PD", "001")  # IDs repeat across groups
+    assert rk.person_key("NM", "", "001") != rk.person_key("PD", "SV", "001")
+    assert rk.person_key("PD", "ML", "001") != rk.person_key("PD", "SV", "001")  # per folder
     assert all(c.clip.startswith("w-") and c.person.startswith("p-") for c in clips)
 
 
@@ -180,3 +181,12 @@ def test_a_row_cut_short_by_a_stopped_run_is_run_again(tmp_path: Path) -> None:
     with (out / "results.csv").open("a") as f:
         f.write(f"{clips[2].clip},NM,,p-x")  # the process stopped mid-row
     assert rk.done_clips(out / "results.csv") == {clips[0].clip, clips[1].clip}
+
+
+def test_the_same_id_in_two_severity_folders_is_two_people(tmp_path: Path) -> None:
+    root = tmp_path / "d"
+    for name in ("PD/PD_ML/001_PD_01_ML.MOV", "PD/PD_SV/001_PD_01_SV.MOV"):
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_bytes(b"x")
+    clips, _ = rk.find_clips(root)
+    assert len({c.person for c in clips}) == 2
