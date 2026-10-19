@@ -230,3 +230,55 @@ def test_cli_exit_codes_for_a_rejection_and_for_a_broken_setup(
     assert (
         pv.main([str(fake.video), "--bundle", str(bundle_dir), "--model", str(tmp_path / "x")]) == 2
     )
+
+
+# --------------------------------------------------------------------------- GAIT-28 additions
+def test_the_record_carries_its_schema_version_and_the_confirmation(
+    predictor: GaitPredictor, fake: Fake
+) -> None:
+    r = predictor.predict(fake.video)
+    assert r["schema_version"] == "gait-result/1" and r["one_person_confirmed"] is False
+    assert list(r)[:2] == ["modality", "schema_version"]
+    gone = predictor.predict(fake.video, people_in_view=2)
+    assert gone["schema_version"] == "gait-result/1" and gone["modality"] == "gait"
+
+
+def test_a_confirmed_upload_changes_the_one_person_warning_and_nothing_else(
+    predictor: GaitPredictor, fake: Fake
+) -> None:
+    plain = predictor.predict(fake.video)
+    confirmed = predictor.predict(fake.video, one_person_confirmed=True)
+    assert confirmed["one_person_confirmed"] is True
+    assert pv.ONE_PERSON_CONFIRMED in confirmed["warnings"]
+    assert not any("is assumed" in w for w in confirmed["warnings"])
+    assert confirmed["probabilities"] == plain["probabilities"]
+    assert confirmed["gate"] == plain["gate"]  # the gate's own record is left as it was
+    assert not BANNED.search(pv.ONE_PERSON_CONFIRMED)
+
+
+def test_a_bundle_with_a_banned_input_is_refused_before_any_scoring(
+    bundle_dir: Path, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from feature_contract import FeatureContractError
+
+    real = mb.load_bundle
+
+    def with_label_input(directory: Path) -> mb.Bundle:
+        b = real(directory)
+        return mb.Bundle(b.model, {**b.info, "features": [*b.features[:-1], "UPDRS_GAIT"]})
+
+    monkeypatch.setattr(pv, "load_bundle", with_label_input)
+    with pytest.raises(FeatureContractError):
+        GaitPredictor(bundle_dir, fake.model)
+
+
+def test_cli_writes_the_record_to_a_file_with_the_confirmation(
+    bundle_dir: Path, fake: Fake, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "deep" / "result.json"
+    assert run_cli(fake, bundle_dir, "--out", str(out), "--one-person-confirmed") == 0
+    record = json.loads(out.read_text())
+    assert record["one_person_confirmed"] is True and record["available"] is True
+    assert "You confirmed one person is walking" in capsys.readouterr().out
+    assert run_cli(fake, bundle_dir, "--out", str(out), "--people", "2") == 1
+    assert json.loads(out.read_text())["available"] is False
