@@ -1,0 +1,345 @@
+/* Assessment workflow (Setup, Analysis, Result). Colours and spacing from the shared
+   tokens; shared pieces (.card, .btn, .eyebrow, .note) are in components/PageHeader.css. */
+
+.asm__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.asm__lead {
+  margin: 0;
+}
+
+/* 1 Setup  2 Analysis  3 Result */
+.asm__stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+.asm__stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+}
+
+.asm__stage-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-neutral-300);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.asm__stage--on {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.asm__stage--on .asm__stage-n,
+.asm__stage--done .asm__stage-n {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-hover);
+  color: var(--color-on-primary);
+}
+
+.asm__person {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--spacing-md);
+}
+
+.asm__parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 1100px) {
+  .asm__parts,
+  .asm__person {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.asm__part {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+/* A part that cannot be uploaded in this build: dashed, like a part that was not used. */
+.asm__part--none {
+  border: 2px dashed var(--color-neutral-300);
+  background: var(--color-neutral-50);
+}
+
+.asm__part--mri {
+  grid-column: 1 / -1;
+}
+
+.asm__part-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.asm__part-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.asm__link {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.asm__foot {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asm__foot .note {
+  flex: 1 1 360px;
+  margin: 0;
+}
+
+/* One row for the four parts while analysing and on the result. */
+.asm__strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .asm__strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.asm__strip-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.asm__strip-item--none {
+  border: 2px dashed var(--color-neutral-300);
+  background: var(--color-neutral-50);
+}
+
+.asm__strip-name {
+  font-weight: 600;
+}
+
+/* Parts without a result on the result page: dashed and "—", never zero. */
+.asm__others {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 1100px) {
+  .asm__others {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.asm__other {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 2px dashed var(--color-neutral-300);
+  border-radius: 10px;
+  background: var(--color-neutral-50);
+}
+
+.asm__other-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asm__other-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.asm__dash {
+  margin: 0;
+  font-size: 32px;
+  color: var(--color-neutral-600);
+}
+
+.asm__setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  margin: 0;
+  font-size: 14px;
+}
+
+/* One step per screen: a card with its own Back / Next row. */
+.asm__step {
+  max-width: 980px;
+}
+
+.asm__buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.asm__modalities {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .asm__modalities {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.asm__others-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.asm__part--small {
+  gap: 6px;
+  padding: 14px 18px;
+}
+
+.asm__part--mri {
+  grid-column: auto;
+}
+
+.asm__review {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-size: 14px;
+}
+
+.asm__review div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.asm__review dt {
+  color: var(--color-neutral-600);
+}
+
+.asm__review dd {
+  margin: 0;
+  text-align: right;
+}
+
+.asm__facts {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.asm__facts dt {
+  color: var(--color-neutral-600);
+}
+
+.asm__facts dd {
+  margin: 0;
+}
+
+.asm__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.asm__check input {
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.asm__muted {
+  color: var(--color-neutral-600);
+  font-weight: 400;
+}
+
+.asm__hand {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.asm__hand label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 14px;
+  font-size: 14px;
+}
+
+.asm__hand input {
+  accent-color: var(--color-primary);
+}
+
+.asm__hand legend {
+  width: 100%;
+  padding: 0;
+  margin-bottom: 6px;
+}

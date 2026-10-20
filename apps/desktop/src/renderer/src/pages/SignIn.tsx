@@ -7,7 +7,7 @@ import { clearSession, startSession } from "../api/session";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { PriorityRangePreview } from "../components/PriorityRangePreview";
 import { SESSION_IDLE_TIMEOUT_MINUTES } from "../constants/config";
-import { VoiceResults } from "./VoiceResults";
+import { Workspace } from "./Workspace";
 import "./SignIn.css";
 
 export function SignIn() {
@@ -47,8 +47,8 @@ export function SignIn() {
     // No further screens exist yet (patient management, assessments — see
     // Desktop-App-Spec.md) — this placeholder just proves the session works
     // end to end (real tokens issued, idle sign-out armed) until they do.
-    // PP1: the voice result screen stands in for the placeholder for now.
-    return <VoiceResults onSignOut={handleSignOut} />;
+    // PP1: the module screens (MRI, voice) stand in for them for now.
+    return <Workspace clinician={username.trim() || "Clinician"} onSignOut={handleSignOut} />;
   }
 
   return (

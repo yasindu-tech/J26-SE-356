@@ -1,0 +1,92 @@
+/* Shared screen pieces from the approved design: page title row, buttons, cards. Used by
+   the MRI and voice screens so they do not each carry their own copy. */
+
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+}
+
+.page-header__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.page-header__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.page-header__subtitle {
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
+.page-header__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.btn {
+  white-space: nowrap;
+  height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-neutral-900);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.btn--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+.btn--outline {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: 22px 26px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.card__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}

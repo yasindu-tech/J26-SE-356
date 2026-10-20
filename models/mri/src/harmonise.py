@@ -218,6 +218,35 @@ def _as_covariates(cov, n: int) -> np.ndarray | None:
 # ================================================================= inside the fold
 
 
+def harmonisable_columns(
+    x: np.ndarray,
+    batch: Sequence[str],
+    covariates: np.ndarray | None = None,
+    min_var: float = 1e-12,
+) -> np.ndarray:
+    """Which columns ComBat can estimate from these (training) rows.
+
+    A column is unusable when it has no variance left after removing the batch means and
+    covariates, or no variance inside one batch (e.g. a tissue share that is 0 for every
+    person of a scanner). ComBat cannot scale such a column; passing it on unharmonised
+    would let the scanner leak into the model, so callers drop it for that fit.
+    Only rows, batches and covariates are used, never labels.
+    """
+    x = _as_matrix(x)
+    batch_arr = np.asarray(batch).astype(str)
+    cov = _as_covariates(covariates, len(x))
+    levels = np.unique(batch_arr)
+    onehot = (batch_arr[:, None] == levels[None, :]).astype(float)
+    design = onehot if cov is None else np.hstack([onehot, cov])
+    coef, *_ = np.linalg.lstsq(design, x, rcond=None)
+    ok = ((x - design @ coef) ** 2).mean(axis=0) > min_var
+    for lv in levels:
+        rows = x[batch_arr == lv]
+        if len(rows) > 1:
+            ok &= rows.var(axis=0, ddof=1) > min_var
+    return ok
+
+
 def out_of_fold_harmonise(
     x: np.ndarray,
     batch: Sequence[str],

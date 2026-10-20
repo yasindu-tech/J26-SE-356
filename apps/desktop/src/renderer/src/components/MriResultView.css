@@ -1,0 +1,628 @@
+/* MRI result page. Colour rules from the approved design:
+   - terracotta (priority-high) is not used here at all: this screen shows no priority;
+   - amber (caution) is a border or tint only, always with dark text;
+   - sage is the confidence-interval band only, never text;
+   - SHAP direction is the side of the zero line AND solid vs outlined, so it survives
+     colour-vision deficiency. */
+
+.mr {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.mr__notice {
+  margin: 0;
+  padding: 12px 18px;
+  border: 1px solid var(--color-caution);
+  border-radius: 10px;
+  background: var(--color-caution-tint);
+  color: var(--color-neutral-900);
+  font-size: 14px;
+}
+
+.mr__row-a {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.mr__score {
+  gap: 20px;
+  padding: 28px 32px;
+}
+
+.mr__score--none {
+  border: 2px dashed var(--color-neutral-300);
+  background: var(--color-neutral-50);
+}
+
+.mr__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.mr__headline {
+  margin: 6px 0 0;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.mr__sub {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.mr__h2 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.mr__figures {
+  display: flex;
+  align-items: flex-end;
+  gap: 36px;
+  flex-wrap: wrap;
+}
+
+.mr__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mr__big {
+  font-size: 52px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.mr__big--none {
+  color: var(--color-neutral-600);
+}
+
+.mr__big--small {
+  font-size: 32px;
+}
+
+.mr__interval {
+  align-self: flex-start;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--color-sage-tint);
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* Score band: track, sage interval, dark score marker, neutral zero line. */
+
+.mr__band-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.mr__band {
+  position: relative;
+  height: 40px;
+}
+
+.mr__band-track {
+  position: absolute;
+  inset: 16px 0 auto 0;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-neutral-100);
+}
+
+.mr__band-ci {
+  position: absolute;
+  top: 8px;
+  height: 24px;
+  border-radius: 4px;
+  background: var(--color-sage);
+}
+
+.mr__band-point {
+  position: absolute;
+  top: 2px;
+  width: 4px;
+  height: 36px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--color-neutral-900);
+}
+
+.mr__band-zero {
+  position: absolute;
+  top: 12px;
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  background: var(--color-neutral-300);
+}
+
+.mr__band-labels {
+  position: relative;
+  height: 18px;
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.mr__band-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.mr__band-labels span:first-child {
+  transform: none;
+}
+
+.mr__band-labels span:last-child {
+  transform: translateX(-100%);
+}
+
+.mr__band-labels .mr__band-strong {
+  color: var(--color-neutral-900);
+  font-weight: 600;
+}
+
+.mr__legend {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.mr__legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mr__swatch {
+  display: inline-block;
+}
+
+.mr__swatch--ci {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-sage);
+}
+
+.mr__swatch--point {
+  width: 3px;
+  height: 12px;
+  background: var(--color-neutral-900);
+}
+
+.mr__swatch--zero {
+  width: 2px;
+  height: 12px;
+  background: var(--color-neutral-300);
+}
+
+.mr__reading {
+  margin: 0;
+  font-size: 15px;
+}
+
+.mr__text {
+  margin: 0;
+  font-size: 14px;
+}
+
+.mr__list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.mr__list--large {
+  font-size: 15px;
+}
+
+/* ------------------------------------------------------------------ sections */
+
+.mr__section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mr__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.mr__actions {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.mr__link {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mr__parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.mr__part {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+/* A part that did not contribute: dashed, "—", never zero. */
+.mr__part--none {
+  border: 2px dashed var(--color-neutral-300);
+  background: var(--color-neutral-50);
+}
+
+.mr__part-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mr__part-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mr__chip {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-900);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.mr__chip--on {
+  background: var(--color-success-tint);
+}
+
+.mr__chip--none {
+  background: var(--color-neutral-200);
+}
+
+.mr__checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.mr__checks li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.mr__checks li span:first-child {
+  color: var(--color-neutral-600);
+}
+
+.mr__qc {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-neutral-200);
+}
+
+/* ------------------------------------------------------------------- missing */
+
+.mr__missing {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 28px;
+  border: 1px solid var(--color-caution);
+  border-radius: 10px;
+  background: var(--color-caution-tint);
+}
+
+.mr__missing-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 200px;
+  gap: 12px 24px;
+  align-items: start;
+  font-size: 14px;
+}
+
+.mr__th {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+}
+
+.mr__missing-what {
+  font-weight: 600;
+}
+
+.mr__small-btn {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+/* --------------------------------------------------------------------- SHAP */
+
+.mr__shap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.mr__shap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.mr__shap-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mr__shap-legend {
+  display: flex;
+  gap: 14px;
+}
+
+.mr__shap-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mr__key {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.mr__key--solid,
+.mr__bar--solid {
+  background: var(--color-primary-hover);
+}
+
+.mr__key--outline,
+.mr__bar--outline {
+  border: 2px solid var(--color-primary-hover);
+  background: transparent;
+}
+
+.mr__bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.mr__bar-row {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 2px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.mr__bar-label {
+  text-align: right;
+}
+
+.mr__zero {
+  width: 2px;
+  height: 18px;
+  background: var(--color-neutral-300);
+}
+
+.mr__lane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mr__lane--lower {
+  justify-content: flex-end;
+}
+
+.mr__bar {
+  display: block;
+  height: 12px;
+  box-sizing: border-box;
+}
+
+.mr__bar--solid {
+  border-radius: 0 4px 4px 0;
+}
+
+.mr__bar--outline {
+  border-radius: 4px 0 0 4px;
+}
+
+.mr__bar-value {
+  color: var(--color-neutral-600);
+}
+
+/* ------------------------------------------------------------------- vector */
+
+.mr__table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+}
+
+.mr__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mr__table th,
+.mr__table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-neutral-100);
+  text-align: left;
+}
+
+.mr__table th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface);
+  color: var(--color-neutral-600);
+}
+
+.mr__row--outside td:first-child::after {
+  content: " (outside training range)";
+  color: var(--color-neutral-600);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ caveats */
+
+.mr__caveats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.mr__caveat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mr__caveat--warn,
+.mr__caveat--calm {
+  padding: 14px 16px;
+  border-radius: 8px;
+}
+
+.mr__caveat--warn {
+  border: 1px solid var(--color-caution);
+  background: var(--color-caution-tint);
+}
+
+.mr__caveat--calm {
+  border: 1px solid var(--color-neutral-200);
+  background: var(--color-neutral-50);
+}
+
+.mr__warn-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.mr__footer {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+@media (max-width: 1100px) {
+  .mr__row-a,
+  .mr__parts,
+  .mr__caveats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mr__missing-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mr__bar-row {
+    grid-template-columns: 140px minmax(0, 1fr) 2px minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------- plain-language reading */
+
+.mr__reading-card {
+  gap: 14px;
+  padding: 28px 32px;
+}
+
+.mr__reading-head {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* No colour carries the meaning: the words do. Teal marks a reading, never a priority. */
+.mr__reading-head--higher,
+.mr__reading-head--lower {
+  color: var(--color-primary);
+}
+
+.mr__reading-detail {
+  margin: 0;
+  font-size: 17px;
+}
+
+.mr__rely {
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+}
+
+.mr__rely .mr__text {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.mr__download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+.mr__download .note {
+  flex: 1 1 320px;
+}

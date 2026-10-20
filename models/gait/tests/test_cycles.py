@@ -130,7 +130,7 @@ def test_walk_that_starts_mid_stance_gets_no_landing_at_its_lowest_point() -> No
     walk[:, :, 1] = walk[:, PELVIS, 1][:, None]
     walk[:, L_ANKLE, 1] = h - 0.1 * np.clip(0.6 - t, 0, None)  # still lowering in stance at t=0
     found = detect_foot(preprocess(walk, fps)[:, L_ANKLE, 1], fps).strikes / fps
-    assert found.min() > 0.6  # nothing before the first real swing lands
+    assert np.min(found) > 0.6  # nothing before the first real swing lands
 
 
 # --------------------------------------------------------------------------- command line

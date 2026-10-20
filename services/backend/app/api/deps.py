@@ -27,3 +27,31 @@ def get_current_clinician(
     if clinician is None or not clinician.is_active:
         raise NotAuthenticatedError
     return clinician
+
+
+_mri_runner = None
+
+
+def get_mri_runner():  # noqa: ANN201 (returns the app-wide MriRunner)
+    """The one background runner for MRI analyses (tests override this dependency)."""
+    global _mri_runner
+    if _mri_runner is None:
+        from app.core.config import get_settings
+        from app.workers.mri_runner import SubprocessRunner
+
+        _mri_runner = SubprocessRunner(get_settings())
+    return _mri_runner
+
+
+_gait_runner = None
+
+
+def get_gait_runner():  # noqa: ANN201 (returns the app-wide GaitRunner)
+    """The one background runner for gait analyses (tests override this dependency)."""
+    global _gait_runner
+    if _gait_runner is None:
+        from app.core.config import get_settings
+        from app.workers.gait_runner import SubprocessGaitRunner
+
+        _gait_runner = SubprocessGaitRunner(get_settings())
+    return _gait_runner

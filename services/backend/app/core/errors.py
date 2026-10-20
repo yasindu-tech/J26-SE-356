@@ -43,11 +43,52 @@ class NotAuthenticatedError(AppError):
     status_code, code, message = 401, "NOT_AUTHENTICATED", "Not authenticated"
 
 
+class MriAnalysisNotFoundError(AppError):
+    # Also returned for another clinician's analysis, so IDs cannot be probed.
+    status_code, code, message = 404, "MRI_ANALYSIS_NOT_FOUND", "MRI analysis not found"
+
+
+class MriResultNotReadyError(AppError):
+    status_code, code, message = 409, "MRI_RESULT_NOT_READY", "The MRI analysis has not finished"
+
+
+class GaitAnalysisNotFoundError(AppError):
+    # Also returned for another clinician's analysis, so IDs cannot be probed.
+    status_code, code, message = 404, "GAIT_ANALYSIS_NOT_FOUND", "Gait analysis not found"
+
+
+class GaitResultNotReadyError(AppError):
+    status_code, code, message = 409, "GAIT_RESULT_NOT_READY", "The gait analysis has not finished"
+
+
+class OnePersonNotConfirmedError(AppError):
+    # A form field the request did fill in, but not with the one accepted answer.
+    status_code, code, message = (
+        422,
+        "VALIDATION_ERROR",
+        "Confirm that the video shows one person walking, filmed from the side",
+    )
+
+
+class InvalidUploadError(AppError):
+    status_code, code, message = 400, "INVALID_UPLOAD", "The upload must be a zip of DICOM files"
+
+
+class UploadTooLargeError(AppError):
+    status_code, code, message = 413, "UPLOAD_TOO_LARGE", "The upload is larger than allowed"
+
+
 # Every AppError code, for the parity test against errorCodes.ts.
 ERROR_CODES: tuple[str, ...] = (
     AppError.code,
     InvalidCredentialsError.code,
     InvalidRefreshTokenError.code,
     NotAuthenticatedError.code,
+    MriAnalysisNotFoundError.code,
+    MriResultNotReadyError.code,
+    GaitAnalysisNotFoundError.code,
+    GaitResultNotReadyError.code,
+    InvalidUploadError.code,
+    UploadTooLargeError.code,
     "VALIDATION_ERROR",
 )

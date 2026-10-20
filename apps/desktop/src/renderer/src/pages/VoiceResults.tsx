@@ -1,5 +1,5 @@
 import { useState } from "react";
-import logoMark from "../assets/pd-xai-logo-mark.jpeg";
+import { PageHeader } from "../components/PageHeader";
 import { VoiceResultCard } from "../components/VoiceResultCard";
 import { parseVoiceResults, triageLabel, type VoiceResult } from "../voice/voiceResult";
 import "./VoiceResults.css";
@@ -20,7 +20,7 @@ function resultSummary(result: VoiceResult): string {
   return result.kind === "scored" ? triageLabel(result.triagePriority) : "Not scored";
 }
 
-export function VoiceResults({ onSignOut }: { onSignOut: () => void }) {
+export function VoiceResults() {
   const [state, setState] = useState<ScreenState>({ status: "empty" });
 
   async function handleOpen(): Promise<void> {
@@ -54,28 +54,21 @@ export function VoiceResults({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <div className="voice-results">
-      <header className="voice-results__bar">
-        <div className="voice-results__brand">
-          <img src={logoMark} alt="" className="voice-results__brand-icon" />
-          <span className="voice-results__brand-text">PD-XAI</span>
-          <span className="voice-results__bar-title">Voice screening result</span>
-        </div>
-        <div className="voice-results__actions">
-          <button
-            type="button"
-            className="voice-results__button voice-results__button--primary"
-            onClick={handleOpen}
-            disabled={state.status === "opening"}
-          >
-            {state.status === "opening" ? "Opening…" : "Open result file"}
-          </button>
-          <button type="button" className="voice-results__button" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <main className="voice-results__body">
+      <div className="voice-results__body">
+        <PageHeader
+          title="Voice screening result"
+          subtitle="Read from a file the voice module wrote. Nothing is stored or uploaded."
+          actions={
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handleOpen}
+              disabled={state.status === "opening"}
+            >
+              {state.status === "opening" ? "Opening…" : "Open result file"}
+            </button>
+          }
+        />
         {state.status === "error" && (
           <p className="voice-results__error" role="alert">
             {state.message}
@@ -114,7 +107,7 @@ export function VoiceResults({ onSignOut }: { onSignOut: () => void }) {
             </div>
           )
         )}
-      </main>
+      </div>
     </div>
   );
 }

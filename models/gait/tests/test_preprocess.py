@@ -189,7 +189,7 @@ def test_slow_drift_at_the_start_is_not_a_step() -> None:
     h, _ = swing_height(t, 1.5)
     h = h + np.where(t < 1.2, 0.02 * (1 - t / 1.2), 0.0)  # starts 2 cm high and drifts down
     found = detect_foot(h, fps).strikes / fps
-    assert found.min() > 1.5  # nothing before the first real swing
+    assert np.min(found) > 1.5  # nothing before the first real swing
 
 
 def test_two_dips_in_one_stance_count_once() -> None:
