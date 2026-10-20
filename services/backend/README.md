@@ -35,6 +35,41 @@ uvicorn app.main:app --reload --port 8000 --app-dir services/backend
 pytest services/backend
 ```
 
+## Run with Docker
+
+`docker-compose.yml` at the repo root starts Postgres and this API. Docker Desktop must be
+running. Everything is for local development: ports are bound to `127.0.0.1`, and the default
+passwords and JWT secret are dev-only.
+
+**A. Database and API in Docker** (sign-in and the app's screens; MRI and gait analyses
+do not run in the container yet):
+
+```bash
+docker compose up -d --build
+docker compose exec backend python -m app.seed --username yasindu --full-name "Yasindu"
+npm run dev:desktop
+```
+
+**B. Database in Docker, API on your Mac** (needed for MRI analyses, which use the FSL,
+ANTs, dcm2niix and SynthStrip installed on your machine):
+
+```bash
+docker compose up -d db
+export DATABASE_URL=postgresql+psycopg2://pdxai:pdxai@localhost:5433/pdxai
+(cd services/backend && alembic upgrade head)
+(cd services/backend && python -m app.seed --username yasindu --full-name "Yasindu")
+npm run dev:backend
+```
+
+The seed command asks for the password twice and never echoes it. It creates accounts only,
+never patients or results. Run it again with `--reset-password` to change a password. It
+refuses to run with `ENVIRONMENT=production`.
+
+Postgres listens on host port **5433**, so it does not clash with a Postgres already on 5432.
+The data lives in the `pdxai_pgdata` volume: `docker compose down` keeps it,
+`docker compose down -v` deletes it. Nothing under `data/` is copied into an image: the
+repo-root `.dockerignore` allows `services/backend/` only.
+
 ## MRI analyses
 
 `POST /api/v1/mri/analyses` takes one person's MRI as a zip of DICOM files plus age and

@@ -1,0 +1,9 @@
+# Allow-list: the build context holds ONLY what an image needs. Everything else, and above
+# all data/ (PPMI and other data under data use agreements) and any .env, never reaches a
+# Docker build, so it cannot end up inside an image (CLAUDE.md section 4).
+*
+!services/backend/
+services/backend/**/__pycache__
+services/backend/**/*.pyc
+services/backend/.env
+services/backend/tests/
