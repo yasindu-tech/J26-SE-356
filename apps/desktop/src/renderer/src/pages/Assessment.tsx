@@ -4,9 +4,6 @@ import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
 import { GaitPicker } from "../components/GaitPicker";
 import { GaitProgress, GaitWhatIsHappening } from "../components/GaitProgress";
 import { GaitResultView } from "../components/GaitResultView";
-import { GaitPicker } from "../components/GaitPicker";
-import { GaitProgress, GaitWhatIsHappening } from "../components/GaitProgress";
-import { GaitResultView } from "../components/GaitResultView";
 import { MriResultView } from "../components/MriResultView";
 import { InfoTip } from "../components/InfoTip";
 import { ProgressPanel } from "../components/MriProgress";
@@ -42,7 +39,6 @@ type Screen =
   | { view: "patient" }
   | { view: "modalities" }
   | { view: "review" }
-  | { view: "uploading"; fraction: number; part?: "gait" }
   | { view: "uploading"; fraction: number; part?: "gait" }
   | { view: "analysis"; id: string }
   | { view: "result"; id: string; result: MriResult }
@@ -95,7 +91,6 @@ function stageOf(view: Screen["view"]): number {
       return 3;
     case "result":
     case "gait-result":
-    case "gait-result":
       return 4;
   }
 }
@@ -123,11 +118,6 @@ interface Form {
   videoSeconds: number | null;
   /** "One person is walking" ticked for this video. Saved with the result; asked again for every video. */
   onePerson: boolean;
-  /** The walking video, and its length when the picker could read it. */
-  video: File | null;
-  videoSeconds: number | null;
-  /** "One person is walking" ticked for this video. Saved with the result; asked again for every video. */
-  onePerson: boolean;
 }
 
 const EMPTY_FORM: Form = {
@@ -139,9 +129,6 @@ const EMPTY_FORM: Form = {
   medication: "",
   hand: "",
   file: null,
-  video: null,
-  videoSeconds: null,
-  onePerson: false,
   video: null,
   videoSeconds: null,
   onePerson: false,
@@ -353,9 +340,6 @@ export function Assessment({
         subtitle={
           screen.view === "uploading" && screen.part === "gait" ? "Sending the video." : STAGE_HINT[screen.view]
         }
-        subtitle={
-          screen.view === "uploading" && screen.part === "gait" ? "Sending the video." : STAGE_HINT[screen.view]
-        }
         actions={
           <ol className="asm__stages" aria-label="Progress">
             {STAGES.map((name, i) => (
@@ -412,16 +396,9 @@ export function Assessment({
           <h2 className="card__title">
             {screen.part === "gait" ? "Uploading the walking video" : "Uploading the MRI scan"}
           </h2>
-          <h2 className="card__title">
-            {screen.part === "gait" ? "Uploading the walking video" : "Uploading the MRI scan"}
-          </h2>
           <div className="mri__meter" aria-label="Upload progress">
             <div className="mri__meter-fill" style={{ width: `${screen.fraction * 100}%` }} />
           </div>
-          <p className="note mono">
-            {Math.round(screen.fraction * 100)}% sent
-            {screen.part === "gait" && form.video ? ` · ${form.video.name}` : ""}
-          </p>
           <p className="note mono">
             {Math.round(screen.fraction * 100)}% sent
             {screen.part === "gait" && form.video ? ` · ${form.video.name}` : ""}
@@ -645,22 +622,8 @@ type MriState = "running" | "scored" | "abstained" | "failed" | "queued";
 
 /** Where each of the four parts stands, in one row. A part that was not chosen shows "Not added". */
 function PartsStrip({ mri, gait = "none" }: { mri: MriState | "none"; gait?: MriState | "none" }) {
-/** Where each of the four parts stands, in one row. A part that was not chosen shows "Not added". */
-function PartsStrip({ mri, gait = "none" }: { mri: MriState | "none"; gait?: MriState | "none" }) {
   return (
     <ul className="asm__strip" aria-label="Parts of this assessment">
-      {PARTS.map((p) => {
-        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : "none";
-        const none = state === "none";
-        return (
-          <li key={p.key} className={`asm__strip-item${none ? " asm__strip-item--none" : ""}`}>
-            <span className="asm__strip-name">{p.label}</span>
-            <span className="note">
-              {none ? (p.available ? "Not added" : PART_NOT_BUILT) : gaitStateText(state)}
-            </span>
-          </li>
-        );
-      })}
       {PARTS.map((p) => {
         const state = p.key === "mri" ? mri : p.key === "gait" ? gait : "none";
         const none = state === "none";
@@ -774,15 +737,10 @@ function StepButtons({
   nextLabel,
   nextDisabled = false,
   hint,
-  nextDisabled = false,
-  hint,
 }: {
   onBack?: () => void;
   onNext: () => void;
   nextLabel: string;
-  nextDisabled?: boolean;
-  /** Says why Next is off. */
-  hint?: string;
   nextDisabled?: boolean;
   /** Says why Next is off. */
   hint?: string;
@@ -796,12 +754,6 @@ function StepButtons({
       ) : (
         <span />
       )}
-      <span className="asm__buttons-end">
-        {hint && <span className="gr__hint">{hint}</span>}
-        <button type="button" className="btn btn--primary" onClick={onNext} disabled={nextDisabled}>
-          {nextLabel}
-        </button>
-      </span>
       <span className="asm__buttons-end">
         {hint && <span className="gr__hint">{hint}</span>}
         <button type="button" className="btn btn--primary" onClick={onNext} disabled={nextDisabled}>
@@ -952,7 +904,6 @@ function PatientStep({
 }
 
 /** Step 2: which parts to analyse. MRI and gait can be uploaded in this build. */
-/** Step 2: which parts to analyse. MRI and gait can be uploaded in this build. */
 function ModalitiesStep({
   form,
   eddyProfile,
@@ -975,7 +926,6 @@ function ModalitiesStep({
   const setFile = (f: File | null) => onChange({ ...form, file: f });
 
   return (
-    <section className="card asm__step asm__step--wide">
     <section className="card asm__step asm__step--wide">
       <div className="mri__step-head">
         <p className="eyebrow">Step 2 of 3</p>
@@ -1060,26 +1010,6 @@ function ModalitiesStep({
 
       <div className="asm__others-row">
         <div className="asm__others-col asm__others-col--row">
-        <div className="asm__part asm__part--gait">
-          <div className="asm__part-head">
-            <h3 className="asm__part-title">Gait</h3>
-            <span className="mr__chip mr__chip--on">
-              {form.video ? (form.onePerson ? "Ready to send" : "Video chosen") : "Available"}
-            </span>
-          </div>
-          <p className="note">{PARTS[0]?.provides}. Takes about a minute.</p>
-          <GaitPicker
-            video={form.video}
-            videoSeconds={form.videoSeconds}
-            confirmed={form.onePerson}
-            onVideo={(video, videoSeconds) => onChange({ ...form, video, videoSeconds })}
-            onConfirmed={(onePerson) => onChange({ ...form, onePerson })}
-          />
-        </div>
-      </div>
-
-      <div className="asm__others-row">
-        <div className="asm__others-col asm__others-col--row">
           {PARTS.filter((p) => !p.available).map((p) => (
             <div key={p.key} className="asm__part asm__part--none asm__part--small">
               <div className="asm__part-head">
@@ -1097,13 +1027,6 @@ function ModalitiesStep({
         </div>
       </div>
 
-      <StepButtons
-        onBack={onBack}
-        onNext={onNext}
-        nextLabel="Next: Review →"
-        nextDisabled={form.video !== null && !form.onePerson}
-        {...(form.video !== null && !form.onePerson ? { hint: "Tick the box about the walker to continue." } : {})}
-      />
       <StepButtons
         onBack={onBack}
         onNext={onNext}
@@ -1146,11 +1069,6 @@ function ReviewStep({
             {form.video
               ? " only when you press Start analysis. It is deleted there when the analysis ends, and only the result is kept."
               : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
-            {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
-            <span className="mono">{API_BASE_URL}</span>
-            {form.video
-              ? " only when you press Start analysis. It is deleted there when the analysis ends, and only the result is kept."
-              : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
           </InfoTip>
         </h2>
       </div>
@@ -1188,29 +1106,9 @@ function ReviewStep({
             </div>
           </>
         )}
-        {form.video && (
-          <>
-            <div>
-              <dt>Gait video</dt>
-              <dd className="mono">
-                {form.video.name} · {videoSummary(form.video.name, form.video.size, form.videoSeconds)}
-              </dd>
-            </div>
-            <div>
-              <dt>Who is walking</dt>
-              <dd>
-                You confirmed one person, seen from the side{" "}
-                <button type="button" className="asm__link" onClick={onBack}>
-                  Change
-                </button>
-              </dd>
-            </div>
-          </>
-        )}
         <div>
           <dt>MRI</dt>
           <dd className="mono">
-            {form.file ? `${form.file.name} · ${megabytes(form.file.size)}` : "Not added"}
             {form.file ? `${form.file.name} · ${megabytes(form.file.size)}` : "Not added"}
           </dd>
         </div>
@@ -1225,19 +1123,7 @@ function ReviewStep({
             </dd>
           </div>
         )}
-        {form.file && (
-          <div>
-            <dt>DTI motion correction</dt>
-            <dd>
-              {EDDY_PROFILE_LABELS[eddyProfile]}{" "}
-              <button type="button" className="asm__link" onClick={onOpenSettings}>
-                Change in Settings
-              </button>
-            </dd>
-          </div>
-        )}
         <div>
-          <dt>Tapping, voice</dt>
           <dt>Tapping, voice</dt>
           <dd>{PART_NOT_BUILT}</dd>
         </div>

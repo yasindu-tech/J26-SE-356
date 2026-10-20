@@ -35,61 +35,6 @@ uvicorn app.main:app --reload --port 8000 --app-dir services/backend
 pytest services/backend
 ```
 
-## Run with Docker
-
-`docker-compose.yml` at the repo root starts Postgres and this API. Docker Desktop must be
-running. Everything is for local development: ports are bound to `127.0.0.1`, and the default
-passwords and JWT secret are dev-only.
-
-**Accounts.** Once, copy `dev-accounts.example.json` to `dev-accounts.json` (git-ignored)
-and set a real password for each person. Every time the backend container starts it
-creates the accounts that are missing and leaves existing ones unchanged. Accounts live in
-the database volume, so they survive `docker compose down` / `up`; only
-`docker compose down -v` deletes them, and the next start creates them again.
-
-**A. Database and API in Docker** (sign-in and the app's screens; MRI and gait analyses
-do not run in the container yet):
-
-```bash
-docker compose up -d --build
-npm run dev:desktop
-```
-
-**Editing the backend while it runs in Docker.** Start it with watch instead of `up`:
-
-```bash
-docker compose watch
-```
-
-It starts both services (building if needed) and keeps watching `services/backend`. When
-you save a file in `app/`, it is copied into the container and the API reloads in a second
-or two. A new migration in `app/alembic/` is copied and the container restarts, which
-applies it. A change to `requirements.txt`, the `Dockerfile` or `docker-start.sh` rebuilds
-the image. Stop with Ctrl+C (the containers keep running; `docker compose down` stops them).
-This needs a recent Docker Desktop (Compose 2.22 or later; check with
-`docker compose version`).
-
-**B. Database in Docker, API on your Mac** (needed for MRI analyses, which use the FSL,
-ANTs, dcm2niix and SynthStrip installed on your machine):
-
-```bash
-docker compose up -d db
-export DATABASE_URL=postgresql+psycopg2://pdxai:pdxai@localhost:5433/pdxai
-(cd services/backend && alembic upgrade head)
-(cd services/backend && python -m app.seed --from-file ../../dev-accounts.json)
-npm run dev:backend
-```
-
-For one account by hand: `python -m app.seed --username NAME --full-name "Name"` asks for the
-password twice and never echoes it; add `--reset-password` to change an existing password.
-The seed command creates accounts only, never patients or results, refuses the example's
-placeholder passwords, and refuses to run with `ENVIRONMENT=production`.
-
-Postgres listens on host port **5433**, so it does not clash with a Postgres already on 5432.
-The data lives in the `pdxai_pgdata` volume: `docker compose down` keeps it,
-`docker compose down -v` deletes it. Nothing under `data/` is copied into an image: the
-repo-root `.dockerignore` allows `services/backend/` only.
-
 ## MRI analyses
 
 `POST /api/v1/mri/analyses` takes one person's MRI as a zip of DICOM files plus age and

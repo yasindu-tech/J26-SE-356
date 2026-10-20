@@ -61,8 +61,6 @@ apps/desktop/release/
 *.pem
 *.key
 credentials.json
-# Development sign-in accounts with their passwords (copy dev-accounts.example.json)
-dev-accounts.json
 
 # OS / editor
 .DS_Store
