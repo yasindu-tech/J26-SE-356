@@ -48,8 +48,11 @@ explaining the result** (D9-D13). No audio is recorded by the app in PP1.
 
 ### Raw-audio flow (D9-D13)
 Any audio file (WAV, FLAC, OGG, MP3, M4A) → `audio_io.load_audio` (mono, 8 kHz)
-→ `audio_features.extract_voice_features` (find the vowel, quality gate, 56 named
-Praat/librosa features) → one of two models → `analyze_audio.py`: calibrated
+→ `audio_features.extract_voice_features` (quick checks first: longer than 30 s or
+almost silent is refused before any pitch tracking; then find the vowel, quality
+gate, 56 named Praat/librosa features) → a voice far outside every training voice
+(3+ measures, `audio_explain.far_outside_training`) is refused, not extrapolated →
+one of two models → `analyze_audio.py`: calibrated
 score, 95% CI, triage priority, SHAP top 5 and plain-language explanations
 (`audio_explain.py`).
 
@@ -61,6 +64,7 @@ score, 95% CI, triage priority, SHAP top 5 and plain-language explanations
 ```bash
 python models/voice/src/build_audio_table.py   # features for every recording
 python models/voice/src/audio_evidence.py      # evidence for the audio model
+python models/voice/src/audio_bias.py          # does the audio model's score follow age or sex?
 python models/voice/src/audio_model.py         # train the audio model
 python models/voice/src/uci_transfer.py        # UCI model on 16 Praat measures + transfer test
 python models/voice/src/analyze_audio.py recording.mp3 [--model audio]

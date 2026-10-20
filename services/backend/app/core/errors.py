@@ -78,6 +78,12 @@ class UploadTooLargeError(AppError):
     status_code, code, message = 413, "UPLOAD_TOO_LARGE", "The upload is larger than allowed"
 
 
+class VoiceAnalysisFailedError(AppError):
+    """analyze_audio.py could not run (model missing, crash, timeout): not a judgement on the voice."""
+
+    status_code, code, message = 503, "VOICE_ANALYSIS_FAILED", "The voice analysis could not run"
+
+
 # Every AppError code, for the parity test against errorCodes.ts.
 ERROR_CODES: tuple[str, ...] = (
     AppError.code,
@@ -90,5 +96,6 @@ ERROR_CODES: tuple[str, ...] = (
     GaitResultNotReadyError.code,
     InvalidUploadError.code,
     UploadTooLargeError.code,
+    VoiceAnalysisFailedError.code,
     "VALIDATION_ERROR",
 )

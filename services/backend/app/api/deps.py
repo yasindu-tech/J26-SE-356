@@ -55,3 +55,17 @@ def get_gait_runner():  # noqa: ANN201 (returns the app-wide GaitRunner)
 
         _gait_runner = SubprocessGaitRunner(get_settings())
     return _gait_runner
+
+
+_voice_runner = None
+
+
+def get_voice_runner():  # noqa: ANN201 (returns the app-wide VoiceRunner)
+    """The runner for voice analyses (tests override this dependency)."""
+    global _voice_runner
+    if _voice_runner is None:
+        from app.core.config import get_settings
+        from app.workers.voice_runner import SubprocessVoiceRunner
+
+        _voice_runner = SubprocessVoiceRunner(get_settings())
+    return _voice_runner

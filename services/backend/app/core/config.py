@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     gait_max_upload_mb: int = 500
     gait_timeout_minutes: float = 15.0
 
+    # Voice analyses (models/voice/src/analyze_audio.py runs as a separate process). A recording
+    # takes a few seconds, so the request waits for the result. The uploaded audio is deleted as
+    # soon as the analysis ends and the result is not stored.
+    voice_work_dir: Path = REPO_ROOT / "data" / "backend" / "voice"
+    voice_python: str = sys.executable  # interpreter with the models/voice dependencies
+    voice_script: Path = REPO_ROOT / "models" / "voice" / "src" / "analyze_audio.py"
+    voice_model: str = "audio"  # analyze_audio.py --model: "audio" (raw-audio) or "uci"
+    voice_max_upload_mb: int = 50
+    voice_timeout_seconds: float = 120.0
+
 
 @lru_cache
 def get_settings() -> Settings:
