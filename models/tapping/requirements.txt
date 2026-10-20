@@ -11,4 +11,5 @@ mediapipe>=0.10.14,<0.11   # Hand Landmarker (21 landmarks); bound matches model
 pyarrow>=16.0              # parquet storage for per-clip landmark series
 pingouin>=0.5.4            # ICC(2,1) for tap-detector validation against manual counts
 matplotlib>=3.8            # amplitude-decay, QC and SHAP plots
-streamlit>=1.37            # clinician-facing demo
+streamlit==1.65.0          # research demo (demo/app.py); pinned to the tested version
+shap==0.51.0               # demo reads TreeSHAP outputs; same version as the XAI runs
