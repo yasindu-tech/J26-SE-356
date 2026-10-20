@@ -24,6 +24,38 @@ interface VoiceResultBase {
   pipelineVersion: string;
   nTraining: number;
   note: string;
+  /** Plain-language explanations (analyze_audio.py). Absent in older result files. */
+  explanations?: Explanations;
+}
+
+/** One SHAP driver, explained in plain words (models/voice/src/audio_explain.py). */
+export interface ExplainedReason {
+  feature: string;
+  meaning: string;
+  sentence: string;
+  effect: "raised" | "lowered";
+  /** Where the value sits among healthy training voices (0-100). */
+  percentileAmongHealthy: number;
+  /** False when new audio measures this on a different scale from the training data. */
+  comparable: boolean;
+}
+
+/** What the quality gate measured on the recording. Every field may be missing. */
+export interface MeasuredQuality {
+  sourceFormat?: string;
+  sourceSampleRate?: number;
+  durationS?: number;
+  vowelS?: number;
+  snrDb?: number;
+  clippedFraction?: number;
+}
+
+export interface Explanations {
+  summary: string;
+  topReasons: ExplainedReason[];
+  uncertainty: string[];
+  quality: { passed: boolean; problems: string[]; measured: MeasuredQuality };
+  modelOverview: { sentence: string; topGroups: { group: string; share: number }[] };
 }
 
 export interface ScoredVoiceResult extends VoiceResultBase {
@@ -88,6 +120,103 @@ function textList(fields: Fields, key: string): string[] {
   return value;
 }
 
+// Explanation text is shown to clinicians as written, so it must never use
+// diagnostic wording (CLAUDE.md section 1) or claim a cause.
+const UNSAFE_WORDS = /diagnos|\bpositive\b|\bnegative\b|\bcleared\b|discharged|\bcauses\b/i;
+
+function safeText(fields: Fields, key: string): string {
+  const value = text(fields, key);
+  if (UNSAFE_WORDS.test(value)) {
+    throw new InvalidResult(`"${key}" uses diagnostic wording`);
+  }
+  return value;
+}
+
+function safeTextList(fields: Fields, key: string): string[] {
+  const values = textList(fields, key);
+  if (values.some((value) => UNSAFE_WORDS.test(value))) {
+    throw new InvalidResult(`"${key}" uses diagnostic wording`);
+  }
+  return values;
+}
+
+function child(fields: Fields, key: string): Fields {
+  const value = fields[key];
+  if (!isFields(value)) throw new InvalidResult(`"${key}" must be an object`);
+  return value;
+}
+
+function optionalNumber(fields: Fields, key: string): number | undefined {
+  const value = fields[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new InvalidResult(`"${key}" must be a number`);
+  }
+  return value;
+}
+
+function explainedReason(item: unknown): ExplainedReason {
+  if (!isFields(item)) throw new InvalidResult(`"top_reasons" entries must be objects`);
+  const effect = item["effect"];
+  if (effect !== "raised" && effect !== "lowered") {
+    throw new InvalidResult(`"effect" must be "raised" or "lowered"`);
+  }
+  const percentile = optionalNumber(item, "percentile_among_healthy");
+  if (percentile === undefined || percentile < 0 || percentile > 100) {
+    throw new InvalidResult(`"percentile_among_healthy" must be a number from 0 to 100`);
+  }
+  return {
+    feature: text(item, "feature"),
+    meaning: safeText(item, "meaning"),
+    sentence: safeText(item, "sentence"),
+    effect,
+    percentileAmongHealthy: percentile,
+    comparable: item["comparable"] !== false, // files written before this field existed
+  };
+}
+
+function explanations(value: unknown): Explanations | undefined {
+  if (value === undefined) return undefined;
+  if (!isFields(value)) throw new InvalidResult(`"explanations" must be an object`);
+  const quality = child(value, "quality");
+  const measured = child(quality, "measured");
+  const overview = child(value, "model_overview");
+  const groups = overview["top_groups"];
+  const reasons = value["top_reasons"];
+  if (!Array.isArray(groups) || !Array.isArray(reasons)) {
+    throw new InvalidResult(`"top_groups" and "top_reasons" must be lists`);
+  }
+  const format = measured["source_format"];
+  return {
+    summary: safeText(value, "summary"),
+    topReasons: reasons.map(explainedReason),
+    uncertainty: safeTextList(value, "uncertainty"),
+    quality: {
+      passed: quality["passed"] === true,
+      problems: safeTextList(quality, "problems"),
+      measured: {
+        sourceFormat: typeof format === "string" ? format : undefined,
+        sourceSampleRate: optionalNumber(measured, "source_sample_rate"),
+        durationS: optionalNumber(measured, "duration_s"),
+        vowelS: optionalNumber(measured, "vowel_s"),
+        snrDb: optionalNumber(measured, "snr_db"),
+        clippedFraction: optionalNumber(measured, "clipped_fraction"),
+      },
+    },
+    modelOverview: {
+      sentence: safeText(overview, "sentence"),
+      topGroups: groups.map((group) => {
+        if (!isFields(group)) throw new InvalidResult(`"top_groups" entries must be objects`);
+        const share = optionalNumber(group, "share");
+        if (share === undefined || share < 0 || share > 1) {
+          throw new InvalidResult(`"share" must be a number from 0 to 1`);
+        }
+        return { group: text(group, "group"), share };
+      }),
+    },
+  };
+}
+
 function triagePriority(fields: Fields): TriagePriority {
   const value = fields["triage_priority"];
   const match = TRIAGE_VALUES.find((allowed) => allowed === value);
@@ -123,6 +252,7 @@ function parseOne(value: unknown): VoiceResult {
     pipelineVersion: text(value, "pipeline_version"),
     nTraining: count(value, "n_training"),
     note: text(value, "note"),
+    explanations: explanations(value["explanations"]),
   };
 
   if (value["abstained"] === true) {

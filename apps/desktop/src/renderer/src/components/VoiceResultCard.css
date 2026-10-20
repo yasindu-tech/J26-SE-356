@@ -279,3 +279,154 @@
   font-size: 13px;
   color: var(--color-neutral-600);
 }
+
+/* Plain-language reason under each driver (analyze_audio.py explanations) */
+
+.voice-card__reason {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-left: 3px solid var(--color-neutral-200);
+  background: var(--color-neutral-50);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.voice-card__reason-sentence {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.voice-card__reason-scale {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.voice-card__reason-scale-track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(to right, var(--color-primary-muted), var(--color-neutral-200));
+}
+
+.voice-card__reason-scale-marker {
+  position: absolute;
+  top: -4px;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transform: translateX(-2px);
+}
+
+.voice-card__reason-scale-ends {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.voice-card__reason-warning {
+  margin: var(--spacing-sm) 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-attention);
+}
+
+/* Recording quality */
+
+.voice-card__quality--ok {
+  color: var(--color-calm);
+}
+
+.voice-card__quality--no {
+  color: var(--color-attention);
+}
+
+.voice-card__measured {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+  margin: 0;
+}
+
+.voice-card__measured div {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+}
+
+.voice-card__measured dt {
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+
+.voice-card__measured dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-card__measured + .voice-card__caveats {
+  margin-top: var(--spacing-md);
+}
+
+/* What the model relies on in general */
+
+.voice-card__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-card__groups li {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: 14px;
+}
+
+.voice-card__group-track {
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  overflow: hidden;
+}
+
+.voice-card__group-bar {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+.voice-card__group-share {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-neutral-600);
+}
+
+@media (max-width: 900px) {
+  .voice-card__measured {
+    grid-template-columns: 1fr;
+  }
+}
+
+.voice-card__driver-meaning {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.voice-card__groups li {
+  grid-template-columns: 200px minmax(0, 1fr) 48px;
+}

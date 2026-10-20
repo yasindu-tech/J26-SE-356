@@ -116,3 +116,106 @@ describe("triageLabel", () => {
     expect(triageLabel("not_prioritised")).toBe("Not prioritised");
   });
 });
+
+// Synthetic explanation block in the shape analyze_audio.py writes.
+function explanations(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    summary: "Risk score 0.70 (95% range 0.55-0.82). Biggest single reason: ...",
+    top_reasons: [
+      {
+        comparable: true,
+        feature: "jitter_local",
+        meaning: "cycle-to-cycle wobble in pitch",
+        group: "jitter",
+        value: 0.006,
+        shap_log_odds: 0.4,
+        effect: "raised",
+        percentile_among_healthy: 96.5,
+        percentile_among_pd: 70,
+        sentence:
+          "Cycle-to-cycle wobble in pitch (jitter_local): higher than 96% of healthy training voices. The model used this, and it raised the score.",
+      },
+    ],
+    uncertainty: ["The model was trained on only 61 people (figshare)."],
+    quality: {
+      passed: true,
+      problems: [],
+      measured: { source_format: "mp3", duration_s: 4.2, vowel_s: 2.9, snr_db: null },
+    },
+    model_overview: {
+      top_groups: [{ group: "mfcc", share: 0.6 }],
+      sentence: "In general the model relies most on mfcc (60%) measures.",
+    },
+    ...overrides,
+  };
+}
+
+describe("parseVoiceResults with explanations", () => {
+  it("parses the explanation block from analyze_audio.py", () => {
+    const outcome = parseVoiceResults(scored({ explanations: explanations() }));
+    if (!outcome.ok) throw new Error(outcome.message);
+    const parsed = outcome.results[0]?.explanations;
+    expect(parsed?.topReasons[0]).toMatchObject({
+      feature: "jitter_local",
+      effect: "raised",
+      percentileAmongHealthy: 96.5,
+      comparable: true,
+    });
+    expect(parsed?.quality.measured).toEqual({
+      sourceFormat: "mp3",
+      sourceSampleRate: undefined,
+      durationS: 4.2,
+      vowelS: 2.9,
+      snrDb: undefined,
+      clippedFraction: undefined,
+    });
+    expect(parsed?.modelOverview.topGroups).toEqual([{ group: "mfcc", share: 0.6 }]);
+  });
+
+  it("keeps older result files without explanations working", () => {
+    const outcome = parseVoiceResults(scored());
+    expect(outcome.ok && outcome.results[0]?.explanations).toBeUndefined();
+  });
+
+  it("parses an abstained result with only quality reasons", () => {
+    const block = explanations({
+      summary: "No score: the recording did not pass the quality check.",
+      top_reasons: [],
+      uncertainty: [],
+      quality: { passed: false, problems: ["The steady 'aaah' is only 0.4 s long."], measured: {} },
+    });
+    const outcome = parseVoiceResults({ ...abstained(), explanations: block });
+    if (!outcome.ok) throw new Error(outcome.message);
+    expect(outcome.results[0]?.explanations?.quality.passed).toBe(false);
+  });
+
+  it("rejects explanation text with diagnostic wording", () => {
+    const block = explanations({ uncertainty: ["The test was positive for Parkinson's."] });
+    expect(rejection(scored({ explanations: block }))).toContain("diagnostic wording");
+    const summary = explanations({ summary: "This voice causes concern." });
+    expect(rejection(scored({ explanations: summary }))).toContain("diagnostic wording");
+  });
+
+  it("rejects malformed explanations instead of showing part of them", () => {
+    const badEffect = explanations({
+      top_reasons: [{ ...(explanations().top_reasons as object[])[0], effect: "worse" }],
+    });
+    expect(rejection(scored({ explanations: badEffect }))).toContain("effect");
+    const badPercentile = explanations({
+      top_reasons: [
+        { ...(explanations().top_reasons as object[])[0], percentile_among_healthy: 140 },
+      ],
+    });
+    expect(rejection(scored({ explanations: badPercentile }))).toContain("percentile");
+    expect(rejection(scored({ explanations: "text" }))).toContain("explanations");
+  });
+
+  it("treats a reason without the comparable field as comparable", () => {
+    const reason = { ...(explanations().top_reasons as Record<string, unknown>[])[0] };
+    delete reason["comparable"];
+    const outcome = parseVoiceResults(
+      scored({ explanations: explanations({ top_reasons: [reason] }) }),
+    );
+    expect(outcome.ok && outcome.results[0]?.explanations?.topReasons[0]?.comparable).toBe(true);
+  });
+});
