@@ -2,6 +2,8 @@ import {
   TRIAGE_THRESHOLD,
   triageLabel,
   type AbstainedVoiceResult,
+  type ExplainedReason,
+  type Explanations,
   type ScoredVoiceResult,
   type ShapDriver,
   type VoiceResult,
@@ -14,12 +16,39 @@ import "./VoiceResultCard.css";
 
 const OTHER_MODALITIES = ["Gait", "Finger tapping", "MRI"] as const;
 
+// Display names for the measure groups in models/voice/src/audio_features.py and uci_praat.py.
+const GROUP_LABELS: Record<string, string> = {
+  mfcc: "MFCC (sound colour)",
+  jitter: "Jitter (pitch wobble)",
+  shimmer: "Shimmer (loudness wobble)",
+  noise: "Voice clarity",
+  pitch: "Pitch",
+  formants: "Formants",
+  spectrum: "Spectrum",
+  "loudness change": "Loudness change",
+};
+
 function formatScore(value: number): string {
   return value.toFixed(2);
 }
 
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function formatSigned(value: number): string {
   return `${value > 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
+}
+
+/** Where the model's training data came from, from its pipeline version (models/voice/README.md). */
+function trainingSource(pipelineVersion: string): string {
+  if (pipelineVersion.startsWith("voice-audio-")) {
+    return "from the Figshare telephone voice recordings";
+  }
+  if (pipelineVersion.startsWith("voice-uci-praat-")) {
+    return "from the UCI-470 voice dataset, using only the 16 measures Praat can recompute from audio";
+  }
+  return "from the UCI-470 voice dataset";
 }
 
 export function VoiceResultCard({ result }: { result: VoiceResult }) {
@@ -66,17 +95,28 @@ export function VoiceResultCard({ result }: { result: VoiceResult }) {
         </p>
       </section>
 
-      {result.kind === "scored" && <DriversSection drivers={result.shapTop5} />}
+      {result.kind === "scored" && (
+        <DriversSection drivers={result.shapTop5} reasons={result.explanations?.topReasons} />
+      )}
+
+      {result.explanations && result.explanations.uncertainty.length > 0 && (
+        <UncertaintySection reasons={result.explanations.uncertainty} />
+      )}
+
+      {result.explanations && <QualitySection explanations={result.explanations} />}
+
+      {result.kind === "scored" && result.explanations && (
+        <OverviewSection explanations={result.explanations} />
+      )}
 
       <section className="voice-card__section">
         <h3 className="voice-card__section-title">Limits of this result</h3>
         <ul className="voice-card__caveats">
           <li>{result.note}</li>
-          {/* The voice-pp1 model is trained on UCI-470 only (models/voice/README.md, D1). */}
           <li>
-            Trained on {result.nTraining} people from the UCI-470 voice dataset: people already
-            known to have Parkinson&rsquo;s versus healthy controls, not an early-stage screening
-            population.
+            Trained on {result.nTraining} people {trainingSource(result.pipelineVersion)}: people
+            already known to have Parkinson&rsquo;s versus healthy controls, not an early-stage
+            screening population.
           </li>
           <li>Fairness by sex: {result.sexFairnessNote}</li>
         </ul>
@@ -167,7 +207,13 @@ function AbstainedPanel({ result }: { result: AbstainedVoiceResult }) {
   );
 }
 
-function DriversSection({ drivers }: { drivers: ShapDriver[] }) {
+function DriversSection({
+  drivers,
+  reasons,
+}: {
+  drivers: ShapDriver[];
+  reasons?: ExplainedReason[];
+}) {
   const largest = Math.max(
     ...drivers.map((driver) => Math.abs(driver.shapLogOdds)),
     Number.EPSILON,
@@ -179,11 +225,18 @@ function DriversSection({ drivers }: { drivers: ShapDriver[] }) {
         {drivers.map((driver) => {
           const raises = driver.shapLogOdds > 0;
           const width = `${(Math.abs(driver.shapLogOdds) / largest) * 50}%`;
+          const reason = reasons?.find((r) => r.feature === driver.feature);
           return (
             <li key={driver.feature} className="voice-card__driver">
-              <span className="voice-card__driver-name" title={driver.feature}>
-                {driver.feature}
-              </span>
+              {reason ? (
+                <span className="voice-card__driver-meaning" title={driver.feature}>
+                  {capitalise(reason.meaning)}
+                </span>
+              ) : (
+                <span className="voice-card__driver-name" title={driver.feature}>
+                  {driver.feature}
+                </span>
+              )}
               <span className="voice-card__driver-track" aria-hidden="true">
                 <span
                   className={`voice-card__driver-bar voice-card__driver-bar--${raises ? "up" : "down"}`}
@@ -193,13 +246,132 @@ function DriversSection({ drivers }: { drivers: ShapDriver[] }) {
               <span className="voice-card__driver-value">
                 {formatSigned(driver.shapLogOdds)} · {raises ? "raised" : "lowered"} the score
               </span>
+              {reason && <ReasonDetail reason={reason} />}
             </li>
           );
         })}
       </ol>
       <p className="voice-card__caption">
         Model attributions (SHAP, in log-odds), largest first. They show what the model used, not
-        what causes Parkinson&rsquo;s. Names are the dataset&rsquo;s technical voice measures.
+        what causes Parkinson&rsquo;s.{" "}
+        {reasons
+          ? "Each measure's technical name is in brackets."
+          : "Names are the dataset's technical voice measures."}
+      </p>
+    </section>
+  );
+}
+
+function ReasonDetail({ reason }: { reason: ExplainedReason }) {
+  return (
+    <div className="voice-card__reason">
+      <p className="voice-card__reason-sentence">{reason.sentence}</p>
+      {reason.comparable ? (
+        <div
+          className="voice-card__reason-scale"
+          role="img"
+          aria-label={`Higher than ${Math.round(reason.percentileAmongHealthy)}% of healthy training voices`}
+        >
+          <span className="voice-card__reason-scale-label">Healthy training voices</span>
+          <span className="voice-card__reason-scale-track">
+            <span
+              className="voice-card__reason-scale-marker"
+              style={{ left: `${reason.percentileAmongHealthy}%` }}
+            />
+          </span>
+          <span className="voice-card__reason-scale-ends" aria-hidden="true">
+            <span>lowest</span>
+            <span>highest</span>
+          </span>
+        </div>
+      ) : (
+        <p className="voice-card__reason-warning">
+          Not comparable with the training voices: new recordings measure this differently.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function UncertaintySection({ reasons }: { reasons: string[] }) {
+  return (
+    <section className="voice-card__section">
+      <h3 className="voice-card__section-title">How sure is this result</h3>
+      <ul className="voice-card__caveats">
+        {reasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function formatMeasured(measured: Explanations["quality"]["measured"]): [string, string][] {
+  const rows: [string, string][] = [];
+  if (measured.sourceFormat) rows.push(["File format", measured.sourceFormat.toUpperCase()]);
+  if (measured.sourceSampleRate !== undefined) {
+    rows.push(["Sample rate", `${(measured.sourceSampleRate / 1000).toFixed(1)} kHz`]);
+  }
+  if (measured.durationS !== undefined) {
+    rows.push(["Recording length", `${measured.durationS.toFixed(1)} s`]);
+  }
+  if (measured.vowelS !== undefined) {
+    rows.push(["Steady 'aaah' used", `${measured.vowelS.toFixed(1)} s`]);
+  }
+  rows.push([
+    "Voice above background noise",
+    measured.snrDb !== undefined ? `${measured.snrDb.toFixed(0)} dB` : "no background to measure",
+  ]);
+  if (measured.clippedFraction !== undefined) {
+    rows.push(["Clipped (too loud)", `${(measured.clippedFraction * 100).toFixed(1)}%`]);
+  }
+  return rows;
+}
+
+function QualitySection({ explanations }: { explanations: Explanations }) {
+  const { quality } = explanations;
+  return (
+    <section className="voice-card__section">
+      <h3 className="voice-card__section-title">
+        Recording quality ·{" "}
+        <span className={quality.passed ? "voice-card__quality--ok" : "voice-card__quality--no"}>
+          {quality.passed ? "passed" : "not usable"}
+        </span>
+      </h3>
+      <dl className="voice-card__measured">
+        {formatMeasured(quality.measured).map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* Refusal reasons are already listed at the top of a "Not scored" card. */}
+    </section>
+  );
+}
+
+function OverviewSection({ explanations }: { explanations: Explanations }) {
+  const { modelOverview } = explanations;
+  return (
+    <section className="voice-card__section">
+      <h3 className="voice-card__section-title">What the model relies on in general</h3>
+      <ul className="voice-card__groups">
+        {modelOverview.topGroups.map(({ group, share }) => (
+          <li key={group}>
+            <span className="voice-card__group-name">
+              {GROUP_LABELS[group] ?? capitalise(group)}
+            </span>
+            <span className="voice-card__group-track" aria-hidden="true">
+              <span className="voice-card__group-bar" style={{ width: `${share * 100}%` }} />
+            </span>
+            <span className="voice-card__group-share">{Math.round(share * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+      <p className="voice-card__caption">
+        Share of the model&rsquo;s attributions (SHAP) across all training voices, by measure group.
+        This describes the model, not this person.
       </p>
     </section>
   );
