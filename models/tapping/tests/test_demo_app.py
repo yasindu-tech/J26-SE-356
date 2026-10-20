@@ -82,7 +82,10 @@ def test_example_mode_runs_with_disclaimer_and_hashed_refs(at: AppTest) -> None:
 def test_upload_mode_runs_and_is_a_placeholder(at: AppTest) -> None:
     at.sidebar.radio[0].set_value("Upload video").run()
     assert not at.exception
-    assert [i.value for i in at.info] == ["Available in a later step."]
+    assert len(at.file_uploader) == 1 and not at.info
+    assert any(
+        c.value == "Processed on this computer; the video is not stored." for c in at.caption
+    )
     assert not LABEL_WORDS.search(page_text(at))
 
 

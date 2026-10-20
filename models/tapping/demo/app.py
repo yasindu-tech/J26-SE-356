@@ -1,11 +1,13 @@
-"""Finger-tapping explainer, research demo (task FT-47): skeleton with cached loaders.
+"""Finger-tapping explainer, research demo (tasks FT-47, FT-48): cached loaders and the upload view.
 Run from the repo root: streamlit run models/tapping/demo/app.py
 Reads data/processed/xai outputs through data_access; the demo model and the landmarker handle
-are cached with st.cache_resource (resources.py). Panels are added in FT-48..50.
+are cached with st.cache_resource (resources.py). Upload mode runs upload_pipeline.py in memory;
+the file name is never read, shown or stored. Score and SHAP panels follow in FT-49, FT-50.
 """
 
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -14,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import data_access as da  # noqa: E402
 import resources as res  # noqa: E402
 import streamlit as st  # noqa: E402
+import upload_pipeline as up  # noqa: E402
 
 TITLE = "Finger-tapping explainer (research demo)"
 DISCLAIMER = (
@@ -22,6 +25,7 @@ DISCLAIMER = (
 )
 MODES = ("Example clip (held-out)", "Upload video")
 TARGET_LABELS = {"ge2 (primary)": "ge2", "ge1": "ge1"}
+NOT_STORED = "Processed on this computer; the video is not stored."
 
 
 @st.cache_data
@@ -42,8 +46,53 @@ def get_model(target: str, root: str, model_sha8: str) -> object:
 
 
 @st.cache_resource
-def get_landmarker() -> object:
+def get_landmarker() -> res.LandmarkerHandle:
     return res.make_landmarker()
+
+
+@st.cache_data(show_spinner=False, max_entries=3)
+def cached_analysis(
+    sha256: str, suffix: str, _data: bytes, _factory: res.LandmarkerHandle
+) -> up.UploadAnalysis:
+    return up.analyse_upload(_data, suffix, _factory)  # key = sha256 of the bytes + extension
+
+
+def render_upload() -> None:
+    factory = None
+    try:
+        factory = get_landmarker()  # created lazily: only in this mode
+    except da.DemoDataError as err:
+        st.warning(f"The hand landmarker is not available: {err}")
+    uploaded = st.file_uploader("Video (mp4, mov or m4v)", type=["mp4", "mov", "m4v"])
+    st.caption(NOT_STORED)
+    if uploaded is None or factory is None:
+        return
+    data = uploaded.getvalue()
+    suffix = Path(uploaded.name).suffix.lower()  # only the extension; the name is never kept
+    try:
+        with st.spinner("Tracking the hand and detecting taps..."):
+            analysis = cached_analysis(hashlib.sha256(data).hexdigest(), suffix, data, factory)
+    except up.UploadError as err:
+        st.warning(str(err))
+        return
+    r = analysis.result
+    st.markdown(
+        f"**Clip {r.upload_ref}**: {r.duration_s:.1f} s, {r.fps:.0f} fps, hand found in "
+        f"{r.tracked_share:.0%} of frames, {r.n_taps} taps detected"
+    )
+    for col, frame, t in zip(
+        st.columns(len(analysis.frames)), analysis.frames, r.preview_times, strict=True
+    ):
+        col.image(frame, caption=f"{t:.1f} s", width="stretch")
+    st.image(
+        up.figure_png(up.signal_figure(r)),
+        caption="Thumb-index distance over time",
+        width="stretch",
+    )
+    if r.qc_flags:
+        st.markdown("**Automatic checks**\n" + "\n".join(f"- {n}: {why}" for n, why in r.qc_flags))
+    else:
+        st.markdown("**Automatic checks**: no flags")
 
 
 def main() -> None:
@@ -74,12 +123,7 @@ def main() -> None:
         for header in ("Clip", "Score", "Why this score (SHAP)", "Per-tap amplitude"):
             st.header(header)
     else:
-        st.file_uploader("Video", type=["mp4", "mov"])
-        st.info("Available in a later step.")
-        try:
-            get_landmarker()  # created lazily, only in this mode
-        except da.DemoDataError as err:
-            st.info(f"The hand landmarker is not available: {err}")
+        render_upload()
     st.caption(model_caption)
     st.caption("inputs: " + (", ".join(sha for _, sha in key) if key else "none loaded"))
 
