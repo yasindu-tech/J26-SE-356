@@ -4,15 +4,20 @@
 # (see the repo-root .dockerignore, which allows services/backend/ and nothing else).
 FROM python:3.11-slim
 
+# Slow or unstable connections: wait longer for each download and retry instead of failing.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10
 
 # Same layout as the repo, so app/core/config.py's REPO_ROOT resolves to /repo.
 WORKDIR /repo/services/backend
 
 COPY services/backend/requirements.txt ./
-RUN pip install -r requirements.txt
+# The cache mount keeps packages that already downloaded, so a failed or repeated build
+# does not fetch them again. It lives in Docker's build cache, not in the image.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY services/backend/ ./
 
