@@ -568,3 +568,53 @@ Overall the top groups are voice tone (MFCC), spectrum and pitch (L1).
   mean), so the curve is a check, not an exact replay of the SHAP values.
 - Faithful means faithful to the model, not to the disease: these are the
   model's reasons, never causes.
+
+## Age-balanced tests (raw-audio model) — exploratory
+
+Reproduce (about 40 seconds):
+
+```bash
+python models/voice/src/age_balanced.py
+```
+
+The age-matched check above only re-scores a model that was trained with the
+young healthy people. Here age is taken out of training too, two ways
+(person-level nested CV, L1 logistic, seed 42, 1000 bootstrap resamples):
+
+- **Age-adjusted voice**: inside each training fold every voice measure is
+  regressed on age in the healthy training people (normal ageing), and that
+  effect is subtracted for everyone (`AgeAdjuster`). Age is used only for the
+  adjustment, never as a model input.
+- **Same ages only**: people aged 43.1–79.0 (the range both classes cover),
+  trained and tested inside it.
+
+| Test | People (PD / healthy) | Age gap | Voice AUC [95% CI] | Age + sex only |
+|---|---|---|---|---|
+| Current model | 37 / 40 | 19.9 y | 0.710 [0.586, 0.824] | 0.866 [0.769, 0.948] |
+| **Age-adjusted voice** | 37 / 40 | 19.9 y | **0.754 [0.639, 0.865]** | 0.866 |
+| Same ages only, trained there | 34 / 23 | 9.9 y | 0.556 [0.403, 0.706] | 0.746 [0.581, 0.879] |
+
+Age-adjusted minus current: +0.044 [−0.055, +0.135]. Same ages, voice minus
+age + sex: −0.189 [−0.406, +0.030]. Label-permutation control for the
+age-adjusted pipeline (10 shuffles): mean 0.521, max 0.626, pass.
+
+### What it says
+
+- **Voice carries signal beyond normal ageing.** With the healthy ageing trend
+  removed from every measure, voice keeps AUC 0.754, lower bound 0.64. The
+  current model is not just reading age through the voice.
+- **But with same-age people only, voice cannot be shown to work.** Trained on
+  about 46 people per fold, voice scores 0.556 and its CI includes 0.5. This
+  mixes two things that cannot be separated here: fewer training people, and an
+  age gap that is still 9.9 years inside the shared range.
+- So: some voice signal, weak, and not cleanly separated from age on this
+  dataset. More recordings of older healthy people are what would settle it.
+- The age-adjusted model is not better by a margin we can show (CI includes
+  0), and it would need the person's age at upload, so the app keeps the
+  current model.
+
+### Caveats
+
+- The adjustment is linear and learned from healthy training people aged
+  18–79; PD people up to 85 are slightly outside it.
+- 77 people; 57 in the same-age test. Exploratory only.
