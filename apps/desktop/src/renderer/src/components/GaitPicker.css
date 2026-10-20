@@ -1,0 +1,34 @@
+/* The gait card in the Modalities step: video picker, filming guide and the one-person
+   confirmation. Tokens only. */
+
+.gr__drop { min-height: 132px; flex-direction: column; gap: 6px; }
+.gr__drop-icon { color: var(--color-primary); }
+.gr__drop--has-file { border-style: solid; border-color: var(--color-primary-hover); background: var(--color-primary-tint); }
+.gr__drop--bad { border-color: var(--color-danger); }
+.gr__file { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-md); padding: 14px 16px; border: 1px solid var(--color-primary-hover); border-radius: 8px; background: var(--color-primary-tint); }
+.gr__file-icon { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-primary); }
+.gr__file-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gr__file-name { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.gr__file-actions { display: flex; align-items: center; gap: var(--spacing-md); }
+.gr__consent { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border: 2px solid var(--color-neutral-300); border-radius: 8px; background: var(--color-neutral-50); cursor: pointer; }
+.gr__consent--on { border-color: var(--color-primary-hover); background: var(--color-primary-tint); }
+.gr__consent input { flex-shrink: 0; margin: 2px 0 0; width: 20px; height: 20px; accent-color: var(--color-primary); }
+.gr__consent-text { display: flex; flex-direction: column; gap: 4px; }
+.gr__consent-title { font-size: 15px; font-weight: 600; }
+.gr__consent-sub { font-size: 14px; }
+.gr__hint { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--color-neutral-600); }
+.gr__guide { border: 1px solid var(--color-neutral-200); border-radius: 8px; background: var(--color-surface); }
+.gr__guide summary { padding: 12px 16px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.gr__guide-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--spacing-md); padding: 4px 16px 16px; align-items: start; }
+.gr__guide-fig { color: var(--color-primary); }
+.gr__guide-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+.gr__pick { display: flex; flex-direction: column; gap: var(--spacing-md); }
+.gr__err { padding: 12px 14px; border: 1px solid var(--color-danger); border-radius: 8px; background: var(--color-surface); display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.gr__err strong { font-weight: 600; }
+.gr__drop { position: relative; display: flex; align-items: center; justify-content: center; text-align: center; }
+.gr__drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+@media (max-width: 760px) {
+  .gr__guide-body { grid-template-columns: minmax(0, 1fr); }
+}

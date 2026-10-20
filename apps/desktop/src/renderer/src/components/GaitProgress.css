@@ -1,0 +1,34 @@
+/* The indeterminate bar of the gait wait. Tokens only. */
+.gr__wait {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-neutral-100);
+  overflow: hidden;
+}
+
+.gr__wait-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 34%;
+  border-radius: 4px;
+  background: var(--color-primary-hover);
+  animation: gr-wait 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes gr-wait {
+  from {
+    left: 0;
+  }
+  to {
+    left: 66%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gr__wait-fill {
+    animation: none;
+    left: 33%;
+  }
+}
