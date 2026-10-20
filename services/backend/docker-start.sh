@@ -6,8 +6,12 @@ set -e
 
 alembic upgrade head
 
-if [ -f /run/secrets/dev_accounts ]; then
-  python -m app.seed --from-file /run/secrets/dev_accounts
+if [ -r /run/secrets/dev_accounts ]; then
+  # A problem with the accounts file must not stop the API; it is reported loudly instead.
+  python -m app.seed --from-file /run/secrets/dev_accounts \
+    || echo "WARNING: the dev accounts were NOT created. Fix dev-accounts.json and run: docker compose restart backend"
+elif [ -e /run/secrets/dev_accounts ]; then
+  echo "WARNING: dev-accounts.json is mounted but not readable here; no accounts were created. On the host: chmod 644 dev-accounts.json"
 else
   echo "No dev-accounts.json mounted: no accounts were seeded."
 fi
