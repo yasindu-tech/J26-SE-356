@@ -55,6 +55,20 @@ docker compose up -d --build
 npm run dev:desktop
 ```
 
+**Editing the backend while it runs in Docker.** Start it with watch instead of `up`:
+
+```bash
+docker compose watch
+```
+
+It starts both services (building if needed) and keeps watching `services/backend`. When
+you save a file in `app/`, it is copied into the container and the API reloads in a second
+or two. A new migration in `app/alembic/` is copied and the container restarts, which
+applies it. A change to `requirements.txt`, the `Dockerfile` or `docker-start.sh` rebuilds
+the image. Stop with Ctrl+C (the containers keep running; `docker compose down` stops them).
+This needs a recent Docker Desktop (Compose 2.22 or later; check with
+`docker compose version`).
+
 **B. Database in Docker, API on your Mac** (needed for MRI analyses, which use the FSL,
 ANTs, dcm2niix and SynthStrip installed on your machine):
 

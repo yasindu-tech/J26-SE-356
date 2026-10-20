@@ -12,4 +12,9 @@ else
   echo "No dev-accounts.json mounted: no accounts were seeded."
 fi
 
+# UVICORN_RELOAD=1 (set in docker-compose.yml for development) restarts the API whenever a
+# synced source file changes; see "docker compose watch" in services/backend/README.md.
+if [ "${UVICORN_RELOAD:-0}" = "1" ]; then
+  exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+fi
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

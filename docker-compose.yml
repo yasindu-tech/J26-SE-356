@@ -2,6 +2,7 @@
 #
 #   cp dev-accounts.example.json dev-accounts.json   # once; set real passwords in it
 #   docker compose up -d --build          # start both; creates the accounts that are missing
+#   docker compose watch                  # same, and applies your backend edits as you save
 #   docker compose logs -f backend        # watch the API
 #   docker compose down                   # stop (the database is kept in the pgdata volume)
 #
@@ -45,11 +46,33 @@ services:
       # The backend refuses this default outside ENVIRONMENT=dev (app/main.py).
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
       CORS_ORIGINS: '["http://localhost:5173"]'
+      # Restart the API when its code changes (pairs with "docker compose watch" below).
+      UVICORN_RELOAD: "1"
     ports:
       - "127.0.0.1:8000:8000"
     # Development sign-in accounts, created on each start if missing (never changed after).
     secrets:
       - dev_accounts
+    # Used by "docker compose watch": a saved edit is copied into the running container.
+    # Code: copied, and uvicorn reloads. Migrations: copied, then the container restarts so
+    # they are applied. Packages or the image itself: the image is rebuilt.
+    develop:
+      watch:
+        - action: sync
+          path: ./services/backend/app
+          target: /repo/services/backend/app
+          ignore:
+            - alembic/
+            - "**/__pycache__/"
+        - action: sync+restart
+          path: ./services/backend/app/alembic
+          target: /repo/services/backend/app/alembic
+        - action: rebuild
+          path: ./services/backend/requirements.txt
+        - action: rebuild
+          path: ./services/backend/Dockerfile
+        - action: rebuild
+          path: ./services/backend/docker-start.sh
 
 secrets:
   dev_accounts:
