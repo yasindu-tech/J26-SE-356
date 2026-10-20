@@ -65,10 +65,12 @@ score, 95% CI, triage priority, SHAP top 5 and plain-language explanations
 python models/voice/src/build_audio_table.py   # features for every recording
 python models/voice/src/audio_evidence.py      # evidence for the audio model
 python models/voice/src/audio_bias.py          # does the audio model's score follow age or sex?
+python models/voice/src/xai_faithfulness.py    # are the explanations faithful and stable?
 python models/voice/src/audio_model.py         # train the audio model
 python models/voice/src/uci_transfer.py        # UCI model on 16 Praat measures + transfer test
 python models/voice/src/analyze_audio.py recording.mp3 [--model audio]
 ```
+PP1 live demo steps, evidence and likely questions: [DEMO.md](DEMO.md).
 Open `models/voice/artifacts/analysis_results.json` in the desktop app with
 **Open result file**. Demo the `audio` model only with files in
 `artifacts/holdout_audio_files.txt`; every Figshare file is unseen by the `uci`
