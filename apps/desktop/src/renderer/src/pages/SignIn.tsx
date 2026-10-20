@@ -22,7 +22,7 @@ export function SignIn() {
     setStatus("pending");
     setErrorMessage(null);
     try {
-      const issuedTokens = await login(username, password);
+      const issuedTokens = await login(username.trim(), password);
       startSession(issuedTokens, () => {
         setTokens(null);
         setPassword("");

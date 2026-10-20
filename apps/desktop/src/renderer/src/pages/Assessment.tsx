@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
 import { MriResultView } from "../components/MriResultView";
-import { ProgressPanel, WhySlowCard } from "../components/MriProgress";
+import { InfoTip } from "../components/InfoTip";
+import { ProgressPanel } from "../components/MriProgress";
 import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
@@ -274,16 +275,11 @@ export function Assessment({
       {screen.view === "analysis" && (
         <div className="asm__stack">
           <PartsStrip mri="running" />
-          <div className="mri__layout">
-            <ProgressPanel
-              id={screen.id}
-              onFinished={(result) => setScreen({ view: "result", id: screen.id, result })}
-              onError={(message) => setError(message)}
-            />
-            <aside className="mri__rail">
-              <WhySlowCard />
-            </aside>
-          </div>
+          <ProgressPanel
+            id={screen.id}
+            onFinished={(result) => setScreen({ view: "result", id: screen.id, result })}
+            onError={(message) => setError(message)}
+          />
         </div>
       )}
 
@@ -406,7 +402,15 @@ function PatientStep({
     >
       <div className="mri__step-head">
         <p className="eyebrow">Step 1 of 3 · Patient</p>
-        <h2 className="card__title">Patient details</h2>
+        <h2 className="card__title">
+          Patient details
+          <InfoTip label="What happens to these details">
+            In this build only the ID, age and sex go to the analysis. The MRI part takes your year of
+            birth as age in years (within a year of the true age), and sex, because its scanner
+            adjustment was fitted with them. The reason, medication and handedness stay on this
+            screen: they are not saved or sent, and no model uses them. Do not type a name.
+          </InfoTip>
+        </h2>
         <p className="note">
           Pseudonymous ID only. No name or date of birth is asked for, so this screen can face the
           patient.
@@ -508,12 +512,6 @@ function PatientStep({
         ))}
       </fieldset>
 
-      <p className="note">
-        In this build only the ID, age and sex go to the analysis. The MRI part takes your year of
-        birth as age in years (within a year of the true age), and sex, because its scanner
-        adjustment was fitted with them. The reason, medication and handedness stay on this screen:
-        they are not saved or sent, and no model uses them. Do not type a name.
-      </p>
       <StepButtons onNext={onNext} nextLabel="Next: Modalities →" />
     </form>
   );
@@ -545,7 +543,10 @@ function ModalitiesStep({
     <section className="card asm__step">
       <div className="mri__step-head">
         <p className="eyebrow">Step 2 of 3</p>
-        <h2 className="card__title">Modalities</h2>
+        <h2 className="card__title">
+          Modalities
+          <InfoTip label="How the parts are processed">{NO_COMBINED_RESULT}</InfoTip>
+        </h2>
       </div>
 
       <div className="asm__modalities">
@@ -621,7 +622,6 @@ function ModalitiesStep({
         </div>
       </div>
 
-      <p className="note">{NO_COMBINED_RESULT}</p>
       <StepButtons onBack={onBack} onNext={onNext} nextLabel="Next: Review →" />
     </section>
   );
@@ -647,7 +647,14 @@ function ReviewStep({
     <section className="card asm__step">
       <div className="mri__step-head">
         <p className="eyebrow">Step 3 of 3</p>
-        <h2 className="card__title">Review</h2>
+        <h2 className="card__title">
+          Review
+          <InfoTip label="Where the scan goes">
+            {NO_COMBINED_RESULT} The scan is sent to the PD-XAI backend at{" "}
+            <span className="mono">{API_BASE_URL}</span>; the DICOM files are deleted there when the
+            analysis ends, and only the result is kept.
+          </InfoTip>
+        </h2>
       </div>
       <dl className="asm__review">
         <div>
@@ -693,11 +700,6 @@ function ReviewStep({
           .
         </p>
       )}
-      <p className="note">
-        {NO_COMBINED_RESULT} The scan is sent to the PD-XAI backend at{" "}
-        <span className="mono">{API_BASE_URL}</span>; the DICOM files are deleted there when the
-        analysis ends, and only the result is kept.
-      </p>
       <StepButtons
         onBack={onBack}
         onNext={onStart}

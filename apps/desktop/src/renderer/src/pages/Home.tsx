@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listMriAnalyses } from "../api/mri.api";
+import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
 import type { MriAnalysisStatus } from "../mri/mriTypes";
 import {
@@ -148,7 +149,15 @@ export function Home({
 
         <aside className="home__rail">
           <section className="card">
-            <p className="eyebrow">Your assessments</p>
+            <p className="eyebrow">
+              Your assessments
+              <InfoTip label="About these counts">
+                {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
+                Each counts the MRI part. A “not scored” result means the model declined to score it
+                (for example, an unseen scanner model); it is not a normal result. Gait, tapping and
+                voice are not processed in this build.
+              </InfoTip>
+            </p>
             {summary ? (
               <>
                 <p className="home__big">{summary.counted}</p>
@@ -158,12 +167,6 @@ export function Home({
                   <li><span>In progress</span><span className="mono">{summary.inProgress.length}</span></li>
                   <li><span>Failed</span><span className="mono">{summary.failed}</span></li>
                 </ul>
-                <p className="note">
-                  {summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them."} Each counts the MRI
-                  part. A “not scored” result means the model declined to score it (for example, an unseen
-                  scanner model); it is not a normal result. Gait, tapping and voice are not processed
-                  in this build.
-                </p>
               </>
             ) : (
               <p className="note">{failed ? "Unavailable." : "Loading…"}</p>
