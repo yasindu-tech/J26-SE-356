@@ -72,6 +72,24 @@ Docker wrapper (see `models/mri/README.md`).
   with the same submit-then-poll contract. An analysis that is running when the backend
   restarts is marked failed.
 
+## Gait analyses
+
+`POST /api/v1/gait/analyses` takes one walking video (`.mp4`, `.mov`, `.m4v`, `.avi`) and
+`one_person_confirmed=true` (multipart form), and answers `202` with an analysis ID. The video
+runs through `models/gait/src/predict_video.py` in a separate process, one at a time, in its own
+worker (`app/workers/gait_runner.py`); it takes about a minute.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/gait/analyses` | your analyses, newest first |
+| `GET /api/v1/gait/analyses/{id}` | status (`scored`, `abstained` with the reason, `failed`) and elapsed time |
+| `GET /api/v1/gait/analyses/{id}/result` | the `GaitResult` (`gait-result/1`). `409` until finished |
+
+- The video is saved under its analysis ID (its own name is never kept) in `data/backend/gait/<id>/`
+  and deleted when the analysis ends. The gait model bundle must exist (`train_xgboost.py`).
+- **Settings:** `GAIT_WORK_DIR`, `GAIT_PYTHON`, `GAIT_SCRIPT`, `GAIT_BUNDLE_DIR`,
+  `GAIT_MAX_UPLOAD_MB` (500), `GAIT_TIMEOUT_MINUTES` (15).
+
 ## Database migrations
 
 Schema changes go through Alembic, never `Base.metadata.create_all()` outside
