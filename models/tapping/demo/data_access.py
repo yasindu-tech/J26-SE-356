@@ -119,6 +119,18 @@ def clip_summary(target: str, ref: str, root: Path | None = None) -> ClipSummary
     }  # fmt: skip
 
 
+def heldout_probas(target: str, ref: str, root: Path | None = None) -> list[float]:
+    """The held-out model score of one clip in each of the 5 repeats, in repeat order."""
+    _clips(target, root)  # the same guards as every other loader
+    paths = _paths(target, root)
+    cols = list(tsh.ch.FEATURE_SETS[FEATURE_SET])
+    values = sf.read_inputs(paths[tsh.META_FILE].parent, cols)["values"]
+    rows = values[values["clip_ref"] == ref].sort_values("repeat")
+    if len(rows) != tsh.REPEATS:
+        raise DemoDataError(f"unknown clip ref: {ref}")
+    return [float(p) for p in rows["proba"]]
+
+
 def global_importance(target: str, root: Path | None = None) -> list[dict[str, Any]]:
     _, glob, _ = _clips(target, root)
     ordered = glob.sort_values(["rank", "feature"], kind="stable")
