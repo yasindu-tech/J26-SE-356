@@ -75,7 +75,8 @@ Docker wrapper (see `models/mri/README.md`).
 ## Gait analyses
 
 `POST /api/v1/gait/analyses` takes one walking video (`.mp4`, `.mov`, `.m4v`, `.avi`) and
-`one_person_confirmed=true` (multipart form), and answers `202` with an analysis ID. The video
+`one_person_confirmed=true` (multipart form), plus the same optional `subject_label` as MRI, and
+answers `202` with an analysis ID. The video
 runs through `models/gait/src/predict_video.py` in a separate process, one at a time, in its own
 worker (`app/workers/gait_runner.py`); it takes about a minute.
 
