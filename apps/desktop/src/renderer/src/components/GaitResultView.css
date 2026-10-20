@@ -1,0 +1,73 @@
+/* Gait result page. Same rules as the MRI result page, tokens only (no new hex):
+   - terracotta (priority-high) is not used: this screen shows no priority;
+   - amber (caution) is a border or tint only, always with dark text;
+   - the three bars are teal only, never red/amber/green per level;
+   - success green appears only on a "Passed" chip (a status, never a result);
+   - direction of a driver is solid vs outlined as well as the words, so it does not rely
+     on colour. */
+
+.gr {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gr__reading-card { gap: 14px; padding: 28px 32px; }
+.gr__reading-head { margin: 0; font-size: 28px; font-weight: 600; line-height: 1.2; }
+.gr__reading-head--clear { color: var(--color-primary); }
+.gr__reading-detail { margin: 0; font-size: 17px; }
+.gr__none { border: 2px dashed var(--color-neutral-300); background: var(--color-neutral-50); }
+.gr__big { margin: 0; font-size: 40px; line-height: 1; color: var(--color-neutral-600); }
+.gr__text { margin: 0; font-size: 15px; }
+.gr__h2 { margin: 0; font-size: 19px; font-weight: 600; }
+.gr__list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.gr__rely { padding: 14px 16px; border-radius: 8px; background: var(--color-neutral-50); border: 1px solid var(--color-neutral-200); display: flex; flex-direction: column; gap: 4px; }
+.gr__bars { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border: 1px solid var(--color-neutral-200); border-radius: 8px; background: var(--color-surface); }
+.gr__bar-row { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: center; gap: var(--spacing-md); }
+.gr__bar-label { font-size: 14px; color: var(--color-neutral-600); }
+.gr__bar-label b { display: block; font-size: 12px; font-weight: 400; }
+.gr__bar-label--pick { font-weight: 600; color: var(--color-neutral-900); }
+.gr__bar-track { display: block; height: 14px; border-radius: 4px; background: var(--color-neutral-100); overflow: hidden; }
+.gr__bar-fill { display: block; height: 100%; border-radius: 4px; background: var(--color-primary-muted); }
+.gr__bar-fill--pick { background: var(--color-primary); }
+.gr__notice { padding: 12px 18px; border: 1px solid var(--color-caution); border-radius: 10px; background: var(--color-caution-tint); color: var(--color-neutral-900); display: flex; flex-direction: column; gap: 6px; }
+.gr__notice-title { margin: 0; font-size: 14px; font-weight: 600; }
+.gr__shap { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border: 1px solid var(--color-neutral-200); border-radius: 8px; background: var(--color-surface); }
+.gr__shap-row, .gr__shap-axis { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: center; gap: var(--spacing-md); }
+.gr__shap-label { font-size: 14px; }
+.gr__shap-plot { position: relative; display: block; height: 18px; }
+.gr__shap-plot::before { content: ""; position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--color-neutral-300); }
+.gr__shap-bar { position: absolute; top: 0; height: 100%; box-sizing: border-box; border: 2px solid var(--color-primary); }
+.gr__shap-bar--towards { left: 50%; border-radius: 0 4px 4px 0; background: var(--color-primary); }
+.gr__shap-bar--away { right: 50%; border-radius: 4px 0 0 4px; background: var(--color-surface); }
+.gr__shap-axis-labels { display: grid; grid-template-columns: 1fr 1fr; font-size: 12px; color: var(--color-neutral-600); }
+.gr__shap-axis-labels span:first-child { padding-right: var(--spacing-sm); text-align: right; }
+.gr__shap-axis-labels span:last-child { padding-left: var(--spacing-sm); }
+.gr__drivers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-md); }
+.gr__driver { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: var(--spacing-md); align-items: start; }
+.gr__tag { width: 14px; height: 14px; margin-top: 4px; border: 2px solid var(--color-primary); border-radius: 3px; }
+.gr__tag--towards { background: var(--color-primary); }
+.gr__tag--away { background: var(--color-surface); }
+.gr__driver-body { display: flex; flex-direction: column; gap: 2px; }
+.gr__driver-tag { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-neutral-600); }
+.gr__driver-text { font-size: 15px; }
+.gr__timeline { position: relative; height: 12px; border-radius: 4px; background: var(--color-neutral-100); overflow: hidden; }
+.gr__timeline-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--color-primary-hover); }
+.gr__timeline-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--color-neutral-600); }
+.gr__checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gr__check { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--spacing-md); padding: 10px 0; border-top: 1px solid var(--color-neutral-200); font-size: 14px; }
+.gr__check:first-child { border-top: 0; }
+.gr__check-label { font-weight: 500; }
+.gr__check-sub { grid-column: 1 / -1; display: flex; gap: var(--spacing-sm); flex-wrap: wrap; }
+.gr__chip { padding: 3px 8px; border-radius: 4px; background: var(--color-neutral-200); color: var(--color-neutral-900); font-size: 12px; font-weight: 500; }
+.gr__chip--on { background: var(--color-success-tint); }
+.gr__chip--fail { background: var(--color-caution-tint); border: 1px solid var(--color-caution); }
+.gr__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-md); }
+
+.gr__none-head { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); }
+.gr__list--large { font-size: 15px; }
+.gr .mri__layout { margin: 0; }
+
+@media (max-width: 760px) {
+  .gr__bar-row, .gr__shap-row, .gr__shap-axis { grid-template-columns: minmax(0, 1fr); }
+}
