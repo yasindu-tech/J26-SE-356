@@ -1,0 +1,8 @@
+{
+  "accounts": [
+    { "username": "yasindu", "full_name": "Yasindu", "password": "CHANGE-ME-yasindu" },
+    { "username": "nethal", "full_name": "Nethal", "password": "CHANGE-ME-nethal" },
+    { "username": "ricky", "full_name": "Ricky", "password": "CHANGE-ME-ricky" },
+    { "username": "naduli", "full_name": "Naduli", "password": "CHANGE-ME-naduli" }
+  ]
+}
