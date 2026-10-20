@@ -391,7 +391,7 @@ def test_upload_shows_summary_frames_figure_and_note(
         rf"\*\*Clip {REF}\*\*: 20\.0 s, 30 fps, hand found in 100% of frames, \d+ taps found",
         summary[0],
     )
-    assert len(app.image) == 8  # 6 preview frames, the signal figure and the SHAP figure
+    assert len(app.image) == 9  # 6 frames, signal, SHAP and amplitude figures
     captions = [c for i in app.image for c in i.captions]
     assert captions[6] == "Thumb-index distance over time"
     assert all(re.fullmatch(r"\d+\.\d s", c) for c in captions[:6])

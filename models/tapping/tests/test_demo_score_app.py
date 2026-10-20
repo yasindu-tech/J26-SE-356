@@ -145,7 +145,7 @@ def test_upload_mode_scores_with_the_25_model_band(
     assert "Demo model trained on all research clips." in captions
     assert not any(c.startswith("Held-out") for c in captions)
     assert len(sentences(app)) == 5
-    assert len(app.image) == 8  # 6 preview frames, the signal figure and the SHAP figure
+    assert len(app.image) == 9  # 6 frames, signal, SHAP and amplitude figures
     assert any(m.value.startswith("Fixed study threshold 0.5: ") for m in app.markdown)
 
 
@@ -212,7 +212,7 @@ def test_no_score_for_a_clip_with_too_few_taps(
     assert "No score for this clip: Not enough valid taps to score this clip." in [
         i.value for i in app.info
     ]
-    assert len(app.image) == 7  # the signal view is still shown
+    assert len(app.image) == 8  # the signal view and the amplitude curve are still shown
 
 
 def test_missing_fold_models_give_a_friendly_message(
