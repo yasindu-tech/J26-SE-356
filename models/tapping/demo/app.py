@@ -8,6 +8,7 @@ the file name is never read, shown or stored. Score and SHAP panels follow in FT
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import sys
 from pathlib import Path
@@ -20,32 +21,25 @@ import numpy as np  # noqa: E402
 import resources as res  # noqa: E402
 import scoring as sc  # noqa: E402
 import streamlit as st  # noqa: E402
+import summary_pdf as pdf  # noqa: E402
 import tap_curve as tc  # noqa: E402
 import upload_pipeline as up  # noqa: E402
-
-TITLE = "Finger-tapping explainer (research demo)"
-DISCLAIMER = (
-    "Research demo. The score is a model output on a research dataset; it is not a diagnosis "
-    "and the model does not detect Parkinson's."
+from texts import (  # noqa: E402,F401  (re-exported: the tests read them from the app)
+    BAND_EXAMPLE,
+    BAND_UPLOAD,
+    DISCLAIMER,
+    FPS_NOTE,
+    HELD_OUT,
+    MODES,
+    NOT_STORED,
+    RANGE_NOTE,
+    SCORE_CAPTION,
+    SECONDARY_NOTE,
+    SHAP_CAPTION,
+    TARGET_LABELS,
+    TITLE,
+    TRAINED_ALL,
 )
-MODES = ("Example clip (held-out)", "Upload video")
-TARGET_LABELS = {"ge2 (primary)": "ge2", "ge1": "ge1"}
-NOT_STORED = "Processed on this computer; the video is not stored."
-SCORE_CAPTION = (
-    "Model score from 0 to 1. Not a calibrated probability and not a diagnosis. "
-    "In cross-validation this model reached AUROC {est:.2f} [{lo:.2f}, {hi:.2f}] for {target}."
-)
-HELD_OUT = "Held-out: this clip was not used to train the models that scored it."
-TRAINED_ALL = "Demo model trained on all research clips."
-BAND_EXAMPLE = "held-out scores over 5 repeats"
-BAND_UPLOAD = "5-95% of 25 cross-validation models"
-SHAP_CAPTION = "Contributions explain the model's score, not the cause of any condition."
-FPS_NOTE = (
-    "This video is about {fps:.0f} fps. Speed features are measured per second, so a high "
-    "frame rate can shift them and the score may be slightly off."
-)
-RANGE_NOTE = "{names} outside the range of the research clips; treat the score with care."
-SECONDARY_NOTE = "ge1 is the secondary study target; ge2 is the primary target."
 
 
 @st.cache_data
@@ -90,8 +84,9 @@ def cached_analysis(
 def render_score(
     *, target: str, root: Path, score: float, low: float, high: float, held_out: bool,
     values: dict[str, float], shap_values: dict[str, float], title: str, fps: float | None = None,
-) -> None:  # fmt: skip
-    """The Score and 'Why this score (SHAP)' sections (shared by both modes)."""
+) -> dict[str, Any]:  # fmt: skip
+    """The Score and 'Why this score (SHAP)' sections (shared by both modes); returns what was
+    shown, so the PDF repeats exactly the same texts and figure."""
     ref_sha = da.cvs.file_sha256(root / "features.csv")[: da.cvs.HASH_LEN]
     ctx = sc.context(values, cached_reference(str(root), ref_sha))
     rows = sc.contributions(values, shap_values, ctx)
@@ -100,14 +95,17 @@ def render_score(
     left, right = st.columns([1, 3])
     left.metric("Model score", f"{score:.2f}")
     band = BAND_EXAMPLE if held_out else BAND_UPLOAD
-    right.markdown(f"(range {low:.2f}-{high:.2f}) {band}")
+    band_text = f"(range {low:.2f}-{high:.2f}) {band}"
+    right.markdown(band_text)
     side = "above" if score >= sc.THRESHOLD else "below"
-    right.markdown(f"Fixed study threshold {sc.THRESHOLD}: {side}")
-    st.caption(
-        SCORE_CAPTION.format(est=auroc["estimate"], lo=auroc["ci_low"], hi=auroc["ci_high"],
-                             target=target)
-    )  # fmt: skip
-    st.caption(HELD_OUT if held_out else TRAINED_ALL)
+    threshold_text = f"Fixed study threshold {sc.THRESHOLD}: {side}"
+    right.markdown(threshold_text)
+    auroc_text = SCORE_CAPTION.format(
+        est=auroc["estimate"], lo=auroc["ci_low"], hi=auroc["ci_high"], target=target
+    )
+    st.caption(auroc_text)
+    source_text = HELD_OUT if held_out else TRAINED_ALL
+    st.caption(source_text)
     if target == "ge1":
         st.info(SECONDARY_NOTE)
     if fps is not None and fps > sc.FPS_NOTE_ABOVE:
@@ -118,26 +116,86 @@ def render_score(
         st.info(RANGE_NOTE.format(names=", ".join(outside) + f" {verb}"))
     st.header("Why this score (SHAP)")
     st.image(up.figure_png(sc.shap_figure(rows, title)), width="stretch")
-    st.markdown("\n".join(f"- {line}" for line in sc.wording(rows)))
+    shap_png = up.figure_png(
+        sc.shap_figure(rows, title, compact=True)
+    )  # page-size copy for the PDF
+    sentences = sc.wording(rows)
+    st.markdown("\n".join(f"- {line}" for line in sentences))
     st.caption(SHAP_CAPTION)
+    return {"score": score, "band_text": band_text, "threshold_text": threshold_text,
+            "auroc_text": auroc_text, "source_text": source_text, "outside": outside,
+            "sentences": sentences, "shap_png": shap_png, "ref_sha": ref_sha}  # fmt: skip
 
 
 @st.cache_data(show_spinner=False)
-def cached_curve_png(key: str, _curve: tc.TapCurve, ref: str) -> bytes:
-    return up.figure_png(tc.curve_figure(_curve, ref))  # key: sha8 of the curve data
+def cached_curve_png(key: str, _curve: tc.TapCurve, ref: str, compact: bool = False) -> bytes:
+    return up.figure_png(tc.curve_figure(_curve, ref, compact))  # key: sha8 of the curve data
 
 
-def render_curve(curve: tc.TapCurve, ref: str) -> None:
+def render_curve(curve: tc.TapCurve, ref: str) -> dict[str, Any]:
     """The per-tap amplitude figure with the official fitted line, its words and the note."""
     data = np.concatenate([curve.times, curve.amps, curve.line_y]).tobytes()
     key = hashlib.sha256(data + ref.encode()).hexdigest()[:8]
     st.image(cached_curve_png(key, curve, ref), width="stretch")
-    st.markdown(tc.count_sentence(curve))
-    st.markdown(tc.slope_sentence(curve))
+    png = cached_curve_png(key, curve, ref, True)  # page-size copy for the PDF
+    count, slope = tc.count_sentence(curve), tc.slope_sentence(curve)
+    st.markdown(count)
+    st.markdown(slope)
     st.caption(tc.NOTE)
+    return {"png": png, "count": count, "slope": slope, "curve": curve,
+            "reason": None if curve.usable else curve.reason}  # fmt: skip
 
 
-def render_upload(target: str, root: Path, model: Any) -> None:
+@st.cache_data(show_spinner=False)
+def cached_pdf(key: str, _data: pdf.SummaryData) -> bytes:
+    return pdf.build_pdf(_data)  # key: sha8 of everything the page shows
+
+
+def render_pdf_button(data: pdf.SummaryData) -> None:
+    st.download_button(
+        "Download one-page summary (PDF)",
+        data=cached_pdf(data.sha8(), data),
+        file_name=f"summary_{data.ref}.pdf",  # the hashed ref only
+        mime="application/pdf",
+    )
+
+
+def summary_data(
+    *, ref: str, mode: str, target: str, shown: dict[str, Any] | None,
+    curve_shown: dict[str, Any] | None, recording: dict[str, Any], qc_flags: Any,
+    signal_png: bytes | None, model_sha8: str | None, inputs: list[str],
+) -> pdf.SummaryData:  # fmt: skip
+    """What the PDF repeats from the screen; a missing section stays None (fixed reason text)."""
+    curve = curve_shown["curve"] if curve_shown else None
+    count_note = None
+    if curve is not None and (curve.n_edge or curve.n_nan):
+        count_note = tc.count_sentence(curve)
+    notes = pdf.quality_notes(
+        mode=mode, target=target, fps=recording.get("fps"),
+        tracked_share=recording.get("tracked_share"), qc_flags=qc_flags,
+        outside=shown["outside"] if shown else [], taps_note=count_note,
+        curve_reason=curve_shown["reason"] if curve_shown else tc.REASONS["missing"],
+    )  # fmt: skip
+    return pdf.SummaryData(
+        ref=ref, mode=mode, target=target, date_text=datetime.date.today().isoformat(),
+        recording={**recording, "n_found": curve.n_found if curve else None,
+                   "n_shown": curve.n_taps if curve else None},
+        qc_flags=qc_flags, notes=notes,
+        score=shown["score"] if shown else None,
+        band_text=shown["band_text"] if shown else None,
+        threshold_text=shown["threshold_text"] if shown else None,
+        auroc_text=shown["auroc_text"] if shown else None,
+        source_text=shown["source_text"] if shown else None,
+        sentences=shown["sentences"] if shown else [],
+        shap_png=shown["shap_png"] if shown else None, signal_png=signal_png,
+        curve_png=curve_shown["png"] if curve_shown else None,
+        curve_count=curve_shown["count"] if curve_shown else None,
+        curve_slope=curve_shown["slope"] if curve_shown else None,
+        model_sha8=model_sha8, input_sha8=inputs,
+    )  # fmt: skip
+
+
+def render_upload(target: str, root: Path, model: Any, model_sha8: str | None) -> None:
     factory = None
     try:
         factory = get_landmarker()  # created lazily: only in this mode
@@ -169,19 +227,23 @@ def render_upload(target: str, root: Path, model: Any) -> None:
         caption="Thumb-index distance over time",
         width="stretch",
     )
+    signal_png = up.figure_png(up.signal_figure(r, compact=True))  # page-size copy for the PDF
     if r.qc_flags:
         st.markdown("**Automatic checks**\n" + "\n".join(f"- {n}: {why}" for n, why in r.qc_flags))
     else:
         st.markdown("**Automatic checks**: no flags")
+    shown: dict[str, Any] | None = None
+    folds_sha8: str | None = None
     if model is None:
         st.info("The score is not available until the demo models are trained.")
     else:
         try:
-            folds = get_fold_models(target, str(root), res.fold_sha8(target, root))
+            folds_sha8 = res.fold_sha8(target, root)
+            folds = get_fold_models(target, str(root), folds_sha8)
             features = sc.upload_features(r)
             result = sc.score(features, model, folds)
             explained = sc.explain(features, model)
-            render_score(
+            shown = render_score(
                 target=target, root=root, score=result["score"], low=result["band_low"],
                 high=result["band_high"], held_out=False, values=features,
                 shap_values=explained["shap"], title=f"Contributions to the model score (clip {r.upload_ref})",
@@ -190,7 +252,21 @@ def render_upload(target: str, root: Path, model: Any) -> None:
         except (da.DemoDataError, da.GuardFailure) as err:
             st.info(f"No score for this clip: {err}")
     st.header("Per-tap amplitude")
-    render_curve(tc.curve_for_upload(r), r.upload_ref)
+    curve_shown = render_curve(tc.curve_for_upload(r), r.upload_ref)
+    render_pdf_button(
+        summary_data(
+            ref=r.upload_ref,
+            mode="upload",
+            target=target,
+            shown=shown,
+            curve_shown=curve_shown,
+            recording={"duration_s": r.duration_s, "fps": r.fps, "tracked_share": r.tracked_share},
+            qc_flags=list(r.qc_flags),
+            signal_png=signal_png,
+            model_sha8=model_sha8,
+            inputs=[x for x in (folds_sha8, shown["ref_sha"] if shown else None) if x],
+        )
+    )
 
 
 def main() -> None:
@@ -204,6 +280,7 @@ def main() -> None:
     key: tuple[tuple[str, str], ...] = ()
     model_caption = "model: not available"
     model = None
+    model_sha8: str | None = None
     try:
         model_sha8 = res.model_sha8(target, root)
         model = get_model(target, str(root), model_sha8)
@@ -219,21 +296,36 @@ def main() -> None:
             probas = da.heldout_probas(target, ref, root)
             st.header("Clip")
             st.markdown(f"Research clip {ref} (hashed reference)")
-            render_score(
+            shown = render_score(
                 target=target, root=root, score=summary["proba"], low=min(probas),
                 high=max(probas), held_out=True, values=summary["value"],
                 shap_values=summary["shap"], title=f"Contributions to the model score (clip {ref})",
             )  # fmt: skip
             st.header("Per-tap amplitude")
+            curve_shown = None
             try:
-                render_curve(tc.curve_for_table(da.heldout_tap_table(ref, root)), ref)
+                curve_shown = render_curve(tc.curve_for_table(da.heldout_tap_table(ref, root)), ref)
             except da.DemoDataError as err:  # the curve is optional; the score above stands
                 st.info(str(err))
+            render_pdf_button(
+                summary_data(
+                    ref=ref,
+                    mode="example",
+                    target=target,
+                    shown=shown,
+                    curve_shown=curve_shown,
+                    recording={},
+                    qc_flags=None,
+                    signal_png=None,
+                    model_sha8=model_sha8,
+                    inputs=[sha for _, sha in key],
+                )
+            )
         except (da.DemoDataError, da.GuardFailure) as err:
             st.error(f"The demo inputs are not available: {err}")
             st.stop()
     else:
-        render_upload(target, root, model)
+        render_upload(target, root, model, model_sha8)
     st.caption(model_caption)
     st.caption("inputs: " + (", ".join(sha for _, sha in key) if key else "none loaded"))
 

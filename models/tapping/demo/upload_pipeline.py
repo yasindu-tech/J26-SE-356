@@ -14,7 +14,7 @@ import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -247,20 +247,29 @@ def analyse_upload(
         tmp.cleanup()
 
 
-def signal_figure(r: UploadResult) -> Figure:
-    fig = Figure(figsize=(11.5, 4.8), dpi=110, layout="constrained")
+def signal_figure(r: UploadResult, compact: bool = False) -> Figure:
+    """The signal figure; ``compact`` is the page-size variant (larger relative fonts, no footer:
+    the PDF carries the disclaimer as text)."""
+    big, mid, title = (9, 8.5, 10) if compact else (12, 11, 14)
+    fig = Figure(figsize=(5.2, 2.3) if compact else (11.5, 4.8), dpi=110, layout="constrained")
     FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
     ax.plot(r.t, r.raw, color=RAW_COLOUR, lw=0.8, label="raw")
     ax.plot(r.t, r.smoothed, color=SMOOTH_COLOUR, lw=1.8, label="smoothed")
-    ax.plot(r.peak_t, r.peak_v, "v", color=PEAK_COLOUR, ms=7, ls="none", label="tap peaks")
-    ax.set_xlabel("time (s)", fontsize=12)
-    ax.set_ylabel("thumb-index distance (hand sizes)", fontsize=12)
-    ax.tick_params(labelsize=11)
+    ax.plot(r.peak_t, r.peak_v, "v", color=PEAK_COLOUR, ms=5 if compact else 7, ls="none",
+            label="tap peaks")  # fmt: skip
+    ax.set_xlabel("time (s)", fontsize=big)
+    ax.set_ylabel("distance (hand sizes)" if compact else "thumb-index distance (hand sizes)",
+                  fontsize=big)  # fmt: skip
+    ax.tick_params(labelsize=mid)
     ax.spines[["top", "right"]].set_visible(False)
-    fig.legend(fontsize=11, loc="outside upper right", frameon=False, ncols=3)  # off the curve
-    fig.suptitle(f"Upload {r.upload_ref}: {r.n_taps} taps found", fontsize=14)
-    fig.supxlabel(FOOTER, fontsize=11, color="#333333")
+    where: Literal["outside lower center", "outside upper right"] = (
+        "outside lower center" if compact else "outside upper right"
+    )  # never over the title
+    fig.legend(fontsize=mid, loc=where, frameon=False, ncols=3)  # off the curve
+    fig.suptitle(f"Upload {r.upload_ref}: {r.n_taps} taps found", fontsize=title)
+    if not compact:
+        fig.supxlabel(FOOTER, fontsize=11, color="#333333")
     return fig
 
 
