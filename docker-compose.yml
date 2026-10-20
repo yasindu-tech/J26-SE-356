@@ -1,7 +1,7 @@
 # Local development stack: Postgres + the backend API.
 #
-#   docker compose up -d --build          # start both
-#   docker compose exec backend python -m app.seed --username yasindu --full-name "Yasindu"
+#   cp dev-accounts.example.json dev-accounts.json   # once; set real passwords in it
+#   docker compose up -d --build          # start both; creates the accounts that are missing
 #   docker compose logs -f backend        # watch the API
 #   docker compose down                   # stop (the database is kept in the pgdata volume)
 #
@@ -47,6 +47,14 @@ services:
       CORS_ORIGINS: '["http://localhost:5173"]'
     ports:
       - "127.0.0.1:8000:8000"
+    # Development sign-in accounts, created on each start if missing (never changed after).
+    secrets:
+      - dev_accounts
+
+secrets:
+  dev_accounts:
+    # Git-ignored. Copy dev-accounts.example.json and set real passwords.
+    file: ./dev-accounts.json
 
 volumes:
   pgdata:

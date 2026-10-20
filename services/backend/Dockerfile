@@ -24,5 +24,5 @@ USER app
 
 EXPOSE 8000
 
-# Bring the database schema up to date, then serve.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Bring the schema up to date, create missing dev accounts, then serve (docker-start.sh).
+CMD ["sh", "/repo/services/backend/docker-start.sh"]

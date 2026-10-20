@@ -41,12 +41,17 @@ pytest services/backend
 running. Everything is for local development: ports are bound to `127.0.0.1`, and the default
 passwords and JWT secret are dev-only.
 
+**Accounts.** Once, copy `dev-accounts.example.json` to `dev-accounts.json` (git-ignored)
+and set a real password for each person. Every time the backend container starts it
+creates the accounts that are missing and leaves existing ones unchanged. Accounts live in
+the database volume, so they survive `docker compose down` / `up`; only
+`docker compose down -v` deletes them, and the next start creates them again.
+
 **A. Database and API in Docker** (sign-in and the app's screens; MRI and gait analyses
 do not run in the container yet):
 
 ```bash
 docker compose up -d --build
-docker compose exec backend python -m app.seed --username yasindu --full-name "Yasindu"
 npm run dev:desktop
 ```
 
@@ -57,13 +62,14 @@ ANTs, dcm2niix and SynthStrip installed on your machine):
 docker compose up -d db
 export DATABASE_URL=postgresql+psycopg2://pdxai:pdxai@localhost:5433/pdxai
 (cd services/backend && alembic upgrade head)
-(cd services/backend && python -m app.seed --username yasindu --full-name "Yasindu")
+(cd services/backend && python -m app.seed --from-file ../../dev-accounts.json)
 npm run dev:backend
 ```
 
-The seed command asks for the password twice and never echoes it. It creates accounts only,
-never patients or results. Run it again with `--reset-password` to change a password. It
-refuses to run with `ENVIRONMENT=production`.
+For one account by hand: `python -m app.seed --username NAME --full-name "Name"` asks for the
+password twice and never echoes it; add `--reset-password` to change an existing password.
+The seed command creates accounts only, never patients or results, refuses the example's
+placeholder passwords, and refuses to run with `ENVIRONMENT=production`.
 
 Postgres listens on host port **5433**, so it does not clash with a Postgres already on 5432.
 The data lives in the `pdxai_pgdata` volume: `docker compose down` keeps it,

@@ -1,9 +1,11 @@
+import json
+
 import pytest
 from sqlalchemy.orm import Session
 
 from app.core.security import verify_password
 from app.models.clinician import Clinician
-from app.seed import SeedError, main, seed_clinician
+from app.seed import SeedError, main, seed_clinician, seed_from_file
 
 
 def test_creates_an_account_that_can_sign_in(db_session: Session) -> None:
@@ -47,3 +49,29 @@ def test_refuses_to_run_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
         assert main(["--username", "anyone"]) == 2
     finally:
         config_module.get_settings.cache_clear()
+
+
+def _file(*accounts: tuple[str, str, str]) -> str:
+    return json.dumps(
+        {"accounts": [{"username": u, "full_name": f, "password": p} for u, f, p in accounts]}
+    )
+
+
+def test_seeds_every_missing_account_from_a_file_and_is_safe_to_rerun(db_session: Session) -> None:
+    text = _file(("yasindu", "Yasindu", "pw-yasindu-1"), ("ricky", "Ricky", "pw-ricky-12"))
+    assert seed_from_file(db_session, text) == {"yasindu": "created", "ricky": "created"}
+    # On the next start nothing changes, even if the file now has another password.
+    again = _file(("yasindu", "Yasindu", "a-new-password"), ("ricky", "Ricky", "pw-ricky-12"))
+    assert seed_from_file(db_session, again) == {"yasindu": "exists", "ricky": "exists"}
+    row = db_session.query(Clinician).filter_by(username="yasindu").one()
+    assert verify_password("pw-yasindu-1", row.hashed_password)
+
+
+def test_a_bad_file_changes_nothing(db_session: Session) -> None:
+    bad = _file(("yasindu", "Yasindu", "pw-yasindu-1"), ("nethal", "Nethal", "CHANGE-ME-nethal"))
+    with pytest.raises(SeedError, match="real password"):
+        seed_from_file(db_session, bad)
+    assert db_session.query(Clinician).count() == 0
+    for text in ["not json", "{}", '{"accounts": []}', '{"accounts": [{"username": "x"}]}']:
+        with pytest.raises(SeedError):
+            seed_from_file(db_session, text)

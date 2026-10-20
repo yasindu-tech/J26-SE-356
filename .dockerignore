@@ -7,3 +7,5 @@ services/backend/**/__pycache__
 services/backend/**/*.pyc
 services/backend/.env
 services/backend/tests/
+# Accounts reach the container as a compose secret at run time, never inside the image.
+dev-accounts.json
