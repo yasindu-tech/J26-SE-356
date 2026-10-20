@@ -16,9 +16,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import data_access as da  # noqa: E402
+import numpy as np  # noqa: E402
 import resources as res  # noqa: E402
 import scoring as sc  # noqa: E402
 import streamlit as st  # noqa: E402
+import tap_curve as tc  # noqa: E402
 import upload_pipeline as up  # noqa: E402
 
 TITLE = "Finger-tapping explainer (research demo)"
@@ -120,6 +122,21 @@ def render_score(
     st.caption(SHAP_CAPTION)
 
 
+@st.cache_data(show_spinner=False)
+def cached_curve_png(key: str, _curve: tc.TapCurve, ref: str) -> bytes:
+    return up.figure_png(tc.curve_figure(_curve, ref))  # key: sha8 of the curve data
+
+
+def render_curve(curve: tc.TapCurve, ref: str) -> None:
+    """The per-tap amplitude figure with the official fitted line, its words and the note."""
+    data = np.concatenate([curve.times, curve.amps, curve.line_y]).tobytes()
+    key = hashlib.sha256(data + ref.encode()).hexdigest()[:8]
+    st.image(cached_curve_png(key, curve, ref), width="stretch")
+    st.markdown(tc.count_sentence(curve))
+    st.markdown(tc.slope_sentence(curve))
+    st.caption(tc.NOTE)
+
+
 def render_upload(target: str, root: Path, model: Any) -> None:
     factory = None
     try:
@@ -158,20 +175,22 @@ def render_upload(target: str, root: Path, model: Any) -> None:
         st.markdown("**Automatic checks**: no flags")
     if model is None:
         st.info("The score is not available until the demo models are trained.")
-        return
-    try:
-        folds = get_fold_models(target, str(root), res.fold_sha8(target, root))
-        features = sc.upload_features(r)
-        result = sc.score(features, model, folds)
-        explained = sc.explain(features, model)
-        render_score(
-            target=target, root=root, score=result["score"], low=result["band_low"],
-            high=result["band_high"], held_out=False, values=features,
-            shap_values=explained["shap"], title=f"Contributions to the model score (clip {r.upload_ref})",
-            fps=r.fps,
-        )  # fmt: skip
-    except (da.DemoDataError, da.GuardFailure) as err:
-        st.info(f"No score for this clip: {err}")
+    else:
+        try:
+            folds = get_fold_models(target, str(root), res.fold_sha8(target, root))
+            features = sc.upload_features(r)
+            result = sc.score(features, model, folds)
+            explained = sc.explain(features, model)
+            render_score(
+                target=target, root=root, score=result["score"], low=result["band_low"],
+                high=result["band_high"], held_out=False, values=features,
+                shap_values=explained["shap"], title=f"Contributions to the model score (clip {r.upload_ref})",
+                fps=r.fps,
+            )  # fmt: skip
+        except (da.DemoDataError, da.GuardFailure) as err:
+            st.info(f"No score for this clip: {err}")
+    st.header("Per-tap amplitude")
+    render_curve(tc.curve_for_upload(r), r.upload_ref)
 
 
 def main() -> None:
@@ -206,6 +225,10 @@ def main() -> None:
                 shap_values=summary["shap"], title=f"Contributions to the model score (clip {ref})",
             )  # fmt: skip
             st.header("Per-tap amplitude")
+            try:
+                render_curve(tc.curve_for_table(da.heldout_tap_table(ref, root)), ref)
+            except da.DemoDataError as err:  # the curve is optional; the score above stands
+                st.info(str(err))
         except (da.DemoDataError, da.GuardFailure) as err:
             st.error(f"The demo inputs are not available: {err}")
             st.stop()

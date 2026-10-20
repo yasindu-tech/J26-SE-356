@@ -71,6 +71,7 @@ class UploadResult:
     preview_indices: tuple[int, ...]
     preview_times: tuple[float, ...]
     preview_points: dict[int, np.ndarray]  # frame -> (21, 2) landmark pixels
+    time_offset_s: float  # signal time = tap table time + this (the first kept sample's offset)
     taps_table: pd.DataFrame  # the official tap table of the clip (input of the Set A features)
     stats: dict[str, Any]  # the official clip summary numbers (fps, duration_s, ...)
 
@@ -187,6 +188,7 @@ def process_video(path: str | Path, landmarker_factory: LandmarkerFactory) -> Up
         median_interval_s=float(result.stats.get("median_interval_s", float("nan"))),
         qc_flags=qc_flags(df, result.stats), preview_indices=tuple(int(i) for i in idx),
         preview_times=tuple(float(pts[i] - t0) for i in idx), preview_points=xy,
+        time_offset_s=float(t_abs[0] - t0),
         taps_table=taps.reset_index(drop=True), stats=dict(result.stats),
     )  # fmt: skip
 

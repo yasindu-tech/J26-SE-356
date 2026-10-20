@@ -38,6 +38,24 @@ def steady(n: int = 12, **kw: Any) -> pd.DataFrame:
 # ----------------------------------------------------------------------- slopes
 
 
+def test_valid_taps_are_the_rows_the_slopes_use() -> None:
+    table = steady(12)
+    table.loc[[2, 9], "valid_amp"] = False  # one-sided taps are left out
+    valid = fb.valid_taps(table)
+    assert list(valid["tap_index"]) == [i for i in table["tap_index"] if i not in (2, 9)]
+    row = fb.clip_row(table, "x", "retained")
+    t, y = valid["t_peak_s"].to_numpy(float), valid["amplitude"].to_numpy(float)
+    assert row["amp_slope"] == fb.slope_per_10s(t, y)[0]  # exactly the arrays of the feature
+
+
+def test_theil_sen_line_gives_the_slope_of_the_feature() -> None:
+    t = np.array([0, 1, 2, 4, 5, 7, 8, 9, 12, 15], float)
+    y = 10 - 0.5 * t
+    slope, intercept = fb.theil_sen_line(t, y)
+    assert slope == pytest.approx(-0.5) and intercept == pytest.approx(10.0)
+    assert fb.slope_per_10s(t, y)[0] == slope / float(np.mean(y)) * fb.PER_SECONDS
+
+
 def test_slope_of_a_linear_decline_by_hand() -> None:
     t = np.array([0, 1, 2, 4, 5, 7, 8, 9, 12, 15], float)
     y = 10 - 0.5 * t  # sum 68.5, mean 6.85, slope -0.5 per s
