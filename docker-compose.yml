@@ -1,0 +1,83 @@
+# Local development stack: Postgres + the backend API.
+#
+#   cp dev-accounts.example.json dev-accounts.json   # once; set real passwords in it
+#   docker compose up -d --build          # start both; creates the accounts that are missing
+#   docker compose watch                  # same, and applies your backend edits as you save
+#   docker compose logs -f backend        # watch the API
+#   docker compose down                   # stop (the database is kept in the pgdata volume)
+#
+# Development only: the default passwords and JWT secret below are for this laptop. Both
+# ports are bound to 127.0.0.1, so nothing is reachable from the network.
+#
+# MRI and gait analyses do not run inside this container yet (FSL, ANTs, dcm2niix,
+# SynthStrip and the model packages are not in the image). For those, run the backend
+# natively against this database; see services/backend/README.md, "Run with Docker".
+
+name: pdxai
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pdxai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pdxai}
+      POSTGRES_DB: pdxai
+    # 5433 on the host, so it does not clash with a Postgres already running on 5432.
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdxai -d pdxai"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: services/backend/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql+psycopg2://pdxai:${POSTGRES_PASSWORD:-pdxai}@db:5432/pdxai
+      # The backend refuses this default outside ENVIRONMENT=dev (app/main.py).
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-insecure-secret-change-me}
+      CORS_ORIGINS: '["http://localhost:5173"]'
+      # Restart the API when its code changes (pairs with "docker compose watch" below).
+      UVICORN_RELOAD: "1"
+    ports:
+      - "127.0.0.1:8000:8000"
+    # Development sign-in accounts, created on each start if missing (never changed after).
+    secrets:
+      - dev_accounts
+    # Used by "docker compose watch": a saved edit is copied into the running container.
+    # Code: copied, and uvicorn reloads. Migrations: copied, then the container restarts so
+    # they are applied. Packages or the image itself: the image is rebuilt.
+    develop:
+      watch:
+        - action: sync
+          path: ./services/backend/app
+          target: /repo/services/backend/app
+          ignore:
+            - alembic/
+            - "**/__pycache__/"
+        - action: sync+restart
+          path: ./services/backend/app/alembic
+          target: /repo/services/backend/app/alembic
+        - action: rebuild
+          path: ./services/backend/requirements.txt
+        - action: rebuild
+          path: ./services/backend/Dockerfile
+        - action: rebuild
+          path: ./services/backend/docker-start.sh
+
+secrets:
+  dev_accounts:
+    # Git-ignored. Copy dev-accounts.example.json and set real passwords.
+    file: ./dev-accounts.json
+
+volumes:
+  pgdata:
