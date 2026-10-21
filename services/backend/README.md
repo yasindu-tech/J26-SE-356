@@ -47,13 +47,21 @@ creates the accounts that are missing and leaves existing ones unchanged. Accoun
 the database volume, so they survive `docker compose down` / `up`; only
 `docker compose down -v` deletes them, and the next start creates them again.
 
-**A. Database and API in Docker** (sign-in and the app's screens; MRI and gait analyses
-do not run in the container yet):
+**A. Database and API in Docker** (sign-in, the app's screens and voice analyses; MRI and
+gait analyses do not run in the container yet):
 
 ```bash
 docker compose up -d --build
 npm run dev:desktop
 ```
+
+**Voice in Docker.** The image holds the voice module's code (`models/voice/src/`), its
+packages, and ffmpeg. The trained voice model is gitignored and built from dataset
+recordings, so it is never copied into the image: `docker-compose.yml` mounts
+`models/voice/artifacts/` read-only. Train it once on your machine before the first voice
+upload, `python models/voice/src/audio_model.py`; without it a voice upload answers
+`503 VOICE_ANALYSIS_FAILED`. On Apple Silicon the first build compiles parselmouth (Praat
+publishes no ready-made Linux ARM package), which takes several minutes; later builds reuse it.
 
 **Editing the backend while it runs in Docker.** Start it with watch instead of `up`:
 
@@ -61,7 +69,8 @@ npm run dev:desktop
 docker compose watch
 ```
 
-It starts both services (building if needed) and keeps watching `services/backend`. When
+It starts both services (building if needed) and keeps watching `services/backend` and
+`models/voice/src`. When
 you save a file in `app/`, it is copied into the container and the API reloads in a second
 or two. A new migration in `app/alembic/` is copied and the container restarts, which
 applies it. A change to `requirements.txt`, the `Dockerfile` or `docker-start.sh` rebuilds
