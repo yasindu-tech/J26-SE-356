@@ -1,39 +1,85 @@
-import type { MriResult, MriScore } from "./mriTypes";
+import type { MriResult, MriScore, MriTrackRecord } from "./mriTypes";
 
 // Plain wording for the MRI result page. It states what the model's output is, without
 // advice: no "weigh it", no "treat with caution". The numbers behind each line are in the
 // page's "More details" sections. It is a reading of one modality's raw score, not a
-// priority: no High/Moderate/Low and no percentage (the score is not calibrated).
+// priority: no High/Moderate/Low and no percentage (the score is not calibrated). The
+// strength labels describe how stable the lean is across model copies, never risk.
 
 export type Lean = "none" | "higher" | "lower";
+export type Strength = "consistent" | "moderate" | "weak";
 
 export interface PlainReading {
   lean: Lean;
+  /** How stable the lean is across the fold copies; null when there is no lean. */
+  strength: Strength | null;
   headline: string;
   detail: string;
+  /** "41 of 50 model copies agree", or null when the result has no copy counts. */
+  agreement: string | null;
+  /** "In testing, when the model leaned this way it was right for 10 of 16 people." */
+  trackRecord: string | null;
 }
 
-/** Which side of the model's boundary (log-odds 0) the score's 95% interval sits on. */
-export function plainReading(score: Pick<MriScore, "interval_95">): PlainReading {
+/** Share of fold copies that must agree with the model's side for a "moderate" lean.
+ *  Fixed on 22 October 2026, before any further test scans were read, and applied to
+ *  every result the same way. Do not change it to make one case come out differently. */
+export const MODERATE_AGREEMENT = 0.8;
+
+export const STRENGTH_LABELS: Record<Strength, string> = {
+  consistent: "Consistent",
+  moderate: "Mostly consistent",
+  weak: "Inconsistent",
+};
+
+export const STRENGTH_TEXT: Record<Strength, string> = {
+  consistent: "The whole 95% interval is on this side: every part of the model agrees.",
+  moderate: "Most model copies agree, but the 95% interval reaches the other side.",
+  weak: "The model copies disagree, so this lean depends on which people the model learned from.",
+};
+
+type ScoreLike = Pick<MriScore, "value" | "interval_95"> &
+  Partial<Pick<MriScore, "n_copies" | "copies_above_zero">>;
+
+/** The reading of one result: which side the model's score is on (direction), how many
+ *  fold copies agree (strength), and how often that direction was right in testing. */
+export function plainReading(score: ScoreLike, track?: MriTrackRecord | null): PlainReading {
   const [low, high] = score.interval_95;
-  if (low <= 0 && high >= 0) {
+  if (score.value === 0) {
     return {
       lean: "none",
-      headline: "No clear lean",
-      detail: "The score's 95% interval reaches both sides of the model's boundary.",
+      strength: null,
+      headline: "No lean",
+      detail: "The score is exactly on the model's boundary.",
+      agreement: null,
+      trackRecord: null,
     };
   }
-  if (low > 0) {
-    return {
-      lean: "higher",
-      headline: "Leans towards a Parkinson's-like pattern",
-      detail: "The whole 95% interval of the score is on the Parkinson's side of the model's boundary.",
-    };
-  }
+  const pd = score.value > 0;
+  const lean: Lean = pd ? "higher" : "lower";
+  const n = score.n_copies ?? null;
+  const above = score.copies_above_zero ?? null;
+  const agreeing = n !== null && above !== null ? (pd ? above : n - above) : null;
+  const wholeInterval = pd ? low > 0 : high < 0;
+  const strength: Strength = wholeInterval
+    ? "consistent"
+    : agreeing !== null && n !== null && n > 0 && agreeing / n >= MODERATE_AGREEMENT
+      ? "moderate"
+      : "weak";
+  const record = track ? (pd ? track.leans_pd : track.leans_control) : null;
   return {
-    lean: "lower",
-    headline: "Leans towards a control-like pattern",
-    detail: "The whole 95% interval of the score is on the control side of the model's boundary.",
+    lean,
+    strength,
+    headline: pd
+      ? "Leans towards a Parkinson's-like pattern"
+      : "Leans towards a control-like pattern",
+    detail: STRENGTH_TEXT[strength],
+    agreement:
+      agreeing !== null && n !== null ? `${agreeing} of ${n} model copies agree with this side.` : null,
+    trackRecord:
+      record && record.n > 0
+        ? `In testing, when the model leaned this way it was right for ${record.correct} of ${record.n} people.`
+        : null,
   };
 }
 

@@ -48,6 +48,17 @@ export interface MriScore {
   calibrated: boolean;
   n_training: number;
   meaning: string;
+  /** How many fold copies scored this person; absent in results made before 22 Oct 2026. */
+  n_copies?: number | null;
+  /** How many of those copies put this person on the PD side (log-odds > 0). */
+  copies_above_zero?: number | null;
+}
+
+/** How often the model's lean was right in cross-validation, per direction. */
+export interface MriTrackRecord {
+  source: string;
+  leans_pd: { n: number; correct: number };
+  leans_control: { n: number; correct: number };
 }
 
 export interface MriFeatureVector {
@@ -103,6 +114,7 @@ export interface MriModelCard {
     repeats: number | null;
   };
   known_limits?: string[];
+  track_record?: MriTrackRecord | null;
 }
 
 export interface MriResult {

@@ -13,6 +13,7 @@ import {
   PART_CAPTIONS,
   PART_STATE_LABELS,
   PART_TITLES,
+  STRENGTH_LABELS,
   driverText,
   eddyMinutes,
   partState,
@@ -48,12 +49,25 @@ export function MriResultView({ result }: { result: MriResult }) {
 
 function ReadingCard({ result }: { result: MriResult }) {
   if (!result.score) return null;
-  const reading = plainReading(result.score);
+  const reading = plainReading(result.score, result.model_card?.track_record);
   return (
     <section className="card mr__reading-card" aria-label="Reading">
       <p className="eyebrow">MRI · {modelSetLabel(result.model_set)} model · research prototype</p>
-      <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
+      <div className="mr__reading-row">
+        <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
+        {reading.strength && (
+          <span className={`mr__strength mr__strength--${reading.strength}`}>
+            {STRENGTH_LABELS[reading.strength]}
+          </span>
+        )}
+      </div>
       <p className="mr__reading-detail">{reading.detail}</p>
+      {(reading.agreement || reading.trackRecord) && (
+        <ul className="mr__facts">
+          {reading.agreement && <li>{reading.agreement}</li>}
+          {reading.trackRecord && <li>{reading.trackRecord}</li>}
+        </ul>
+      )}
     </section>
   );
 }
@@ -233,6 +247,9 @@ function ScoreDetails({ result }: { result: MriResult }) {
           ["Raw score (log-odds)", formatSigned(s.value)],
           ["95% interval", `${formatSigned(s.interval_95[0])} to ${formatSigned(s.interval_95[1])}`],
           ["Interval method", s.interval_method],
+          ...(s.n_copies != null && s.copies_above_zero != null
+            ? [["Copies on the Parkinson's side", `${s.copies_above_zero} of ${s.n_copies}`] as [string, ReactNode]]
+            : []),
           ["Calibrated probability", s.calibrated ? "yes" : "no (raw score only)"],
         ]}
       />
