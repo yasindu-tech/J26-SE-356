@@ -212,6 +212,28 @@ def cv_result(set_name: str, results_dir: Path = RESULTS) -> dict:
     )
 
 
+def track_record(set_name: str, run: str, results_dir: Path = RESULTS) -> dict | None:
+    """How often the main model's lean was right in cross-validation, per direction.
+
+    Read from the run's out-of-fold predictions (``predictions_<set>.csv``: one row per person,
+    the probability averaged over repeats, from models that never saw that person). A person
+    "leans PD" when that probability is above 0.5, the same boundary as log-odds 0 in the app.
+    This is what lets a single result say how far its direction has held up in testing.
+    Returns None when the run has no predictions file.
+    """
+    path = results_dir / run / f"predictions_{set_name}.csv"
+    if not path.exists():
+        return None
+    df = pd.read_csv(path)
+    p, y = df[MAIN_MODEL[set_name]].to_numpy(dtype=float), df["y"].to_numpy(dtype=int)
+    pd_side = p > 0.5
+    return {
+        "source": f"{run}, out-of-fold predictions",
+        "leans_pd": {"n": int(pd_side.sum()), "correct": int(y[pd_side].sum())},
+        "leans_control": {"n": int((~pd_side).sum()), "correct": int((1 - y[~pd_side]).sum())},
+    }
+
+
 def model_card(data: ModelData, cv: dict, dropped: dict[str, list[str]]) -> dict:
     main = next(m for m in cv["models"] if m["model"] == MAIN_MODEL[data.name])
     return {
@@ -242,6 +264,7 @@ def model_card(data: ModelData, cv: dict, dropped: dict[str, list[str]]) -> dict
             "auc_vs_age_sex": main["auc_vs_age_sex"],
             "controls_passed": bool(cv.get("valid")),
         },
+        "track_record": track_record(data.name, cv["run"]) if "run" in cv else None,
         "score_meaning": (
             "Raw model score in log-odds of the PD class: 0 is the boundary the model learned, "
             "above 0 leans PD, below leans control. Not a calibrated probability."
