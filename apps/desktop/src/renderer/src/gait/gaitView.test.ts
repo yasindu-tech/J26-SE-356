@@ -3,6 +3,7 @@ import type { GaitResult } from "./gaitTypes";
 import {
   MIN_MARGIN,
   RELIABILITY_LINE,
+  asSentence,
   checkRows,
   classBars,
   driverRows,
@@ -42,7 +43,7 @@ describe("plainGaitReading", () => {
   it("names the level the model puts clearly ahead", () => {
     const r = plainGaitReading(MOCK_GAIT_SCORED_CLEAR);
     expect(r.kind).toBe("clear");
-    expect(r.headline).toBe("Walk pattern closest to: moderate-to-severe gait impairment");
+    expect(r.headline).toBe("Model\u2019s closest match: moderate-to-severe gait impairment");
   });
 
   it("says there is no clear pattern when the top two scores are close", () => {
@@ -58,7 +59,7 @@ describe("plainGaitReading", () => {
 
   it("never reads a lower level as a clearance", () => {
     const r = plainGaitReading(withProbs([0.9, 0.08, 0.02], 0));
-    expect(r.headline).toBe("Walk pattern closest to: no gait impairment");
+    expect(r.headline).toBe("Model\u2019s closest match: no gait impairment");
     expect(r.detail).toContain("never a clearance");
   });
 
@@ -124,6 +125,14 @@ describe("shapBars", () => {
     expect(bars.map((b) => b.label)).toEqual(["Hip swing range", "Knee bend range", "Step length"]);
     expect(bars.map((b) => b.widthPercent)).toEqual([100, 78, 21]);
     expect(bars.map((b) => b.towards)).toEqual([true, true, false]);
+  });
+
+  it("shows each input's value with units and a signed number that matches its direction", () => {
+    const bars = shapBars(MOCK_GAIT_SCORED_CLEAR);
+    expect(bars[0].valueText).toBe("20\u00b0");
+    expect(bars[2].valueText).toBe("0.13 leg lengths");
+    expect(bars.map((b) => b.shapText[0])).toEqual(["+", "+", "\u2212"]);
+    expect(bars[0].shapText).toMatch(/^[+\u2212]\d\.\d\d$/);
   });
 
   it("keeps a very small contribution visible and handles all-zero contributions", () => {
@@ -196,10 +205,10 @@ describe("visibleWarnings", () => {
 });
 
 describe("keepInMind", () => {
-  it("says the model grades walking and not Parkinson's, and that the bars are not chances", () => {
+  it("says the model grades walking and not Parkinson's, and that the bars are not probabilities", () => {
     const text = keepInMind(MOCK_GAIT_SCORED_CLEAR).join(" ");
     expect(text).toContain("does not say whether they have Parkinson");
-    expect(text).toContain("not chances");
+    expect(text).toContain("not probabilities");
   });
 
   it("uses the confirmed wording when the one-person box was ticked, and the assumed wording otherwise", () => {
@@ -301,5 +310,18 @@ describe("wording", () => {
 
   it("covers every mock record", () => {
     expect(MOCK_GAIT_RESULTS.map((m) => m.key)).toEqual(["clear", "mixed", "none"]);
+  });
+});
+
+describe("asSentence", () => {
+  it("capitalises and ends a service message with a full stop", () => {
+    expect(asSentence("the gait analysis timed out")).toBe("The gait analysis timed out.");
+    expect(asSentence("  the analysis stopped  ")).toBe("The analysis stopped.");
+  });
+
+  it("leaves a finished sentence alone", () => {
+    expect(asSentence("No walk was found.")).toBe("No walk was found.");
+    expect(asSentence("Is it a walk?")).toBe("Is it a walk?");
+    expect(asSentence("")).toBe("");
   });
 });

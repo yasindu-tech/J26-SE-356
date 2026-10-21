@@ -24,6 +24,8 @@ from feature_contract import FeatureContractError, check_feature_contract
 from gait_extract import FEATURE_NAMES, MAX_FPS, MIN_FPS, extract_features
 from make_folds import CLASS_LABELS
 from model_bundle import BundleError, load_bundle
+from pose_trace_io import save_trace
+from prescreen import prescreen
 from quality_gate import ONE_PERSON_ASSUMED, GateResult, check_walk, reject
 from video_to_joints import DEFAULT_MODEL, MAX_SECONDS, VideoError, VideoWalk, video_to_joints
 
@@ -68,13 +70,16 @@ class GaitPredictor:
         *,
         people_in_view: int | None = None,
         one_person_confirmed: bool = False,
+        trace_out: Path | None = None,
     ) -> dict[str, Any]:
         """The result record of one video (JSON-safe).
 
         ``people_in_view`` is a detector's count; ``one_person_confirmed`` says the person who
         uploaded the video confirmed it shows one person walking (it changes the warning only).
+        ``trace_out`` is where to save the pose trace (an .npz) for a later step to draw; nothing
+        is written for a video refused by the quick pre-check.
         """
-        record = self._predict(Path(path), people_in_view)
+        record = self._predict(Path(path), people_in_view, trace_out)
         if one_person_confirmed:
             record["warnings"] = [
                 ONE_PERSON_CONFIRMED if w == ONE_PERSON_ASSUMED else w for w in record["warnings"]
@@ -86,10 +91,19 @@ class GaitPredictor:
             "one_person_confirmed": one_person_confirmed,
         }
 
-    def _predict(self, path: Path, people_in_view: int | None) -> dict[str, Any]:
+    def _predict(
+        self, path: Path, people_in_view: int | None, trace_out: Path | None = None
+    ) -> dict[str, Any]:
         tag = short_id(Path(path).name)  # never the file name
+        if reason := prescreen(Path(path), self.pose_model, self.max_seconds):
+            return self._not_scored(tag, reject(VideoError(reason)), None, [])
         try:
-            walk = video_to_joints(Path(path), self.pose_model, max_seconds=self.max_seconds)
+            walk = video_to_joints(
+                Path(path),
+                self.pose_model,
+                max_seconds=self.max_seconds,
+                on_trace=(lambda t: save_trace(t, trace_out)) if trace_out else None,
+            )
         except VideoError as err:
             return self._not_scored(tag, reject(err), None, [])
         gate = check_walk(walk, people_in_view=people_in_view)
@@ -202,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--people", type=int, help="people in view, if a detector counted them")
     parser.add_argument("--json", action="store_true", help="print the whole record as JSON")
     parser.add_argument("--out", type=Path, help="also write the record to this JSON file")
+    parser.add_argument("--trace", type=Path, help="also save the pose trace to this .npz file")
     parser.add_argument(
         "--one-person-confirmed",
         action="store_true",
@@ -214,7 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Cannot start: {err}")
         return 2
     record = predictor.predict(
-        args.video, people_in_view=args.people, one_person_confirmed=args.one_person_confirmed
+        args.video,
+        people_in_view=args.people,
+        one_person_confirmed=args.one_person_confirmed,
+        trace_out=args.trace,
     )
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
