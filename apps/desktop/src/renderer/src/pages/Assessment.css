@@ -338,7 +338,73 @@
   font-weight: 400;
 }
 
-.asm__hand {
+.asm__result-actions {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+/* Reason for the assessment: radio buttons drawn as pills. The native radio stays in the
+   page (keyboard and screen readers use it) but is visually hidden; the label shows the state. */
+.asm__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.asm__reasons legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.asm__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.asm__pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--color-neutral-300);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-neutral-900);
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.asm__pill:hover {
+  border-color: var(--color-primary);
+}
+
+.asm__pill input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.asm__pill:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+.asm__pill:has(input:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.asm__handedness {
   display: flex;
   flex-flow: row wrap;
   gap: 6px 0;
@@ -347,7 +413,7 @@
   border: 0;
 }
 
-.asm__hand label {
+.asm__handedness label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -355,11 +421,11 @@
   font-size: 14px;
 }
 
-.asm__hand input {
+.asm__handedness input {
   accent-color: var(--color-primary);
 }
 
-.asm__hand legend {
+.asm__handedness legend {
   width: 100%;
   padding: 0;
   margin-bottom: 6px;
