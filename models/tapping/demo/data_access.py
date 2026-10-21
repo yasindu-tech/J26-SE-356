@@ -19,6 +19,7 @@ import cv_splits as cvs  # noqa: E402
 import pandas as pd  # noqa: E402
 import shap_directions as sd  # noqa: E402
 import shap_figures as sf  # noqa: E402
+import tap_table as tt  # noqa: E402
 import treeshap_heldout as tsh  # noqa: E402
 from cv_splits import GuardFailure, InputProblem  # noqa: E402
 
@@ -129,6 +130,30 @@ def heldout_probas(target: str, ref: str, root: Path | None = None) -> list[floa
     if len(rows) != tsh.REPEATS:
         raise DemoDataError(f"unknown clip ref: {ref}")
     return [float(p) for p in rows["proba"]]
+
+
+def taps_path(ref: str, root: Path | None = None) -> Path:
+    """data/interim/taps/<hashed ref>.parquet, by exact name: the folder is never listed."""
+    if not REF_RE.match(ref):
+        raise DemoDataError("unknown clip ref")
+    return (
+        (processed_root() if root is None else root).parent / "interim" / "taps" / f"{ref}.parquet"
+    )
+
+
+def heldout_tap_table(ref: str, root: Path | None = None) -> Any:
+    """The official per-tap table of a research clip, found through its hashed ref."""
+    path = taps_path(ref, root)
+    if not path.is_file():
+        raise DemoDataError("The per-tap curve is not available for this clip.")
+    try:
+        taps, _ = tt.read_taps_file(path)
+        table = tt.build_tap_table(taps)
+    except tt.TableError as err:
+        raise DemoDataError("The per-tap curve is not available for this clip.") from err
+    if set(table["ref"]) - {ref}:
+        raise GuardFailure("a taps file holds another clip than its name says")
+    return table
 
 
 def global_importance(target: str, root: Path | None = None) -> list[dict[str, Any]]:

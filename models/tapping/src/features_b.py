@@ -127,6 +127,17 @@ def _short(minimum: int, unit: str = "n_valid") -> str:
     return f"{unit}<{minimum}"
 
 
+def valid_taps(table: pd.DataFrame) -> pd.DataFrame:
+    """The taps whose amplitude Set B uses (one-sided taps left out): the rows of the slopes."""
+    return table[table["valid_amp"].to_numpy(dtype=bool)]
+
+
+def theil_sen_line(t: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+    """The Theil-Sen slope and intercept of y on t (scipy.stats.theilslopes)."""
+    slope, intercept = theilslopes(y, t)[:2]
+    return float(slope), float(intercept)
+
+
 def slope_per_10s(t: np.ndarray, y: np.ndarray, minimum: int = MIN_TAPS) -> Result:
     """Theil-Sen slope of y on t divided by mean(y), as a fraction of the mean per 10 s."""
     if len(y) < minimum:
@@ -134,7 +145,7 @@ def slope_per_10s(t: np.ndarray, y: np.ndarray, minimum: int = MIN_TAPS) -> Resu
     mean = float(np.mean(y))
     if not mean > 0:
         return NAN, "mean<=0"
-    return float(theilslopes(y, t)[0]) / mean * PER_SECONDS, None
+    return theil_sen_line(t, y)[0] / mean * PER_SECONDS, None
 
 
 def late_early(y: np.ndarray) -> Result:
@@ -202,7 +213,7 @@ def _clip_set(table: pd.DataFrame, sens: bool) -> tuple[dict[str, Any], list[str
             table["valid_iti"].to_numpy(dtype=bool) & ~table["short_iti"].to_numpy(dtype=bool)
         ]
     else:
-        taps = table[table["valid_amp"].to_numpy(dtype=bool)]
+        taps = valid_taps(table)
         iv = table[table["valid_iti"].to_numpy(dtype=bool)]
     t = taps["t_peak_s"].to_numpy(dtype=float)
     amp = taps["amplitude"].to_numpy(dtype=float)
