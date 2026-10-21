@@ -404,7 +404,7 @@
   outline-offset: 2px;
 }
 
-.asm__hand {
+.asm__handedness {
   display: flex;
   flex-flow: row wrap;
   gap: 6px 0;
@@ -413,7 +413,7 @@
   border: 0;
 }
 
-.asm__hand label {
+.asm__handedness label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -421,11 +421,11 @@
   font-size: 14px;
 }
 
-.asm__hand input {
+.asm__handedness input {
   accent-color: var(--color-primary);
 }
 
-.asm__hand legend {
+.asm__handedness legend {
   width: 100%;
   padding: 0;
   margin-bottom: 6px;

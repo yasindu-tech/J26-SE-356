@@ -99,7 +99,7 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-type Hand = "" | "right" | "left" | "unknown";
+type Handedness = "" | "right" | "left" | "unknown";
 
 /** Why the person is being assessed. Kept on this screen only; not sent, no model uses it. */
 const REASONS = [
@@ -124,7 +124,7 @@ interface Form {
   consent: boolean;
   /** Free text, kept on this screen only; no model uses it. */
   medication: string;
-  hand: Hand;
+  handedness: Handedness;
   file: File | null;
   /** The walking video, and its length when the picker could read it. */
   video: File | null;
@@ -141,7 +141,7 @@ const EMPTY_FORM: Form = {
   reasonOther: "",
   consent: false,
   medication: "",
-  hand: "",
+  handedness: "",
   file: null,
   video: null,
   videoSeconds: null,
@@ -913,7 +913,7 @@ function PatientStep({
         />
       </label>
 
-      <fieldset className="asm__hand">
+      <fieldset className="asm__handedness">
         <legend className="mri__label">Handedness</legend>
         {(
           [
@@ -926,8 +926,8 @@ function PatientStep({
             <input
               type="radio"
               name="handedness"
-              checked={form.hand === value}
-              onChange={() => onChange({ ...form, hand: value })}
+              checked={form.handedness === value}
+              onChange={() => onChange({ ...form, handedness: value })}
             />
             {text}
           </label>
