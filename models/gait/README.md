@@ -109,6 +109,7 @@ python models/gait/src/quality_gate.py VIDEO       # accept or reject one video,
 python models/gait/src/predict_video.py VIDEO       # score one video (--json for the record)
 python models/gait/src/run_koa_pd_nm.py      # every KOA-PD-NM video through predict_video
 python models/gait/src/report_koa_pd_nm.py   # real-video results from that run
+python models/gait/src/make_overlay_video.py VIDEO   # skeleton and heel-strike overlay video
 ```
 The pose model `pose_landmarker_heavy.task` goes in `models/gait/artifacts/`
 (git-ignored). Outputs go to `models/gait/artifacts/` and are never committed.
