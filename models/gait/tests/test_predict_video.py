@@ -120,7 +120,7 @@ def test_a_video_without_a_walk_is_not_scored_and_nothing_is_raised(
     f = Fake(monkeypatch, tmp_path, trace)
     r = GaitPredictor(bundle_dir, f.model).predict(f.video)
     assert_not_scored(r)
-    assert "no walk found" in r["reasons"][0] and r["walk"] is None
+    assert "No walk was found" in r["reasons"][0] and r["walk"] is None
 
 
 def test_a_missing_video_is_not_scored(predictor: GaitPredictor, tmp_path: Path) -> None:
@@ -323,4 +323,4 @@ def test_the_pose_trace_is_saved_even_when_no_walk_is_found(
     trace = make_trace()
     f = Fake(monkeypatch, tmp_path, replace(trace, detected=np.zeros_like(trace.detected)))
     r = GaitPredictor(bundle_dir, f.model).predict(f.video, trace_out=tmp_path / "t.npz")
-    assert "no walk found" in r["reasons"][0] and (tmp_path / "t.npz").is_file()
+    assert "No walk was found" in r["reasons"][0] and (tmp_path / "t.npz").is_file()
