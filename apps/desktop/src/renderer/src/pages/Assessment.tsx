@@ -101,12 +101,25 @@ function errorText(error: unknown, fallback: string): string {
 
 type Hand = "" | "right" | "left" | "unknown";
 
+/** Why the person is being assessed. Kept on this screen only; not sent, no model uses it. */
+const REASONS = [
+  ["tremor", "Tremor"],
+  ["slowness", "Slowness or stiffness"],
+  ["walking", "Walking or balance changes"],
+  ["early", "Smell loss or sleep changes"],
+  ["family", "Family history"],
+  ["routine", "Routine screening"],
+  ["other", "Other"],
+] as const;
+type Reason = "" | (typeof REASONS)[number][0];
+
 interface Form {
   label: string;
   yearOfBirth: string;
   sex: "" | "M" | "F";
-  /** Free text, kept on this screen only. Not sent anywhere in this build. */
-  reason: string;
+  reason: Reason;
+  /** Free text when the reason is "Other". Kept on this screen only. */
+  reasonOther: string;
   /** "Screening consent explained and recorded" ticked. Not stored in this build. */
   consent: boolean;
   /** Free text, kept on this screen only; no model uses it. */
@@ -125,6 +138,7 @@ const EMPTY_FORM: Form = {
   yearOfBirth: "",
   sex: "",
   reason: "",
+  reasonOther: "",
   consent: false,
   medication: "",
   hand: "",
@@ -473,15 +487,7 @@ export function Assessment({
             gait={gaitStripState(parts?.gait ?? null)}
           />
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
-          <MriResultView
-            result={screen.result}
-            label={label}
-            onNewAnalysis={() => {
-              setLabel(null);
-              setForm(EMPTY_FORM);
-              go({ view: "patient" });
-            }}
-          />
+          <MriResultView result={screen.result} />
           <section className="asm__others" aria-label="Parts that were not provided">
             {PARTS.filter((p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait)).map((p) => (
               <div key={p.key} className="asm__other">
@@ -496,7 +502,7 @@ export function Assessment({
               </div>
             ))}
           </section>
-          <div>
+          <div className="asm__result-actions">
             {parts?.mri && parts.gait ? (
               <button type="button" className="btn btn--outline" onClick={() => go({ view: "parts" })}>
                 ← Back to parts
@@ -506,6 +512,17 @@ export function Assessment({
                 ← Home
               </button>
             )}
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={() => {
+                setLabel(null);
+                setForm(EMPTY_FORM);
+                go({ view: "patient" });
+              }}
+            >
+              New assessment
+            </button>
           </div>
         </div>
       )}
@@ -845,16 +862,34 @@ function PatientStep({
         <dd>{clinician}</dd>
       </dl>
 
-      <label className="mri__field">
-        <span className="mri__label">Reason for the assessment</span>
-        <input
-          className="mri__input"
-          value={form.reason}
-          maxLength={200}
-          placeholder="e.g. slowness and right-hand tremor, 8 months"
-          onChange={(e) => onChange({ ...form, reason: e.target.value })}
-        />
-      </label>
+      <fieldset className="asm__reasons">
+        <legend className="mri__label">Reason for the assessment</legend>
+        <div className="asm__pills">
+          {REASONS.map(([value, text]) => (
+            <label key={value} className="asm__pill">
+              <input
+                type="radio"
+                name="reason"
+                value={value}
+                checked={form.reason === value}
+                onChange={() => onChange({ ...form, reason: value })}
+              />
+              <span>{text}</span>
+            </label>
+          ))}
+        </div>
+        {form.reason === "other" && (
+          <input
+            className="mri__input"
+            aria-label="Other reason"
+            value={form.reasonOther}
+            maxLength={200}
+            placeholder="Describe the reason"
+            autoFocus
+            onChange={(e) => onChange({ ...form, reasonOther: e.target.value })}
+          />
+        )}
+      </fieldset>
 
       <label className="asm__check">
         <input
