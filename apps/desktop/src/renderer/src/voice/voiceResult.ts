@@ -32,6 +32,8 @@ interface VoiceResultBase {
 export interface ExplainedReason {
   feature: string;
   meaning: string;
+  /** Measure group from the voice module, e.g. "jitter", "mfcc"; "" in older files. */
+  group: string;
   sentence: string;
   effect: "raised" | "lowered";
   /** Where the value sits among healthy training voices (0-100). */
@@ -168,6 +170,7 @@ function explainedReason(item: unknown): ExplainedReason {
   return {
     feature: text(item, "feature"),
     meaning: safeText(item, "meaning"),
+    group: typeof item["group"] === "string" ? item["group"] : "",
     sentence: safeText(item, "sentence"),
     effect,
     percentileAmongHealthy: percentile,

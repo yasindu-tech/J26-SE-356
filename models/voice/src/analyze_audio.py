@@ -12,8 +12,10 @@
 4. ``audio_explain.explain``: plain-language reasons, comparison with healthy and
    PD training voices, uncertainty reasons, quality report, model overview.
 
-A file that fails the quality gate, or is not audio at all, gets an abstained
-result with the reasons: no score and no triage, never a guess.
+A file that fails the quality gate, is not audio at all, or gives a voice far
+outside every training voice (``audio_explain.far_outside_training``: a forced,
+sung or synthetic sound) gets an abstained result with the reasons: no score
+and no triage, never a guess.
 
 The output keeps the PP1 result-vector fields (decision D5), so the desktop
 app's "Open result file" can show it. The file name is never written out (it
@@ -85,6 +87,12 @@ def analyze_audio(path: str | Path, bundle: AudioBundle) -> dict[str, Any]:
         )
 
     features, problems = _model_features(extraction, bundle)
+    if features is not None:
+        # A voice unlike every training voice gets no score, never an extrapolated guess.
+        far = audio_explain.far_outside_training(features, bundle.reference, bundle.incomparable)
+        problems = audio_explain.unlike_training_problem(far)
+        if problems:
+            features = None
     if features is None:
         quality = audio_features.QualityReport(False, problems, extraction.quality.info)
         result = voice_module._abstained(bundle.voice, problems)

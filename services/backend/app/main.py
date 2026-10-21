@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes.auth import router as auth_router
 from app.api.routes.gait import router as gait_router
 from app.api.routes.mri import router as mri_router
+from app.api.routes.voice import router as voice_router
 from app.core.config import INSECURE_DEV_JWT_SECRET, get_settings
 from app.core.errors import AppError
 
@@ -32,6 +33,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(mri_router, prefix=settings.api_prefix)
 app.include_router(gait_router, prefix=settings.api_prefix)
+app.include_router(voice_router, prefix=settings.api_prefix)
 
 
 def _error_envelope(code: str, message: str, details: object = None) -> dict:

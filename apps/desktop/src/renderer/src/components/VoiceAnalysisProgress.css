@@ -1,0 +1,142 @@
+/* Progress card while a voice recording is analysed. Shared tokens only. */
+
+.vap {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.vap__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.vap__file {
+  margin: var(--spacing-xs) 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.vap__percent {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.vap__track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-neutral-200);
+  overflow: hidden;
+}
+
+.vap__bar {
+  position: relative;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.3s ease-out;
+  overflow: hidden;
+}
+
+/* A soft moving sheen, so the bar never looks frozen. */
+.vap__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-primary-muted) 50%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  transform: translateX(-100%);
+  animation: vap-sheen 1.4s ease-in-out infinite;
+}
+
+@keyframes vap-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vap__bar {
+    transition: none;
+  }
+  .vap__bar::after {
+    animation: none;
+  }
+}
+
+.vap__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+}
+
+.vap__step {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.vap__mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--color-neutral-200);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.vap__step--done {
+  color: var(--color-neutral-600);
+}
+
+.vap__step--done .vap__mark {
+  border-color: var(--color-calm);
+  background: var(--color-calm);
+  color: var(--color-surface);
+}
+
+.vap__step--now {
+  font-weight: 600;
+  color: var(--color-neutral-900);
+}
+
+.vap__step--now .vap__mark {
+  border-color: var(--color-primary);
+  border-top-color: transparent;
+  animation: vap-spin 0.8s linear infinite;
+}
+
+@keyframes vap-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vap__step--now .vap__mark {
+    animation: none;
+    border-top-color: var(--color-primary);
+  }
+}
+
+.vap__step--next {
+  color: var(--color-neutral-600);
+}
