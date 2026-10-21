@@ -152,7 +152,7 @@ export function GaitPicker({
           <ul className="gr__guide-list">
             <li>One person in view, head to feet.</li>
             <li>Film from the side, with the phone held still, sideways (landscape).</li>
-            <li>Walk across the frame for at least 5 seconds.</li>
+            <li>Walk across the frame for at least 5 seconds, ideally 10 or more.</li>
             <li>Use the normal video setting (30 or 60 frames per second), not slow motion.</li>
             <li>Good light, with the legs clear of furniture.</li>
           </ul>

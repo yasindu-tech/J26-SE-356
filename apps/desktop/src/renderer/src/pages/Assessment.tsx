@@ -12,7 +12,7 @@ import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import { uploadGaitVideo } from "../api/gait.api";
 import { getGaitRun } from "../gait/gaitRun";
 import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
-import { gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
+import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import {
   EDDY_PROFILE_LABELS,
@@ -47,7 +47,7 @@ type Screen =
   | { view: "gait-result"; outcome: GaitOutcome };
 
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
-type GaitOutcome = { kind: "record"; result: GaitResult } | { kind: "failed"; message: string };
+type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
 
 /** The parts of one assessment that were started, and how each ended once it has. */
 interface PartsState {
@@ -58,7 +58,7 @@ interface PartsState {
 function outcomeOf(status: GaitRunStatus): GaitOutcome {
   return status.state === "failed" || !status.result
     ? { kind: "failed", message: status.error ?? "Something went wrong while reading the video." }
-    : { kind: "record", result: status.result };
+    : { kind: "record", id: status.id, result: status.result };
 }
 
 // One screen per step, so nothing needs scrolling to find the next thing to do.
@@ -671,6 +671,7 @@ function GaitResultPage({
       {outcome.kind === "record" ? (
         <GaitResultView
           result={outcome.result}
+          analysisId={outcome.id}
           videoSeconds={videoSeconds}
           onNewVideo={onAnotherVideo}
         />
@@ -678,7 +679,7 @@ function GaitResultPage({
         <section className="card" aria-label="The analysis did not finish">
           <h2 className="card__title">The analysis did not finish</h2>
           <p className="mri__error" role="alert">
-            {outcome.message} No result was produced. The video was deleted from the server. Try the
+            {asSentence(outcome.message)} No result was produced. The video was deleted from the server. Try the
             same video again, or choose another one.
           </p>
           <div className="asm__buttons">
@@ -997,7 +998,10 @@ function ModalitiesStep({
               {form.video ? (form.onePerson ? "Ready to send" : "Video chosen") : "Available"}
             </span>
           </div>
-          <p className="note">{PARTS[0]?.provides}. Takes about a minute.</p>
+          <p className="note">
+            {PARTS[0]?.provides}. It grades how the person walks (no, mild or moderate-to-severe
+            impairment). It does not say whether they have Parkinson&rsquo;s disease. Takes about a minute.
+          </p>
           <GaitPicker
             video={form.video}
             videoSeconds={form.videoSeconds}
@@ -1063,11 +1067,11 @@ function ReviewStep({
         <p className="eyebrow">Step 3 of 3</p>
         <h2 className="card__title">
           Review
-          <InfoTip label="Where the scan goes">
+          <InfoTip label={form.video ? "Where the video goes" : "Where the scan goes"}>
             {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
             <span className="mono">{API_BASE_URL}</span>
             {form.video
-              ? " only when you press Start analysis. It is deleted there when the analysis ends, and only the result is kept."
+              ? " only when you press Start analysis. The file is deleted there when the analysis ends; the result is kept, and a copy with the skeleton drawn on it when the walk can be read."
               : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
           </InfoTip>
         </h2>
