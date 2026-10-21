@@ -15,6 +15,7 @@ GAIT_VIDEO_TYPES: tuple[str, ...] = (".mp4", ".mov", ".m4v", ".avi")
 class GaitAnalysisCreated(BaseModel):
     id: uuid.UUID
     status: AnalysisStatus
+    subject_label: str | None = None
 
 
 class GaitAnalysisStatus(BaseModel):
@@ -24,6 +25,7 @@ class GaitAnalysisStatus(BaseModel):
     finished_at: datetime | None = None
     elapsed_s: float  # since the upload; the analysis usually takes about a minute
     one_person_confirmed: bool
+    subject_label: str | None = None
     error: str | None = None
     abstain_reason: str | None = None  # why the video could not be scored, in plain words
 

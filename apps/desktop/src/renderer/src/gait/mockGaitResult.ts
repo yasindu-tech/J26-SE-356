@@ -1,8 +1,8 @@
 import type { GaitResult } from "./gaitTypes";
 
 // Three real `gait-result/1` records from the KOA-PD-NM run (python models/gait/src/run_koa_pd_nm.py),
-// with the clip name dropped. They stand in for the backend until the screen is connected
-// (GAIT-31): a clear score, a mixed score with a stride warning, and a video that was not scored.
+// with the clip name dropped. Test fixtures: a clear score, a mixed score with a stride warning,
+// and a video that was not scored.
 // Only the CLEAR one has the one-person box ticked.
 
 export const MOCK_GAIT_SCORED_CLEAR: GaitResult = {

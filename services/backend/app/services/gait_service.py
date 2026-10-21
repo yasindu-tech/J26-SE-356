@@ -78,6 +78,7 @@ def create_analysis(
     one_person_confirmed: bool,
     runner: GaitRunner,
     settings: Settings,
+    subject_label: str | None = None,
 ) -> GaitAnalysis:
     if not one_person_confirmed:
         raise OnePersonNotConfirmedError
@@ -87,6 +88,7 @@ def create_analysis(
         clinician_id=clinician.id,
         status="queued",
         one_person_confirmed=one_person_confirmed,
+        subject_label=subject_label,
         created_at=utc_now(),
     )
     folder = _folder(settings, row.id)
@@ -163,6 +165,7 @@ def _status(row: GaitAnalysis) -> GaitAnalysisStatus:
         finished_at=row.finished_at,
         elapsed_s=max(0.0, (end - row.created_at).total_seconds()),
         one_person_confirmed=row.one_person_confirmed,
+        subject_label=row.subject_label,
         error=row.error,
         abstain_reason=" ".join(reasons) if row.status == "abstained" and reasons else None,
     )
