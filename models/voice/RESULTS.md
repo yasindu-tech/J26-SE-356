@@ -413,3 +413,82 @@ mean 0.478 (max 0.612): both pass.
 - The dataset gate (within-dataset AUC) cannot run with one dataset.
 - The age-matched check still contains an age difference inside the range; it
   is a sanity check, not an age adjustment.
+
+## Upload checks and bias of the raw-audio model — exploratory
+
+Reproduce (about 1 minute):
+
+```bash
+python models/voice/src/audio_bias.py
+```
+
+### Checks on uploaded files
+
+Before a score is given, an upload is refused, with a plain reason, if it is:
+
+| Check | Threshold | Where |
+|---|---|---|
+| longer than one "aaah" (speech, wrong file) | > 30 s, checked before pitch tracking | `audio_features.early_problems` |
+| almost silent | peak < 1% of full scale | `audio_features.early_problems` |
+| steady vowel too short | < 1 s | quality gate |
+| clipped | > 1% of samples | quality gate |
+| background noise too loud | < 10 dB SNR (only when there is silence to measure) | quality gate |
+| unsteady pitch | < 50% of the vowel voiced | quality gate |
+| unlike every training voice | 3+ measures beyond the 1st–99th percentile span by half that span again | `audio_explain.far_outside_training` |
+
+The last rule was chosen so it does not refuse real voices: on held-out
+Figshare people (5-fold, training range from the other folds) it would refuse
+1 of 40 healthy and 0 of 37 PD. Of the 16 hold-out test files, none is refused.
+
+What the checks catch and miss, tried on altered copies of hold-out recordings:
+
+- caught: a pure tone, a 40 s file, a near-silent file;
+- **not caught: a male voice shifted up an octave.** It lands in the range of
+  female voices; without knowing the person's sex this cannot be told apart. The
+  card still shows its "outside the range seen in training" caution (4 measures);
+- a faked loudness tremor (6 Hz) left the score unchanged (0.49 → 0.49,
+  0.18 → 0.18): wobbling the volume does not push the score toward PD.
+
+Deliberate voice changes in general cannot be detected reliably; the capture
+protocol (a clinician present, a natural "aaah") is the main protection. When the
+recording has no silence around the "aaah", background noise cannot be measured;
+the result then says so.
+
+### Bias by sex and age (77 people, out-of-fold L1 logistic)
+
+Age and sex are not model inputs.
+
+| Group | n PD / healthy | AUC [95% CI] |
+|---|---|---|
+| sex F | 18 / 25 | 0.65 |
+| sex M | 19 / 15 | 0.84 |
+| gap M − F | | +0.18 [−0.07, +0.41] |
+
+| Score vs age, within class | Spearman r [95% CI] |
+|---|---|
+| healthy | −0.02 [−0.34, +0.31] |
+| PD | +0.01 [−0.32, +0.35] |
+
+| Healthy people referred (score ≥ 0.5), by age | Referred / n |
+|---|---|
+| ≤ 50 | 6 / 24 |
+| 51–65 | 5 / 11 |
+| > 65 | 1 / 5 |
+
+### What it says
+
+- **Within each class the score does not follow age** (r ≈ 0): older healthy
+  people do not get higher scores than younger healthy people. The model is not
+  simply reading age, although age still separates the classes in this dataset
+  (see the ladder above).
+- **The model looks weaker for women** (0.65 vs 0.84), with more false referrals
+  of healthy women. The gap's CI includes zero, so it is not established, but it is
+  shown on every result card ("Fairness by sex").
+- **Other conditions that change the voice were not checked**: no dataset we hold
+  labels colds, asthma, breathing, vocal-cord, throat or neck problems. The result
+  card says on every score that these can raise it.
+
+### Caveats
+
+- 77 people; the age bands above 50 have 11 and 5 healthy people. Exploratory only.
+- Sex codes are as recorded in Figshare's demographics file.

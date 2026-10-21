@@ -1,6 +1,5 @@
 import {
   TRIAGE_THRESHOLD,
-  triageLabel,
   type AbstainedVoiceResult,
   type ExplainedReason,
   type Explanations,
@@ -8,6 +7,7 @@ import {
   type ShapDriver,
   type VoiceResult,
 } from "../voice/voiceResult";
+import { plainDrivers, plainReading, qualitySummary, reliabilityLine } from "../voice/voicePlain";
 import "./VoiceResultCard.css";
 
 // One person's voice screening result (Desktop-App-Spec.md, "Result"). The
@@ -52,20 +52,70 @@ function trainingSource(pipelineVersion: string): string {
 }
 
 export function VoiceResultCard({ result }: { result: VoiceResult }) {
+  const reading = plainReading(result);
+  const drivers = plainDrivers(result);
   return (
     <article className="voice-card" aria-label={`Voice screening result for ${result.person}`}>
       <header className="voice-card__header">
         <div>
-          <p className="voice-card__eyebrow">Voice screening · triage only</p>
-          <h2 className="voice-card__title">Person {result.person}</h2>
+          <p className="voice-card__eyebrow">Voice · one part of the assessment</p>
+          <p className="voice-card__recording">Recording {result.person}</p>
         </div>
-        <PriorityBadge result={result} />
       </header>
+
+      <section className={`voice-card__reading voice-card__reading--${reading.tone}`}>
+        <h2 className="voice-card__headline">{reading.headline}</h2>
+        <p className="voice-card__reading-detail">{reading.detail}</p>
+        {reading.borderline && (
+          <p className="voice-card__borderline" role="note">
+            Close to the referral line: the range crosses it, so this result could go either way.
+          </p>
+        )}
+      </section>
 
       {result.kind === "scored" ? (
         <ScorePanel result={result} />
       ) : (
         <AbstainedPanel result={result} />
+      )}
+
+      <div className="voice-card__rely">
+        <p className="voice-card__eyebrow">How far to lean on it</p>
+        <p className="voice-card__rely-text">{reliabilityLine(result)}</p>
+      </div>
+
+      {drivers.length > 0 && (
+        <section className="voice-card__section">
+          <h3 className="voice-card__section-title">What mattered most</h3>
+          <ul className="voice-card__plain-drivers">
+            {drivers.map((driver) => (
+              <li key={driver.key}>
+                <span
+                  className={`voice-card__dot voice-card__dot--${driver.raised ? "up" : "down"}`}
+                  aria-hidden="true"
+                />
+                {driver.text}
+              </li>
+            ))}
+          </ul>
+          <p className="voice-card__caption">
+            What the model used, not what causes Parkinson&rsquo;s.
+          </p>
+        </section>
+      )}
+
+      {result.explanations && (
+        <section className="voice-card__section">
+          <h3 className="voice-card__section-title">Recording check</h3>
+          <p
+            className={`voice-card__quality-line ${result.explanations.quality.passed ? "voice-card__quality--ok" : "voice-card__quality--no"}`}
+          >
+            {qualitySummary(
+              result.explanations.quality.passed,
+              result.explanations.quality.measured,
+            )}
+          </p>
+        </section>
       )}
 
       <section className="voice-card__section">
@@ -88,40 +138,42 @@ export function VoiceResultCard({ result }: { result: VoiceResult }) {
             </li>
           ))}
         </ul>
+      </section>
+
+      <details className="voice-card__details">
+        <summary>Show technical details</summary>
         <p className="voice-card__caption">
-          {result.kind === "scored"
-            ? "This estimate uses voice only. Gait, finger tapping and MRI were not captured and are not part of it."
-            : "No input was usable, so there is no estimate. Missing voice is never counted as a normal result."}
+          The numbers behind the reading, for a colleague who wants the detail.
         </p>
-      </section>
 
-      {result.kind === "scored" && (
-        <DriversSection drivers={result.shapTop5} reasons={result.explanations?.topReasons} />
-      )}
+        {result.kind === "scored" && (
+          <DriversSection drivers={result.shapTop5} reasons={result.explanations?.topReasons} />
+        )}
 
-      {result.explanations && result.explanations.uncertainty.length > 0 && (
-        <UncertaintySection reasons={result.explanations.uncertainty} />
-      )}
+        {result.explanations && result.explanations.uncertainty.length > 0 && (
+          <UncertaintySection reasons={result.explanations.uncertainty} />
+        )}
 
-      {result.explanations && <QualitySection explanations={result.explanations} />}
+        {result.explanations && <QualitySection explanations={result.explanations} />}
 
-      {result.kind === "scored" && result.explanations && (
-        <OverviewSection explanations={result.explanations} />
-      )}
+        {result.kind === "scored" && result.explanations && (
+          <OverviewSection explanations={result.explanations} />
+        )}
 
-      <section className="voice-card__section">
-        <h3 className="voice-card__section-title">Limits of this result</h3>
-        <ul className="voice-card__caveats">
-          <li>{result.note}</li>
-          <li>
-            Trained on {result.nTraining} people {trainingSource(result.pipelineVersion)}: people
-            already known to have Parkinson&rsquo;s versus healthy controls, not an early-stage
-            screening population.
-          </li>
-          <li>Fairness by sex: {result.sexFairnessNote}</li>
-        </ul>
-        <p className="voice-card__version">Model {result.pipelineVersion}</p>
-      </section>
+        <section className="voice-card__section">
+          <h3 className="voice-card__section-title">Limits of this result</h3>
+          <ul className="voice-card__caveats">
+            <li>{result.note}</li>
+            <li>
+              Trained on {result.nTraining} people {trainingSource(result.pipelineVersion)}: people
+              already known to have Parkinson&rsquo;s versus healthy controls, not an early-stage
+              screening population.
+            </li>
+            <li>Fairness by sex: {result.sexFairnessNote}</li>
+          </ul>
+          <p className="voice-card__version">Model {result.pipelineVersion}</p>
+        </section>
+      </details>
 
       {result.referenceLabel !== "-" && (
         <footer className="voice-card__demo">
@@ -133,25 +185,13 @@ export function VoiceResultCard({ result }: { result: VoiceResult }) {
   );
 }
 
-function PriorityBadge({ result }: { result: VoiceResult }) {
-  if (result.kind === "abstained") {
-    return <span className="voice-card__badge voice-card__badge--none">Not scored</span>;
-  }
-  const modifier = result.triagePriority === "prioritised_referral" ? "attention" : "calm";
-  return (
-    <span className={`voice-card__badge voice-card__badge--${modifier}`}>
-      {triageLabel(result.triagePriority)}
-    </span>
-  );
-}
-
 function ScorePanel({ result }: { result: ScoredVoiceResult }) {
   return (
     <section className="voice-card__score">
       <div className="voice-card__score-numbers">
         <span className="voice-card__score-value">{formatScore(result.riskScore)}</span>
         <span className="voice-card__score-label">
-          Risk score · 95% CI {formatScore(result.ciLower)}–{formatScore(result.ciUpper)}
+          Score · likely between {formatScore(result.ciLower)} and {formatScore(result.ciUpper)}
         </span>
       </div>
 
@@ -185,8 +225,8 @@ function ScorePanel({ result }: { result: ScoredVoiceResult }) {
       </div>
 
       <p className="voice-card__caption">
-        The score is calibrated as if half of the people screened had Parkinson&rsquo;s, so it is
-        not the chance that this person has it.
+        0 to 1. At or above the {formatScore(TRIAGE_THRESHOLD)} line means prioritised for referral.
+        It is not the chance that this person has Parkinson&rsquo;s.
       </p>
     </section>
   );
@@ -195,9 +235,7 @@ function ScorePanel({ result }: { result: ScoredVoiceResult }) {
 function AbstainedPanel({ result }: { result: AbstainedVoiceResult }) {
   return (
     <section className="voice-card__abstained">
-      <p className="voice-card__abstained-title">
-        The voice input failed the quality check, so no score was produced.
-      </p>
+      <p className="voice-card__abstained-title">Why it was not scored</p>
       <ul>
         {result.problems.map((problem) => (
           <li key={problem}>{problem}</li>

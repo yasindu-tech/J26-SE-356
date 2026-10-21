@@ -64,14 +64,53 @@ def test_values_outside_the_training_range_are_flagged() -> None:
 
 def _reasons(fmt: str, vowel_s: float, ci: tuple[float, float], unusual: list[str]) -> list[str]:
     result = {"risk_score": sum(ci) / 2, "ci_lower": ci[0], "ci_upper": ci[1]}
-    info = {"source_format": fmt, "vowel_s": vowel_s}
+    info = {"source_format": fmt, "vowel_s": vowel_s, "snr_db": 25.0}
     return audio_explain.uncertainty_reasons(result, info, unusual, 60, ["figshare"])
 
 
-def test_uncertainty_always_names_the_training_size() -> None:
+def test_uncertainty_always_names_the_training_size_and_other_voice_conditions() -> None:
     reasons = _reasons("wav", 3.0, (0.4, 0.5), [])
-    assert len(reasons) == 1
+    assert len(reasons) == 2
     assert "60 people" in reasons[0]
+    assert "cold" in reasons[1] and "asthma" in reasons[1]
+    assert not BANNED.search(reasons[1])
+
+
+def test_uncertainty_says_when_background_noise_could_not_be_checked() -> None:
+    result = {"risk_score": 0.5, "ci_lower": 0.4, "ci_upper": 0.6}
+    unchecked = {"source_format": "wav", "vowel_s": 3.0, "snr_db": None}
+    checked = {**unchecked, "snr_db": 25.0}
+    text = " ".join(audio_explain.uncertainty_reasons(result, unchecked, [], 60, ["figshare"]))
+    assert "could not be checked" in text
+    text = " ".join(audio_explain.uncertainty_reasons(result, checked, [], 60, ["figshare"]))
+    assert "could not be checked" not in text
+
+
+def test_voice_far_outside_every_training_voice_is_refused() -> None:
+    features = dict.fromkeys(NAMES, 50.0)
+    # Range is 1..99, so "far" starts beyond 1 - 49 and 99 + 49.
+    features.update(hnr_db=200.0, f0_mean_hz=-100.0, jitter_local=160.0)
+    far = audio_explain.far_outside_training(features, reference())
+    assert far == ["f0_mean_hz", "jitter_local", "hnr_db"]
+    problems = audio_explain.unlike_training_problem(far)
+    assert len(problems) == 1 and "natural 'aaah'" in problems[0]
+    assert not BANNED.search(problems[0])
+
+
+def test_a_few_unusual_measures_do_not_refuse_a_voice() -> None:
+    features = dict.fromkeys(NAMES, 50.0)
+    features.update(hnr_db=120.0, f0_mean_hz=200.0, jitter_local=-80.0)  # 1 near, 2 far
+    far = audio_explain.far_outside_training(features, reference())
+    assert len(far) == audio_explain.MAX_FAR_OUTSIDE - 1
+    assert audio_explain.unlike_training_problem(far) == []
+    assert audio_explain.far_outside_training({"x": 1e9, **features}, reference()) == far
+
+
+def test_measures_on_another_scale_are_not_counted_as_far_outside() -> None:
+    features = dict.fromkeys(NAMES, 50.0)
+    features.update(hnr_db=500.0, f0_mean_hz=500.0, jitter_local=500.0)
+    far = audio_explain.far_outside_training(features, reference(), skip=["hnr_db"])
+    assert "hnr_db" not in far
 
 
 def test_uncertainty_names_compression_short_vowel_wide_range_and_unusual_values() -> None:

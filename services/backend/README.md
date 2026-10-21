@@ -146,6 +146,23 @@ worker (`app/workers/gait_runner.py`); it takes about a minute.
 - **Settings:** `GAIT_WORK_DIR`, `GAIT_PYTHON`, `GAIT_SCRIPT`, `GAIT_BUNDLE_DIR`,
   `GAIT_MAX_UPLOAD_MB` (500), `GAIT_TIMEOUT_MINUTES` (15).
 
+## Voice analyses
+
+`POST /api/v1/voice/analyses` takes one recording of a sustained "aaah" (`.wav`, `.flac`, `.ogg`,
+`.mp3`, `.m4a`, `.aac`, `.webm`; multipart field `file`) and answers `200` with the voice
+module's result: score, 95% range, triage priority and explanations, or an abstained result with
+the reasons. It runs `models/voice/src/analyze_audio.py` in a separate process
+(`app/workers/voice_runner.py`). A recording takes a few seconds, so the request waits for it.
+
+- The recording is saved under a fresh ID (its own name is never kept) in
+  `data/backend/voice/<id>/` and deleted before the response is sent, whatever happened. The
+  result is not stored; an audit entry (`voice_analysis`) records that an analysis was made.
+- `503 VOICE_ANALYSIS_FAILED` means the analysis could not run (no trained model, timeout), not
+  that the voice was judged. Train the model first: `python models/voice/src/audio_model.py`.
+  MP3/M4A need `ffmpeg` on the PATH.
+- **Settings:** `VOICE_WORK_DIR`, `VOICE_PYTHON`, `VOICE_SCRIPT`, `VOICE_MODEL` (`audio` or
+  `uci`), `VOICE_MAX_UPLOAD_MB` (50), `VOICE_TIMEOUT_SECONDS` (120).
+
 ## Database migrations
 
 Schema changes go through Alembic, never `Base.metadata.create_all()` outside
