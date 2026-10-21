@@ -1,11 +1,17 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
+import { GaitPicker } from "../components/GaitPicker";
+import { GaitProgress, GaitWhatIsHappening } from "../components/GaitProgress";
+import { GaitResultView } from "../components/GaitResultView";
 import { MriResultView } from "../components/MriResultView";
 import { InfoTip } from "../components/InfoTip";
 import { ProgressPanel } from "../components/MriProgress";
 import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
+import { GAIT_SOURCE_IS_MOCK, startGaitAnalysis } from "../gait/gaitSource";
+import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
+import { gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import {
   EDDY_PROFILE_LABELS,
@@ -24,16 +30,22 @@ import "./Assessment.css";
 // The assessment workflow from the approved design: 1 Setup, 2 Analysis, 3 Result. The
 // design combines gait, tapping, voice and MRI into one result; here each part is its own
 // upload, is processed on its own and gets its own result, because the step that combines
-// them (fusion) is not built. Only MRI can be uploaded in this build; the other three are
-// shown so the whole intended workflow is visible, and are marked as not built.
+// them (fusion) is not built. MRI and gait can be uploaded in this build (one at a time for
+// now); tapping and voice are shown so the whole intended workflow is visible, and are marked
+// as not built.
 
 type Screen =
   | { view: "patient" }
   | { view: "modalities" }
   | { view: "review" }
-  | { view: "uploading"; fraction: number }
+  | { view: "uploading"; fraction: number; part?: "gait" }
   | { view: "analysis"; id: string }
-  | { view: "result"; id: string; result: MriResult };
+  | { view: "result"; id: string; result: MriResult }
+  | { view: "gait-analysis"; id: string }
+  | { view: "gait-result"; outcome: GaitOutcome };
+
+/** How a gait analysis ended: a record (scored or not), or a failure with no record. */
+type GaitOutcome = { kind: "record"; result: GaitResult } | { kind: "failed"; message: string };
 
 // One screen per step, so nothing needs scrolling to find the next thing to do.
 const STAGES = ["Patient details", "Modalities", "Review", "Analysis", "Result"] as const;
@@ -45,6 +57,8 @@ const STAGE_HINT: Record<Screen["view"], string> = {
   uploading: "Sending the scan.",
   analysis: "Each part is processed on its own.",
   result: "Each part has its own result.",
+  "gait-analysis": "Each part is processed on its own.",
+  "gait-result": "Each part has its own result.",
 };
 
 function stageOf(view: Screen["view"]): number {
@@ -57,8 +71,10 @@ function stageOf(view: Screen["view"]): number {
     case "uploading":
       return 2;
     case "analysis":
+    case "gait-analysis":
       return 3;
     case "result":
+    case "gait-result":
       return 4;
   }
 }
@@ -81,6 +97,11 @@ interface Form {
   medication: string;
   hand: Hand;
   file: File | null;
+  /** The walking video, and its length when the picker could read it. */
+  video: File | null;
+  videoSeconds: number | null;
+  /** "One person is walking" ticked for this video. Saved with the result; asked again for every video. */
+  onePerson: boolean;
 }
 
 const EMPTY_FORM: Form = {
@@ -92,6 +113,9 @@ const EMPTY_FORM: Form = {
   medication: "",
   hand: "",
   file: null,
+  video: null,
+  videoSeconds: null,
+  onePerson: false,
 };
 
 /** What is wrong with the patient details, or null when they are fine. */
@@ -110,7 +134,19 @@ function patientProblem(form: Form): string | null {
 
 /** What is wrong with the chosen parts, or null when at least one valid part is chosen. */
 function modalitiesProblem(form: Form): string | null {
-  if (!form.file) return "Add at least one part to analyse. In this build that is the MRI scan.";
+  if (!form.file && !form.video) {
+    return "Add at least one part to analyse: an MRI scan or a walking video.";
+  }
+  if (form.file && form.video) {
+    return "MRI and gait together are not connected yet. Choose one of them for now.";
+  }
+  if (form.video) {
+    const problem = videoProblem(form.video.name, form.video.size);
+    if (problem) return problem.text;
+    if (!form.onePerson) return "Tick the box to confirm that one person is walking.";
+    return null;
+  }
+  if (!form.file) return null; // unreachable: a part is chosen
   if (!form.file.name.toLowerCase().endsWith(".zip")) {
     return "Choose a .zip file holding one person's DICOM folder.";
   }
@@ -174,7 +210,49 @@ export function Assessment({
     }
   }
 
+  async function startGait(video: File): Promise<void> {
+    const trimmed = form.label.trim();
+    setError(null);
+    setConfirming(false);
+    setLabel(trimmed || null);
+    setScreen({ view: "uploading", fraction: 0, part: "gait" });
+    try {
+      const created = await startGaitAnalysis(
+        { file: video, onePersonConfirmed: form.onePerson },
+        (fraction) => setScreen({ view: "uploading", fraction, part: "gait" }),
+      );
+      setScreen({ view: "gait-analysis", id: created.id });
+    } catch (e) {
+      setError(errorText(e, "The video could not be sent."));
+      setScreen({ view: "review" });
+    }
+  }
+
+  function gaitFinished(status: GaitRunStatus): void {
+    setScreen({
+      view: "gait-result",
+      outcome:
+        status.state === "failed" || !status.result
+          ? { kind: "failed", message: status.error ?? "Something went wrong while reading the video." }
+          : { kind: "record", result: status.result },
+    });
+  }
+
+  /** Back to the video step with the video gone (or kept), and the tick cleared either way. */
+  function anotherVideo(keepVideo: boolean): void {
+    setForm({
+      ...form,
+      onePerson: false,
+      ...(keepVideo ? {} : { video: null, videoSeconds: null }),
+    });
+    go({ view: "modalities" });
+  }
+
   async function start(): Promise<void> {
+    if (form.video && form.onePerson && !form.file) {
+      await startGait(form.video);
+      return;
+    }
     const file = form.file;
     const year = parseYearOfBirth(form.yearOfBirth, new Date());
     if (!file || form.sex === "" || year === null) return; // already checked on the earlier steps
@@ -211,7 +289,9 @@ export function Assessment({
     <div className="mri asm">
       <PageHeader
         title={label ? `Assessment ${label}` : "New assessment"}
-        subtitle={STAGE_HINT[screen.view]}
+        subtitle={
+          screen.view === "uploading" && screen.part === "gait" ? "Sending the video." : STAGE_HINT[screen.view]
+        }
         actions={
           <ol className="asm__stages" aria-label="Progress">
             {STAGES.map((name, i) => (
@@ -264,11 +344,16 @@ export function Assessment({
       {screen.view === "uploading" && (
         <section className="card">
           <p className="eyebrow">Sending</p>
-          <h2 className="card__title">Uploading the MRI scan</h2>
+          <h2 className="card__title">
+            {screen.part === "gait" ? "Uploading the walking video" : "Uploading the MRI scan"}
+          </h2>
           <div className="mri__meter" aria-label="Upload progress">
             <div className="mri__meter-fill" style={{ width: `${screen.fraction * 100}%` }} />
           </div>
-          <p className="note mono">{Math.round(screen.fraction * 100)}% sent</p>
+          <p className="note mono">
+            {Math.round(screen.fraction * 100)}% sent
+            {screen.part === "gait" && form.video ? ` · ${form.video.name}` : ""}
+          </p>
         </section>
       )}
 
@@ -281,6 +366,37 @@ export function Assessment({
             onError={(message) => setError(message)}
           />
         </div>
+      )}
+
+      {screen.view === "gait-analysis" && (
+        <div className="asm__stack">
+          <PartsStrip mri="none" gait="running" />
+          <div className="mri__layout">
+            <GaitProgress
+              id={screen.id}
+              onFinished={gaitFinished}
+              onError={(message) => setError(message)}
+            />
+            <aside className="mri__rail">
+              <GaitWhatIsHappening />
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {screen.view === "gait-result" && (
+        <GaitResultPage
+          outcome={screen.outcome}
+          videoSeconds={form.videoSeconds}
+          onAnotherVideo={() => anotherVideo(false)}
+          onTryAgain={() => anotherVideo(true)}
+          onHome={onHome}
+          onNewAssessment={() => {
+            setLabel(null);
+            setForm(EMPTY_FORM);
+            go({ view: "patient" });
+          }}
+        />
       )}
 
       {screen.view === "result" && (
@@ -325,25 +441,97 @@ export function Assessment({
 
 type MriState = "running" | "scored" | "abstained" | "failed" | "queued";
 
-/** Where each of the four parts stands, in one row. Only MRI can run in this build. */
-function PartsStrip({ mri }: { mri: MriState }) {
-  const mriText =
-    mri === "scored"
-      ? "Scored"
-      : mri === "abstained"
-        ? "Not scored"
-        : mri === "failed"
-          ? "Failed"
-          : "Processing";
+/** Where each of the four parts stands, in one row. A part that was not chosen shows "Not added". */
+function PartsStrip({ mri, gait = "none" }: { mri: MriState | "none"; gait?: MriState | "none" }) {
   return (
     <ul className="asm__strip" aria-label="Parts of this assessment">
-      {PARTS.map((p) => (
-        <li key={p.key} className={`asm__strip-item${p.available ? "" : " asm__strip-item--none"}`}>
-          <span className="asm__strip-name">{p.label}</span>
-          <span className="note">{p.available ? mriText : PART_NOT_BUILT}</span>
-        </li>
-      ))}
+      {PARTS.map((p) => {
+        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : "none";
+        const none = state === "none";
+        return (
+          <li key={p.key} className={`asm__strip-item${none ? " asm__strip-item--none" : ""}`}>
+            <span className="asm__strip-name">{p.label}</span>
+            <span className="note">
+              {none ? (p.available ? "Not added" : PART_NOT_BUILT) : gaitStateText(state)}
+            </span>
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+/** A gait result, as its own screen: the record (or the failure), the other parts as not provided. */
+function GaitResultPage({
+  outcome,
+  videoSeconds,
+  onAnotherVideo,
+  onTryAgain,
+  onHome,
+  onNewAssessment,
+}: {
+  outcome: GaitOutcome;
+  videoSeconds: number | null;
+  onAnotherVideo: () => void;
+  onTryAgain: () => void;
+  onHome: () => void;
+  onNewAssessment: () => void;
+}) {
+  const state =
+    outcome.kind === "failed" ? "failed" : outcome.result.available ? "scored" : "abstained";
+  return (
+    <div className="asm__stack">
+      <PartsStrip mri="none" gait={state} />
+      <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
+      {outcome.kind === "record" ? (
+        <GaitResultView
+          result={outcome.result}
+          videoSeconds={videoSeconds}
+          demo={GAIT_SOURCE_IS_MOCK}
+          onNewVideo={onAnotherVideo}
+        />
+      ) : (
+        <section className="card" aria-label="The analysis did not finish">
+          <h2 className="card__title">The analysis did not finish</h2>
+          <p className="mri__error" role="alert">
+            {outcome.message} No result was produced. The video was deleted from the server. Try the
+            same video again, or choose another one.
+          </p>
+          <div className="asm__buttons">
+            <button type="button" className="btn btn--primary" onClick={onTryAgain}>
+              Try again
+            </button>
+            <button type="button" className="btn btn--outline" onClick={onAnotherVideo}>
+              Choose another video
+            </button>
+          </div>
+          <p className="note">Try again asks for the one-person confirmation once more, because it is saved per video.</p>
+        </section>
+      )}
+      <section className="asm__others" aria-label="Parts that were not provided">
+        {PARTS.filter((p) => p.key !== "gait").map((p) => (
+          <div key={p.key} className="asm__other">
+            <div className="asm__other-head">
+              <span className="asm__other-title">{p.label}</span>
+              <span className="mr__chip mr__chip--none">Not provided</span>
+            </div>
+            <p className="asm__dash">—</p>
+            <p className="note">
+              {p.available ? "Not added to this assessment" : PART_NOT_BUILT}. Nothing is counted as
+              zero; this part has no result.
+            </p>
+          </div>
+        ))}
+      </section>
+      <div className="asm__buttons">
+        <button type="button" className="btn btn--outline" onClick={onHome}>
+          ← Home
+        </button>
+        <button type="button" className="btn btn--outline" onClick={onNewAssessment}>
+          Start a new assessment
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -357,10 +545,15 @@ function StepButtons({
   onBack,
   onNext,
   nextLabel,
+  nextDisabled = false,
+  hint,
 }: {
   onBack?: () => void;
   onNext: () => void;
   nextLabel: string;
+  nextDisabled?: boolean;
+  /** Says why Next is off. */
+  hint?: string;
 }) {
   return (
     <div className="asm__buttons">
@@ -371,9 +564,12 @@ function StepButtons({
       ) : (
         <span />
       )}
-      <button type="button" className="btn btn--primary" onClick={onNext}>
-        {nextLabel}
-      </button>
+      <span className="asm__buttons-end">
+        {hint && <span className="gr__hint">{hint}</span>}
+        <button type="button" className="btn btn--primary" onClick={onNext} disabled={nextDisabled}>
+          {nextLabel}
+        </button>
+      </span>
     </div>
   );
 }
@@ -517,7 +713,7 @@ function PatientStep({
   );
 }
 
-/** Step 2: which parts to analyse. Only MRI can be uploaded in this build. */
+/** Step 2: which parts to analyse. MRI and gait can be uploaded in this build. */
 function ModalitiesStep({
   form,
   eddyProfile,
@@ -540,7 +736,7 @@ function ModalitiesStep({
   const setFile = (f: File | null) => onChange({ ...form, file: f });
 
   return (
-    <section className="card asm__step">
+    <section className="card asm__step asm__step--wide">
       <div className="mri__step-head">
         <p className="eyebrow">Step 2 of 3</p>
         <h2 className="card__title">
@@ -604,7 +800,26 @@ function ModalitiesStep({
           )}
         </div>
 
-        <div className="asm__others-col">
+        <div className="asm__part asm__part--gait">
+          <div className="asm__part-head">
+            <h3 className="asm__part-title">Gait</h3>
+            <span className="mr__chip mr__chip--on">
+              {form.video ? (form.onePerson ? "Ready to send" : "Video chosen") : "Available"}
+            </span>
+          </div>
+          <p className="note">{PARTS[0]?.provides}. Takes about a minute.</p>
+          <GaitPicker
+            video={form.video}
+            videoSeconds={form.videoSeconds}
+            confirmed={form.onePerson}
+            onVideo={(video, videoSeconds) => onChange({ ...form, video, videoSeconds })}
+            onConfirmed={(onePerson) => onChange({ ...form, onePerson })}
+          />
+        </div>
+      </div>
+
+      <div className="asm__others-row">
+        <div className="asm__others-col asm__others-col--row">
           {PARTS.filter((p) => !p.available).map((p) => (
             <div key={p.key} className="asm__part asm__part--none asm__part--small">
               <div className="asm__part-head">
@@ -622,7 +837,13 @@ function ModalitiesStep({
         </div>
       </div>
 
-      <StepButtons onBack={onBack} onNext={onNext} nextLabel="Next: Review →" />
+      <StepButtons
+        onBack={onBack}
+        onNext={onNext}
+        nextLabel="Next: Review →"
+        nextDisabled={form.video !== null && !form.onePerson}
+        {...(form.video !== null && !form.onePerson ? { hint: "Tick the box about the walker to continue." } : {})}
+      />
     </section>
   );
 }
@@ -650,9 +871,11 @@ function ReviewStep({
         <h2 className="card__title">
           Review
           <InfoTip label="Where the scan goes">
-            {NO_COMBINED_RESULT} The scan is sent to the PD-XAI backend at{" "}
-            <span className="mono">{API_BASE_URL}</span>; the DICOM files are deleted there when the
-            analysis ends, and only the result is kept.
+            {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
+            <span className="mono">{API_BASE_URL}</span>
+            {form.video
+              ? " only when you press Start analysis. It is deleted there when the analysis ends, and only the result is kept."
+              : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
           </InfoTip>
         </h2>
       </div>
@@ -671,23 +894,44 @@ function ReviewStep({
           <dt>Consent</dt>
           <dd>Explained and recorded (by you; not stored here)</dd>
         </div>
+        {form.video && (
+          <>
+            <div>
+              <dt>Gait video</dt>
+              <dd className="mono">
+                {form.video.name} · {videoSummary(form.video.name, form.video.size, form.videoSeconds)}
+              </dd>
+            </div>
+            <div>
+              <dt>Who is walking</dt>
+              <dd>
+                You confirmed one person, seen from the side{" "}
+                <button type="button" className="asm__link" onClick={onBack}>
+                  Change
+                </button>
+              </dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>MRI</dt>
           <dd className="mono">
-            {form.file ? `${form.file.name} · ${megabytes(form.file.size)}` : "No file"}
+            {form.file ? `${form.file.name} · ${megabytes(form.file.size)}` : "Not added"}
           </dd>
         </div>
+        {form.file && (
+          <div>
+            <dt>DTI motion correction</dt>
+            <dd>
+              {EDDY_PROFILE_LABELS[eddyProfile]}{" "}
+              <button type="button" className="asm__link" onClick={onOpenSettings}>
+                Change in Settings
+              </button>
+            </dd>
+          </div>
+        )}
         <div>
-          <dt>DTI motion correction</dt>
-          <dd>
-            {EDDY_PROFILE_LABELS[eddyProfile]}{" "}
-            <button type="button" className="asm__link" onClick={onOpenSettings}>
-              Change in Settings
-            </button>
-          </dd>
-        </div>
-        <div>
-          <dt>Gait, tapping, voice</dt>
+          <dt>Tapping, voice</dt>
           <dd>{PART_NOT_BUILT}</dd>
         </div>
       </dl>

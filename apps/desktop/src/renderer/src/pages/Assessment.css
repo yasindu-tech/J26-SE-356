@@ -221,6 +221,11 @@
   max-width: 980px;
 }
 
+/* Modalities shows two parts side by side, so it uses the full width. */
+.asm__step--wide {
+  max-width: none;
+}
+
 .asm__buttons {
   display: flex;
   align-items: center;
@@ -231,7 +236,7 @@
 
 .asm__modalities {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -246,6 +251,22 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* Tapping and voice sit side by side under MRI and gait. */
+.asm__others-col--row {
+  flex-direction: row;
+}
+
+.asm__others-col--row > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.asm__buttons-end {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
 }
 
 .asm__part--small {
