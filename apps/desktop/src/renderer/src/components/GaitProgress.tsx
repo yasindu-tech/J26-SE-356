@@ -143,7 +143,7 @@ export function GaitWhatIsHappening() {
       </section>
       <section className="card">
         <h2 className="mri__rail-title">What happens to the video</h2>
-        <p className="mri__body-text">It is deleted from the server as soon as the analysis ends. Only the result is kept.</p>
+        <p className="mri__body-text">The file is deleted from the server as soon as the analysis ends. The result is kept, and a copy with the skeleton drawn on it when the walk could be read.</p>
       </section>
     </>
   );

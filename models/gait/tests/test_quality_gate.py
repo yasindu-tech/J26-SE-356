@@ -207,7 +207,7 @@ def test_a_video_with_no_person_goes_through_video_to_joints_and_is_rejected(
     with pytest.raises(VideoError) as err:
         video_to_joints(fake.video, fake.model)
     result = reject(err.value)
-    assert not result.passed and "no walk found" in result.reasons[0]
+    assert not result.passed and "No walk was found" in result.reasons[0]
 
 
 def test_a_good_fake_video_goes_through_video_to_joints_and_passes(
@@ -299,3 +299,15 @@ def test_cli_turns_a_video_error_into_a_rejection(
     out = capsys.readouterr().out
     assert "REJECTED" in out and "reason: the video file is missing or empty" in out
     assert "secret_name" not in out
+
+
+def test_a_walk_with_no_steps_at_all_says_so_in_plain_words() -> None:
+    base = good()
+    result = check_walk(replace(base, joints=base.joints[:10]))  # too short for any step
+    assert result.checks["strides"]["value"] == 0
+    assert any("No steps were found" in r and "standing still" in r for r in result.reasons)
+
+
+def test_a_walk_with_an_unreliable_facing_direction_hints_at_the_side_view() -> None:
+    walk = replace(good(8.0), facing_agreement=0.3)
+    assert any("filmed from the side" in r for r in check_walk(walk).reasons)

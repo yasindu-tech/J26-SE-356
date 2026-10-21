@@ -14,7 +14,7 @@ Exit code 0 = a walk was found, 2 = the video or the pose model cannot be used.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -25,6 +25,7 @@ from mediapipe_mapping import MIN_WALK_S, walks_from_trace
 from pose_probe import (
     LEG_IDX,
     VISIBLE_THRESHOLD,
+    PoseTrace,
     VideoInfo,
     probe_video,
     read_info,
@@ -69,9 +70,11 @@ def _clip_info(path: Path) -> VideoInfo:
     try:
         info = read_info(path)
     except ValueError as err:
-        raise VideoError("the video could not be opened (damaged, or not a video file)") from err
+        raise VideoError(
+            "The video could not be opened (it may be damaged, or not a video file)."
+        ) from err
     if info.fps <= 0 or info.n_frames <= 0:
-        raise VideoError("the video reports no frame rate or no frames")
+        raise VideoError("The video has no readable frames or no frame rate.")
     return info
 
 
@@ -83,12 +86,13 @@ def _check_frame_size(path: Path, info: VideoInfo) -> None:
     finally:
         frames.close()
     if first is None:
-        raise VideoError("no frame could be read from the video")
+        raise VideoError("No frame could be read from the video.")
     height, width = first.shape[:2]
     if (width, height) != (info.width, info.height):
         raise VideoError(
-            f"the video says it is {info.width}x{info.height} but its frames are "
-            f"{width}x{height}: its rotation was not applied, so the joints would be wrong"
+            f"The video's rotation setting does not match its picture ({info.width}x{info.height} "
+            f"reported, {width}x{height} found), so it cannot be read reliably. Save or export "
+            "the video in its normal orientation and try again."
         )
 
 
@@ -98,11 +102,13 @@ def video_to_joints(
     *,
     max_seconds: float | None = MAX_SECONDS,
     min_walk_s: float = MIN_WALK_S,
+    on_trace: Callable[[PoseTrace], None] | None = None,
 ) -> VideoWalk:
     """The longest usable walk in ``path`` as joints, with facts about the video.
 
     ``max_seconds`` limits how much video is read (``None`` reads all of it; the heavy model
-    runs at roughly 15 to 20 frames per second on a CPU).
+    runs at roughly 15 to 20 frames per second on a CPU). ``on_trace`` gets the pose trace as soon
+    as it exists, even when no walk is found in it.
     """
     path, model = Path(path), Path(model)
     if max_seconds is not None and max_seconds <= 0:
@@ -116,13 +122,15 @@ def video_to_joints(
         info, trace = probe_video(path, model, max_seconds=max_seconds)
     except ValueError as err:
         raise VideoError(str(err)) from err
+    if on_trace is not None:
+        on_trace(trace)
 
     found = float(trace.detected.mean())
     walks = walks_from_trace(trace, min_s=min_walk_s)
     if not walks:
         raise VideoError(
-            f"no walk found: a person was seen in {found:.0%} of the frames, but no stretch of "
-            f"{min_walk_s:g} s or more had the legs in clear view"
+            f"No walk was found: no stretch of {min_walk_s:g} seconds or more showed one person's "
+            "legs clearly. Film the whole body, head to feet, from the side."
         )
     walk = max(walks, key=lambda w: w.joints.shape[0])
     legs = trace.visibility[walk.start : walk.stop][:, list(LEG_IDX)]

@@ -140,10 +140,12 @@ worker (`app/workers/gait_runner.py`); it takes about a minute.
 | `GET /api/v1/gait/analyses` | your analyses, newest first |
 | `GET /api/v1/gait/analyses/{id}` | status (`scored`, `abstained` with the reason, `failed`) and elapsed time |
 | `GET /api/v1/gait/analyses/{id}/result` | the `GaitResult` (`gait-result/1`). `409` until finished |
+| `GET /api/v1/gait/analyses/{id}/overlay` | `video/mp4`: the walk with the skeleton and heel strikes drawn on it. `404` if none |
 
 - The video is saved under its analysis ID (its own name is never kept) in `data/backend/gait/<id>/`
-  and deleted when the analysis ends. The gait model bundle must exist (`train_xgboost.py`).
-- **Settings:** `GAIT_WORK_DIR`, `GAIT_PYTHON`, `GAIT_SCRIPT`, `GAIT_BUNDLE_DIR`,
+  and deleted when the analysis ends; the overlay video drawn from it is kept in
+  `data/backend/gait_overlays/<id>.mp4`. The gait model bundle must exist (`train_xgboost.py`).
+- **Settings:** `GAIT_WORK_DIR`, `GAIT_PYTHON`, `GAIT_SCRIPT`, `GAIT_BUNDLE_DIR`, `GAIT_OVERLAY_SCRIPT`, `GAIT_OVERLAY_DIR`,
   `GAIT_MAX_UPLOAD_MB` (500), `GAIT_TIMEOUT_MINUTES` (15).
 
 ## Voice analyses

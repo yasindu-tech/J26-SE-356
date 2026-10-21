@@ -113,7 +113,7 @@ export function Home({
                       {item.subject_label ? `${item.subject_label} · ` : ""}Gait part running
                     </p>
                     <p className="note">
-                      {item.status === "queued" ? "Waiting for its turn" : "Reading the walk"} · usually about a minute
+                      {item.status === "queued" ? "Waiting for its turn" : "Reading the walk"} · usually about a minute or two
                     </p>
                   </div>
                   <button type="button" className="btn btn--outline" onClick={() => onOpenGait(item.id)}>

@@ -21,6 +21,14 @@ export const MIN_MARGIN = 0.15;
 /** Below this many seconds of walking the reading rests on few steps. */
 export const SHORT_WALK_SECONDS = 5;
 
+/** A message from the service as a sentence: capital first letter, full stop at the end. */
+export function asSentence(message: string): string {
+  const text = message.trim();
+  if (!text) return text;
+  const sentence = text[0].toUpperCase() + text.slice(1);
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
+
 export function isScored(r: GaitResult): boolean {
   return r.available && r.predicted_class !== null && r.probabilities !== null;
 }
@@ -52,11 +60,11 @@ export function plainGaitReading(r: GaitResult): GaitReading {
   const closing =
     cls === 0
       ? "This does not rule anything out; a lower reading is never a clearance."
-      : "Weigh it alongside the rest of your assessment. It is not a diagnosis.";
+      : "This is the level the model scored highest for this walk. Read it alongside your own assessment.";
   return {
     kind: "clear",
-    headline: `Walk pattern closest to: ${words}`,
-    detail: `The model places this walk closest to the ${words} group. ${closing}`,
+    headline: `Model\u2019s closest match: ${words}`,
+    detail: closing,
   };
 }
 
@@ -72,7 +80,7 @@ export function walkLine(r: GaitResult): string {
 
 /** How far to lean on the model, from its own test results (models/gait/README.md). */
 export const RELIABILITY_LINE =
-  "On test walks recorded with motion capture, the model put people in the right level about half the time, against about a third by guessing. It has not been tested on phone video. Treat the reading as weak evidence.";
+  "On research walks recorded in a gait lab, the model chose the right level about half the time. Guessing among three levels would be right about a third of the time. It has not been tested on phone video. Treat this reading as weak evidence.";
 
 export interface ClassBar {
   key: string;
@@ -125,10 +133,27 @@ const INPUT_SHORT: Record<string, string> = {
   arm_swing_range_norm: "Arm swing range",
 };
 
+/** An input's value as the model's own sentences show it (same units as explain_words.py). */
+const INPUT_SHOWN: Record<string, (v: number) => string> = {
+  stride_time_mean: (v) => `${v.toFixed(2)} s`,
+  cadence: (v) => `${v.toFixed(0)} steps/min`,
+  stride_time_cv: (v) => `${v.toFixed(1)}%`,
+  step_length_norm: (v) => `${v.toFixed(2)} leg lengths`,
+  step_length_asymmetry: (v) => `${(100 * v).toFixed(0)}%`,
+  knee_flexion_range_deg: (v) => `${v.toFixed(0)}\u00b0`,
+  hip_flexion_range_deg: (v) => `${v.toFixed(0)}\u00b0`,
+  arm_swing_range_norm: (v) => `${v.toFixed(2)} leg lengths`,
+};
+
 export interface ShapBar {
   key: string;
   label: string;
-  /** Bar length as a share of the longest bar, 3 to 100. Drawn to scale, never printed. */
+  /** This walk's value for the input, with units. Empty when the input is not known. */
+  valueText: string;
+  /** The signed contribution in the model's own units (+ towards, \u2212 away), two decimals. */
+  shapText: string;
+  /** Bar length is to scale; the number is shown beside it for comparing bars in this chart only. */
+  /** Bar length as a share of the longest bar, 3 to 100. */
   widthPercent: number;
   /** Towards the model's highest-scoring level (drawn right, solid) or away (left, outlined). */
   towards: boolean;
@@ -142,6 +167,8 @@ export function shapBars(r: GaitResult, count = 3): ShapBar[] {
   return features.map((f) => ({
     key: f.name,
     label: INPUT_SHORT[f.name] ?? f.name,
+    valueText: INPUT_SHOWN[f.name]?.(f.value) ?? "",
+    shapText: `${f.direction === "towards" ? "+" : "\u2212"}${Math.abs(f.shap).toFixed(2)}`,
     widthPercent:
       longest === 0 ? 3 : Math.min(100, Math.max(3, Math.round((Math.abs(f.shap) / longest) * 100))),
     towards: f.direction === "towards",
@@ -171,7 +198,7 @@ export function checkRows(r: GaitResult): CheckRow[] {
   };
   add("frame_rate", "Frame rate", (v) => `${Math.round(v)} frames per second`, () => "needs 20 to 60");
   add("leg_visibility", "Legs visible", (v) => `${pct(v)} of frames`, (l) => `needs at least ${pct(l)}`);
-  add("filled_share", "Frames filled in", (v) => pct(v), (l) => `needs at most ${pct(l)}`);
+  add("filled_share", "Frames with estimated joints", (v) => pct(v), (l) => `needs at most ${pct(l)}`);
   add("facing", "Toes ahead of heels", (v) => `${pct(v)} of frames`, (l) => `needs at least ${pct(l)}`);
   add("strides", "Strides found", (v) => `${Math.round(v)} in total, on both feet`, (l) => `needs at least ${Math.round(l)}`);
   return rows;
@@ -188,14 +215,14 @@ export function visibleWarnings(r: GaitResult): string[] {
 export function keepInMind(r: GaitResult): string[] {
   const items = [
     "The model grades how a person walks. It does not say whether they have Parkinson’s disease, and other causes of a slow or uneven walk, such as joint pain, can look similar.",
-    "It learned from motion-capture recordings. Joint positions from a phone video are less precise, and the model has not been tested as a Parkinson’s check on video.",
+    "Joint positions found in a phone video are less precise than those from a gait lab, so a phone video can score differently from the walks the model learned from.",
     r.one_person_confirmed
       ? "You confirmed one person is walking. The video itself is not checked for other people, so if someone else was in view, do not rely on this reading."
       : "One person walking is assumed. The video itself is not checked for other people.",
   ];
   if (!isScored(r)) return items;
   items.push(
-    "The bars are the model’s scores, not chances: they have not been calibrated, so a long bar does not mean a high probability.",
+    "The bars are the model’s scores, not probabilities: they have not been calibrated, so a long bar does not mean a high probability.",
   );
   return items;
 }

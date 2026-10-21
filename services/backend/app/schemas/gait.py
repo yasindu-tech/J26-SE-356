@@ -28,6 +28,7 @@ class GaitAnalysisStatus(BaseModel):
     subject_label: str | None = None
     error: str | None = None
     abstain_reason: str | None = None  # why the video could not be scored, in plain words
+    has_overlay: bool = False  # the video with the skeleton and heel strikes drawn on it
 
 
 class GaitAnalysisList(BaseModel):
