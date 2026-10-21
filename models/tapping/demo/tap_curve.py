@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -29,6 +29,7 @@ NOTE = (
 REASONS = {
     "few": f"Fewer than {MIN_TAPS} taps with a valid amplitude, so no line is fitted.",
     "mean": "The mean amplitude is not positive, so no line is fitted.",
+    "missing": "The per-tap curve is not available for this clip.",
 }
 
 
@@ -107,20 +108,25 @@ def count_sentence(c: TapCurve) -> str:
     return text
 
 
-def curve_figure(c: TapCurve, ref: str) -> Figure:
-    fig = Figure(figsize=(11.5, 4.4), dpi=110, layout="constrained")
+def curve_figure(c: TapCurve, ref: str, compact: bool = False) -> Figure:
+    """The amplitude figure; ``compact`` is the page-size variant with larger relative fonts."""
+    big, mid, title = (9, 8.5, 10) if compact else (12, 11, 14)
+    fig = Figure(figsize=(5.2, 2.3) if compact else (11.5, 4.4), dpi=110, layout="constrained")
     FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
     ax.plot(c.times, c.amps, color=LINK_COLOUR, lw=0.8, zorder=1)
-    ax.plot(c.times, c.amps, "o", color=POINT_COLOUR, ms=6, ls="none", label="tap amplitude",
-            zorder=2)  # fmt: skip
+    ax.plot(c.times, c.amps, "o", color=POINT_COLOUR, ms=4 if compact else 6, ls="none",
+            label="tap amplitude", zorder=2)  # fmt: skip
     if c.usable:
         ax.plot(c.line_x, c.line_y, color=LINE_COLOUR, lw=2.2, label="fitted line (Theil-Sen)",
                 zorder=3)  # fmt: skip
-    ax.set_xlabel("time (s)", fontsize=12)
-    ax.set_ylabel("tap amplitude (hand sizes)", fontsize=12)
-    ax.tick_params(labelsize=11)
+    ax.set_xlabel("time (s)", fontsize=big)
+    ax.set_ylabel("tap amplitude (hand sizes)", fontsize=big)
+    ax.tick_params(labelsize=mid)
     ax.spines[["top", "right"]].set_visible(False)
-    fig.legend(fontsize=11, loc="outside upper right", frameon=False, ncols=2)  # off the data
-    fig.suptitle(f"Per-tap amplitude (clip {ref})", fontsize=14)
+    where: Literal["outside lower center", "outside upper right"] = (
+        "outside lower center" if compact else "outside upper right"
+    )  # never over the title
+    fig.legend(fontsize=mid, loc=where, frameon=False, ncols=2)  # off the data
+    fig.suptitle(f"Per-tap amplitude (clip {ref})", fontsize=title)
     return fig
