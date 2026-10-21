@@ -334,6 +334,28 @@ def test_list_shows_own_analyses_newest_first(
     assert client.get("/api/v1/gait/analyses?limit=1", headers=h).json()["total"] == 2
 
 
+def test_subject_label_is_optional_and_remembered(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    h = auth(client)
+    assert upload(client, h).json()["subject_label"] is None
+    created = upload(client, h, subject_label="P-8F31A2")
+    assert created.status_code == 202 and created.json()["subject_label"] == "P-8F31A2"
+    status = client.get(f"/api/v1/gait/analyses/{created.json()['id']}", headers=h).json()
+    assert status["subject_label"] == "P-8F31A2"
+    listed = client.get("/api/v1/gait/analyses", headers=h).json()["items"]
+    assert [i["subject_label"] for i in listed] == ["P-8F31A2", None]
+
+
+def test_subject_label_that_looks_like_a_name_is_rejected(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    settings, runner = gait_env
+    for bad in ["Jane Doe", "a" * 33, "j@ne", ""]:
+        assert upload(client, auth(client), subject_label=bad).status_code == 422, bad
+    assert runner.jobs == [] and not settings.gait_work_dir.exists()  # nothing was started
+
+
 # --------------------------------------------------------------------------- the real runner
 def job_in(tmp_path: Path, confirmed: bool = True) -> GaitJob:
     folder = tmp_path / "job"

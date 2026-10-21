@@ -61,12 +61,14 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
   );
   // `openId`: an analysis Home asked to open. `session` restarts the workflow at Setup.
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openGaitId, setOpenGaitId] = useState<string | null>(null);
   const [session, setSession] = useState(0);
   // True once an assessment screen exists, so a visit to Settings can return to it unchanged.
   const [live, setLive] = useState(false);
 
   function startAssessment(): void {
     setOpenId(null);
+    setOpenGaitId(null);
     setSession((n) => n + 1);
     setLive(true);
     setScreen("assessment");
@@ -80,6 +82,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
   function navigate(key: NavKey): void {
     if (key === "home") {
       setOpenId(null);
+      setOpenGaitId(null);
       setScreen("home");
     } else if (key === "settings") {
       setScreen("settings");
@@ -106,6 +109,14 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
           onNewAssessment={startAssessment}
           onOpenAnalysis={(id) => {
             setOpenId(id);
+            setOpenGaitId(null);
+            setSession((n) => n + 1);
+            setLive(true);
+            setScreen("assessment");
+          }}
+          onOpenGait={(id) => {
+            setOpenId(null);
+            setOpenGaitId(id);
             setSession((n) => n + 1);
             setLive(true);
             setScreen("assessment");
@@ -119,11 +130,13 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
           <Assessment
             key={session}
             openId={openId}
+            openGaitId={openGaitId}
             clinician={clinician}
             eddyProfile={settings.mri.eddyProfile}
             confirmFast={settings.mri.confirmFast}
             onHome={() => {
               setOpenId(null);
+              setOpenGaitId(null);
               setScreen("home");
             }}
             onOpenVoice={() => setScreen("voice")}

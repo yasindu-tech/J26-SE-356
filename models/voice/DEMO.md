@@ -52,6 +52,8 @@ Screening and triage only: say "referral priority", never "diagnosis".
 3. **Age, Figshare**: voice 0.710; age and sex alone 0.866. With normal ageing
    removed, voice keeps 0.754; trained on same-age people only, 0.556 (not yet
    above chance).
+3. **Baseline ladder, Figshare**: voice 0.710; age and sex alone 0.866. Within
+   the shared age range voice keeps 0.701 (lower bound above 0.5).
 4. **XAI**: faithful (deletion curve, p = 0.010); the card's groups are fairly
    stable, the single measures are not.
 5. **Safety**: quality checks, age and sex bias check, and the caution about
@@ -65,6 +67,9 @@ Screening and triage only: say "referral priority", never "diagnosis".
   (`age_balanced.py`). Within each class the score does not follow age
   (`audio_bias.py`). Honest limit: trained on same-age people only (57), voice
   cannot yet be shown above chance (0.556); more older healthy voices are needed.
+- *Why does age beat voice?* Figshare's healthy group is about 19 years younger.
+  Within the shared age range voice still works, and within each class the
+  score does not follow age (`audio_bias.py`).
 - *Is 0.71 good enough?* For screening support with an honest range, a start.
   More recordings (NeuroVoz, access pending) is the fix.
 - *Why not use UCI-470 for uploads?* Show the transfer table.
