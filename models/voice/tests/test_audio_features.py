@@ -143,6 +143,30 @@ def test_noisy_recording_is_refused(tmp_path: Path) -> None:
     assert any("noise" in p for p in problems)
 
 
+def test_recording_much_longer_than_one_aaah_is_refused_before_pitch_tracking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_pitch_tracking(*args: object) -> None:
+        raise AssertionError("the slow steps must not run for a refused file")
+
+    monkeypatch.setattr(audio_features, "find_vowel", no_pitch_tracking)
+    long_file = synthetic_vowel(seconds=audio_features.MAX_DURATION_S + 2)
+    problems = _refused(write_wav(tmp_path / "long.wav", long_file))
+    assert "s long" in problems[0] and "speech" in problems[0]
+
+
+def test_nearly_silent_recording_is_refused(tmp_path: Path) -> None:
+    quiet = synthetic_vowel(amplitude=audio_features.MIN_PEAK / 2, pad_s=0.3)
+    problems = _refused(write_wav(tmp_path / "quiet.wav", quiet))
+    assert "almost silent" in problems[0]
+
+
+def test_quiet_but_audible_recording_still_passes(tmp_path: Path) -> None:
+    quiet = synthetic_vowel(amplitude=audio_features.MIN_PEAK * 5, pad_s=0.3)
+    result = audio_features.extract_voice_features(write_wav(tmp_path / "quiet.wav", quiet))
+    assert result.quality.passed, result.quality.problems
+
+
 def test_unvoiced_noise_is_refused(tmp_path: Path) -> None:
     hiss = np.random.default_rng(1).normal(scale=0.2, size=SR * 2)
     _refused(write_wav(tmp_path / "hiss.wav", hiss))

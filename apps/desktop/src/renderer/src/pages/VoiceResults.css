@@ -98,3 +98,33 @@
     grid-template-columns: 1fr;
   }
 }
+
+.voice-results__mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-primary-muted);
+  color: var(--color-primary);
+}
+
+.voice-results__lead {
+  margin: var(--spacing-sm) 0 0;
+  color: var(--color-neutral-900);
+}
+
+.voice-results__tips {
+  margin: var(--spacing-md) 0;
+  padding-left: var(--spacing-lg);
+  color: var(--color-neutral-900);
+}
+
+.voice-results__tips li + li {
+  margin-top: var(--spacing-xs);
+}
+
+.voice-results__cta {
+  margin-bottom: var(--spacing-md);
+}

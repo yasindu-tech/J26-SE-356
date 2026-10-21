@@ -18,16 +18,29 @@ import pandas as pd
 import pytest
 import uci_praat
 import voice_module
-from test_audio_features import synthetic_vowel, write_wav
+from test_audio_features import SR, synthetic_vowel, write_wav
 
 N_PEOPLE = 60
 
 
-def _synthetic_table(columns: list[str]) -> pd.DataFrame:
+def _vowel_measures(tmp: Path) -> dict[str, float]:
+    """Audio and UCI measures of the test vowel: the centre of the synthetic training voices."""
+    extraction = audio_features.extract_voice_features(
+        write_wav(tmp / "centre.wav", synthetic_vowel(pad_s=0.3))
+    )
+    assert extraction.features is not None
+    return {**extraction.features, **uci_praat.uci_features_from(extraction)}
+
+
+def _synthetic_table(columns: list[str], centre: dict[str, float]) -> pd.DataFrame:
+    """Training voices spread around the test vowel, so it is a voice like them (not far
+    outside, which analyze_audio refuses)."""
     rng = np.random.default_rng(7)
     labels = np.array([0, 1] * (N_PEOPLE // 2))
-    features = rng.normal(size=(N_PEOPLE, len(columns)))
-    features[:, :5] += labels[:, None] * 1.5  # a learnable signal in the first features
+    noise = rng.normal(size=(N_PEOPLE, len(columns)))
+    noise[:, :5] += labels[:, None] * 1.5  # a learnable signal in the first features
+    middle = np.array([centre[c] for c in columns])
+    features = middle + 0.2 * (np.abs(middle) + 1e-3) * noise
     table = pd.DataFrame(features, columns=columns)
     table.insert(0, "person", [f"synthetic:{i}" for i in range(N_PEOPLE)])
     table["label"] = labels
@@ -38,16 +51,21 @@ def _synthetic_table(columns: list[str]) -> pd.DataFrame:
 
 
 @pytest.fixture(scope="module")
-def bundle() -> audio_model.AudioBundle:
-    table = _synthetic_table(list(audio_features.FEATURE_NAMES))
+def centre(tmp_path_factory: pytest.TempPathFactory) -> dict[str, float]:
+    return _vowel_measures(tmp_path_factory.mktemp("centre"))
+
+
+@pytest.fixture(scope="module")
+def bundle(centre: dict[str, float]) -> audio_model.AudioBundle:
+    table = _synthetic_table(list(audio_features.FEATURE_NAMES), centre)
     return audio_model.train_audio_model(table, n_ensemble=3, score="anova_f", n_boot=50)
 
 
 @pytest.fixture(scope="module")
-def uci_bundle() -> audio_model.AudioBundle:
+def uci_bundle(centre: dict[str, float]) -> audio_model.AudioBundle:
     """A bundle shaped like uci_transfer's: the 16 UCI Praat measures, jitter flagged."""
     columns = list(uci_praat.UCI_PRAAT_FEATURES)
-    table = _synthetic_table(columns)
+    table = _synthetic_table(columns, centre)
     X, y = table[columns], table.label.to_numpy()
     voice, test = voice_module.train_voice_model(
         X,
@@ -127,6 +145,16 @@ def test_unusable_and_non_audio_files_abstain_with_reasons(
         assert result["availability_mask"] == {"voice": False}
         assert result["problems"]
         assert result["explanations"]["summary"].startswith("No score")
+
+
+def test_sound_unlike_every_training_voice_abstains(
+    bundle: audio_model.AudioBundle, tmp_path: Path
+) -> None:
+    t = np.arange(SR * 3) / SR
+    tone = write_wav(tmp_path / "tone.wav", 0.5 * np.sin(2 * np.pi * 300 * t))
+    result = analyze_audio.analyze_audio(tone, bundle)
+    assert result["abstained"] is True and result["risk_score"] is None
+    assert "unlike every voice the model was trained on" in result["problems"][0]
 
 
 def test_command_writes_json_the_desktop_can_open(

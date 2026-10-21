@@ -430,3 +430,131 @@
 .voice-card__groups li {
   grid-template-columns: 200px minmax(0, 1fr) 48px;
 }
+
+/* Plain reading first (same idea as the MRI result's reading card) */
+
+.voice-card__recording {
+  margin: var(--spacing-xs) 0 0;
+  font-size: 13px;
+  color: var(--color-neutral-600);
+}
+
+.voice-card__reading {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--color-neutral-200);
+  background: var(--color-neutral-50);
+}
+
+.voice-card__reading--attention {
+  border-left-color: var(--color-attention);
+  background: var(--color-attention-muted);
+}
+
+.voice-card__reading--calm {
+  border-left-color: var(--color-calm);
+  background: var(--color-calm-muted);
+}
+
+.voice-card__headline {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.voice-card__reading--attention .voice-card__headline {
+  color: var(--color-attention);
+}
+
+.voice-card__reading--calm .voice-card__headline {
+  color: var(--color-calm);
+}
+
+.voice-card__reading-detail {
+  margin: var(--spacing-sm) 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.voice-card__borderline {
+  margin: var(--spacing-sm) 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.voice-card__score .voice-card__score-value {
+  font-size: 30px;
+}
+
+.voice-card__rely {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+}
+
+.voice-card__rely-text {
+  margin: var(--spacing-xs) 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.voice-card__plain-drivers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.voice-card__plain-drivers li {
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: baseline;
+}
+
+.voice-card__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translateY(1px);
+}
+
+.voice-card__dot--up {
+  background: var(--color-attention);
+}
+
+.voice-card__dot--down {
+  background: var(--color-calm);
+}
+
+.voice-card__quality-line {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Technical details, folded away */
+
+.voice-card__details {
+  border-top: 1px solid var(--color-neutral-200);
+  padding-top: var(--spacing-md);
+}
+
+.voice-card__details > summary {
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.voice-card__details[open] > summary {
+  margin-bottom: var(--spacing-sm);
+}
+
+.voice-card__details .voice-card__section {
+  margin-top: var(--spacing-lg);
+}
