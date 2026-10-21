@@ -49,6 +49,9 @@ Screening and triage only: say "referral priority", never "diagnosis".
 1. **Leakage audit**: the common method reports AUC 0.918; the honest one 0.812.
 2. **Cross-cohort drop**: the UCI-470 model, 0.73 inside its own dataset, scores
    at chance on new recordings (0.45–0.50), even with only the matching measures.
+3. **Age, Figshare**: voice 0.710; age and sex alone 0.866. With normal ageing
+   removed, voice keeps 0.754; trained on same-age people only, 0.556 (not yet
+   above chance).
 3. **Baseline ladder, Figshare**: voice 0.710; age and sex alone 0.866. Within
    the shared age range voice keeps 0.701 (lower bound above 0.5).
 4. **XAI**: faithful (deletion curve, p = 0.010); the card's groups are fairly
@@ -58,6 +61,12 @@ Screening and triage only: say "referral priority", never "diagnosis".
 
 ## Questions to be ready for
 
+- *Why does age beat voice? Is it just detecting age?* Figshare's healthy group
+  is about 20 years younger. With normal ageing removed from every voice
+  measure, voice keeps AUC 0.754 (lower bound 0.64), so it hears more than age
+  (`age_balanced.py`). Within each class the score does not follow age
+  (`audio_bias.py`). Honest limit: trained on same-age people only (57), voice
+  cannot yet be shown above chance (0.556); more older healthy voices are needed.
 - *Why does age beat voice?* Figshare's healthy group is about 19 years younger.
   Within the shared age range voice still works, and within each class the
   score does not follow age (`audio_bias.py`).
