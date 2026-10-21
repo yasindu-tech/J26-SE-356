@@ -178,6 +178,7 @@ export function Assessment({
   clinician,
   onHome,
   onOpenVoice,
+  onOpenTapping,
   onOpenSettings,
 }: {
   openId?: string | null;
@@ -189,6 +190,7 @@ export function Assessment({
   confirmFast: boolean;
   onHome: () => void;
   onOpenVoice: () => void;
+  onOpenTapping: () => void;
   onOpenSettings: () => void;
 }) {
   const [screen, setScreen] = useState<Screen>({ view: "patient" });
@@ -372,6 +374,7 @@ export function Assessment({
           eddyProfile={eddyProfile}
           onChange={setForm}
           onOpenVoice={onOpenVoice}
+          onOpenTapping={onOpenTapping}
           onOpenSettings={onOpenSettings}
           onBack={() => go({ view: "patient" })}
           onNext={() => next("modalities")}
@@ -909,6 +912,7 @@ function ModalitiesStep({
   eddyProfile,
   onChange,
   onOpenVoice,
+  onOpenTapping,
   onOpenSettings,
   onBack,
   onNext,
@@ -917,6 +921,7 @@ function ModalitiesStep({
   eddyProfile: EddyProfile;
   onChange: (next: Form) => void;
   onOpenVoice: () => void;
+  onOpenTapping: () => void;
   onOpenSettings: () => void;
   onBack: () => void;
   onNext: () => void;
@@ -1014,12 +1019,19 @@ function ModalitiesStep({
             <div key={p.key} className="asm__part asm__part--none asm__part--small">
               <div className="asm__part-head">
                 <h3 className="asm__part-title">{p.label}</h3>
-                <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
+                <span className="mr__chip mr__chip--none">
+                  {p.key === "tapping" ? "Research demo" : PART_NOT_BUILT}
+                </span>
               </div>
               <p className="note">{p.provides}.</p>
               {p.key === "voice" && (
                 <button type="button" className="asm__link" onClick={onOpenVoice}>
                   Open an existing voice result file →
+                </button>
+              )}
+              {p.key === "tapping" && (
+                <button type="button" className="asm__link" onClick={onOpenTapping}>
+                  Open the finger-tapping demo →
                 </button>
               )}
             </div>
