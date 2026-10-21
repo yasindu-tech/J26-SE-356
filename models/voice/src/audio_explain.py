@@ -23,6 +23,12 @@ import numpy as np
 LOSSY_FORMATS = {"mp3", "m4a", "aac", "ogg", "opus", "wma", "amr", "3gp"}
 WIDE_CI = 0.30  # CI wider than this is called out as wide
 SHORT_VOWEL_S = 2.0
+# "Far outside": beyond the 1st-99th percentile span of all training voices by half that
+# span again. A natural voice almost never lands there (held-out Figshare people: 1 of 40
+# healthy and 0 of 37 PD had 3 or more such measures); a forced, sung, whispered-then-
+# voiced or synthetic sound does. At MAX_FAR_OUTSIDE or more the file gets no score.
+FAR_MARGIN = 0.5
+MAX_FAR_OUTSIDE = 3
 
 FeatureInfo = dict[str, tuple[str, str]]
 Reference = dict[str, dict[str, list[float]]]
@@ -98,6 +104,36 @@ def outside_training(features: dict[str, float], reference: Reference) -> list[s
     return unusual
 
 
+def far_outside_training(
+    features: dict[str, float], reference: Reference, skip: list[str] | None = None
+) -> list[str]:
+    """Features far outside ALL training voices (see FAR_MARGIN); ``skip`` is left out."""
+    skip = skip or []
+    far = []
+    for name, value in features.items():
+        if name not in reference["healthy"] or name in skip:
+            continue
+        low = min(reference["healthy"][name][1], reference["pd"][name][1])
+        high = max(reference["healthy"][name][99], reference["pd"][name][99])
+        margin = FAR_MARGIN * (high - low)
+        if value < low - margin or value > high + margin:
+            far.append(name)
+    return far
+
+
+def unlike_training_problem(far: list[str]) -> list[str]:
+    """The refusal reason when a voice is unlike every training voice, or [] if it is not."""
+    if len(far) < MAX_FAR_OUTSIDE:
+        return []
+    shown = ", ".join(far[:3]) + (", ..." if len(far) > 3 else "")
+    return [
+        f"This voice is unlike every voice the model was trained on ({len(far)} measures far "
+        f"outside their range: {shown}). A forced, sung, whispered or changed voice, or a "
+        "sound that is not a natural 'aaah', can cause this. Record a relaxed, natural 'aaah' "
+        "at a comfortable pitch."
+    ]
+
+
 def uncertainty_reasons(
     result: dict[str, Any],
     quality_info: dict[str, Any],
@@ -129,6 +165,11 @@ def uncertainty_reasons(
             f"The file is compressed ({fmt}); fine voice measures such as jitter and "
             "shimmer are less exact than from WAV or FLAC."
         )
+    if quality_info.get("snr_db") is None:
+        reasons.append(
+            "Background noise could not be checked: there was no quiet moment around the "
+            "'aaah'. Start the recording with about one second of silence."
+        )
     vowel_s = quality_info.get("vowel_s")
     if vowel_s is not None and vowel_s < SHORT_VOWEL_S:
         reasons.append(
@@ -140,6 +181,12 @@ def uncertainty_reasons(
             f"{len(unusual)} measurement(s) are outside the range seen in training ({shown}); "
             "the model is less reliable for this voice."
         )
+    reasons.append(
+        "The model cannot tell Parkinson's disease from other things that change the voice, "
+        "such as a cold, sore throat, asthma or other breathing problems, a voice, throat or "
+        "neck condition, recent shouting or smoking. If any of these apply, the score may be "
+        "higher for that reason."
+    )
     return reasons
 
 

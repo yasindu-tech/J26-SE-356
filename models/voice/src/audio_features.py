@@ -11,8 +11,10 @@ Steps:
 2. Find the vowel: the longest stretch where Praat finds a pitch, then drop its
    first and last 10%, keeping the steady middle where voice measures are most
    reliable. The audio around it is the background used for the noise check.
-3. Quality gate. The file is refused, with plain-language reasons, if the vowel
-   is too short, the original audio is clipped, the background noise is too
+3. Quality gate. Two cheap checks run first, before any pitch tracking: the file
+   is refused if it is much longer than one "aaah" (speech, a long conversation
+   or a wrong file) or almost silent. Then it is refused, with plain-language
+   reasons, if the vowel is too short, the original audio is clipped, the background noise is too
    loud, too little of the vowel has a measurable pitch, or any feature cannot
    be measured. A refused file gets NO features: it is never imputed or
    zero-filled (CLAUDE.md section 3.5).
@@ -47,6 +49,8 @@ PITCH_CEILING_HZ = 500.0
 MAX_FORMANT_HZ = 3800.0  # below the 4 kHz limit of 8 kHz audio
 
 # Quality gate thresholds.
+MAX_DURATION_S = 30.0  # one "aaah" is 3-10 s; training files are at most 7.2 s
+MIN_PEAK = 0.01  # -40 dB full scale: below this the file is nearly silent
 MIN_VOWEL_S = 1.0  # steady vowel length after trimming the edges
 MAX_CLIPPED_FRACTION = 0.01
 MIN_SNR_DB = 10.0  # only checked when there is background around the vowel to measure
@@ -270,6 +274,23 @@ def _librosa_features(vowel: np.ndarray, sr: int) -> dict[str, float]:
     return features
 
 
+def early_problems(clip: audio_io.AudioClip) -> list[str]:
+    """Checks that need no pitch tracking, run before the slow steps."""
+    problems = []
+    if clip.duration_s > MAX_DURATION_S:
+        problems.append(
+            f"The recording is {clip.duration_s:.0f} s long; one steady 'aaah' of 3 to 10 s is "
+            "expected. Upload only the 'aaah', not speech or a longer recording."
+        )
+    peak = float(np.max(np.abs(clip.samples))) if clip.samples.size else 0.0
+    if peak < MIN_PEAK:
+        problems.append(
+            "The recording is almost silent: no 'aaah' could be heard. Check the microphone "
+            "and record closer to it."
+        )
+    return problems
+
+
 def extract_voice_features(path: str | Path) -> Extraction:
     """Quality-checked voice features for one sustained-vowel recording.
 
@@ -277,6 +298,10 @@ def extract_voice_features(path: str | Path) -> Extraction:
     audio that is merely unusable comes back with ``features=None`` and reasons.
     """
     clip = audio_io.load_audio(path)
+    early = early_problems(clip)
+    if early:
+        info = {"source_format": clip.source_format, "duration_s": round(clip.duration_s, 2)}
+        return Extraction(None, QualityReport(False, early, info))
     vowel, vowel_info = find_vowel(clip)
     vowel_s = len(vowel) / clip.sample_rate
     info: dict[str, Any] = {

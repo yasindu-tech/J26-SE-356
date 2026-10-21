@@ -165,6 +165,21 @@ describe("checkRows", () => {
     expect(failed.map((r) => r.key)).toEqual(["strides"]);
     expect(failed[0]?.value).toBe("2 in total, on both feet");
   });
+
+  it("leaves out a check the pipeline did not run", () => {
+    const gate = MOCK_GAIT_NOT_SCORED.gate;
+    if (!gate) throw new Error("the mock has a gate");
+    const checks = { ...gate.checks, frame_rate: { value: 240, limit: 60, ok: false } };
+    delete checks.strides; // outside 20 to 60 fps the pipeline does not count strides
+    const slowMotion: GaitResult = { ...MOCK_GAIT_NOT_SCORED, gate: { ...gate, checks } };
+    const rows = checkRows(slowMotion);
+    expect(rows.map((r) => r.key)).toEqual(["frame_rate", "leg_visibility", "filled_share", "facing"]);
+    expect(rows[0]).toMatchObject({ value: "240 frames per second", ok: false });
+  });
+
+  it("is empty when the analysis stopped before the checks", () => {
+    expect(checkRows({ ...MOCK_GAIT_NOT_SCORED, gate: null })).toEqual([]);
+  });
 });
 
 describe("visibleWarnings", () => {

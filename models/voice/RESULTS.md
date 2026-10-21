@@ -294,7 +294,7 @@ again as more data arrives.
 
 ## UCI-470 model on uploaded audio (VOICE-25)
 
-Reproduce (about 35 seconds):
+Reproduce (about 40 seconds):
 
 ```bash
 python models/voice/src/uci_transfer.py
@@ -338,9 +338,20 @@ Label-permutation control on UCI-470 (10 shuffles, L1): mean AUC 0.481, max
   about half, so the dataset's jitter was probably measured with other settings.
 - **Explanations warn about it** (decision D13): jitter is never compared with
   UCI-470 voices for new audio, and a result that relies on it says so.
-- Post hoc (decided after seeing the result, so exploratory only): the same
-  model without the 5 jitter measures still scored at chance on Figshare
-  (L1 0.466, LightGBM 0.555; CIs include 0.5).
+- **Keeping only measures that match does not help** (table below, post hoc:
+  decided after seeing the result, so exploratory only).
+
+| Features the UCI-470 model keeps (L1) | Inside UCI-470, nested CV | Figshare (external) |
+|---|---|---|
+| all 16 recomputable | 0.731 [0.657, 0.801] | 0.480 [0.351, 0.602] |
+| 11 the unit check does not flag (no jitter) | 0.718 | 0.448 [0.321, 0.579] |
+| 9 shimmer and HNR only | 0.740 | 0.500 [0.373, 0.634] |
+
+  For the external column each model is tuned and fitted on all UCI-470
+  people (`uci_transfer.subset_transfer`). Every version learns well inside
+  UCI-470 and scores at chance on new recordings, so the missing and
+  mismatched features are not the cause: what the model learns is tied to how
+  UCI-470 was recorded. This is the cross-cohort drop.
 
 ### Caveats
 
@@ -413,3 +424,197 @@ mean 0.478 (max 0.612): both pass.
 - The dataset gate (within-dataset AUC) cannot run with one dataset.
 - The age-matched check still contains an age difference inside the range; it
   is a sanity check, not an age adjustment.
+
+## Upload checks and bias of the raw-audio model — exploratory
+
+Reproduce (about 1 minute):
+
+```bash
+python models/voice/src/audio_bias.py
+```
+
+### Checks on uploaded files
+
+Before a score is given, an upload is refused, with a plain reason, if it is:
+
+| Check | Threshold | Where |
+|---|---|---|
+| longer than one "aaah" (speech, wrong file) | > 30 s, checked before pitch tracking | `audio_features.early_problems` |
+| almost silent | peak < 1% of full scale | `audio_features.early_problems` |
+| steady vowel too short | < 1 s | quality gate |
+| clipped | > 1% of samples | quality gate |
+| background noise too loud | < 10 dB SNR (only when there is silence to measure) | quality gate |
+| unsteady pitch | < 50% of the vowel voiced | quality gate |
+| unlike every training voice | 3+ measures beyond the 1st–99th percentile span by half that span again | `audio_explain.far_outside_training` |
+
+The last rule was chosen so it does not refuse real voices: on held-out
+Figshare people (5-fold, training range from the other folds) it would refuse
+1 of 40 healthy and 0 of 37 PD. Of the 16 hold-out test files, none is refused.
+
+What the checks catch and miss, tried on altered copies of hold-out recordings:
+
+- caught: a pure tone, a 40 s file, a near-silent file;
+- **not caught: a male voice shifted up an octave.** It lands in the range of
+  female voices; without knowing the person's sex this cannot be told apart. The
+  card still shows its "outside the range seen in training" caution (4 measures);
+- a faked loudness tremor (6 Hz) left the score unchanged (0.49 → 0.49,
+  0.18 → 0.18): wobbling the volume does not push the score toward PD.
+
+Deliberate voice changes in general cannot be detected reliably; the capture
+protocol (a clinician present, a natural "aaah") is the main protection. When the
+recording has no silence around the "aaah", background noise cannot be measured;
+the result then says so.
+
+### Bias by sex and age (77 people, out-of-fold L1 logistic)
+
+Age and sex are not model inputs.
+
+| Group | n PD / healthy | AUC [95% CI] |
+|---|---|---|
+| sex F | 18 / 25 | 0.65 |
+| sex M | 19 / 15 | 0.84 |
+| gap M − F | | +0.18 [−0.07, +0.41] |
+
+| Score vs age, within class | Spearman r [95% CI] |
+|---|---|
+| healthy | −0.02 [−0.34, +0.31] |
+| PD | +0.01 [−0.32, +0.35] |
+
+| Healthy people referred (score ≥ 0.5), by age | Referred / n |
+|---|---|
+| ≤ 50 | 6 / 24 |
+| 51–65 | 5 / 11 |
+| > 65 | 1 / 5 |
+
+### What it says
+
+- **Within each class the score does not follow age** (r ≈ 0): older healthy
+  people do not get higher scores than younger healthy people. The model is not
+  simply reading age, although age still separates the classes in this dataset
+  (see the ladder above).
+- **The model looks weaker for women** (0.65 vs 0.84), with more false referrals
+  of healthy women. The gap's CI includes zero, so it is not established, but it is
+  shown on every result card ("Fairness by sex").
+- **Other conditions that change the voice were not checked**: no dataset we hold
+  labels colds, asthma, breathing, vocal-cord, throat or neck problems. The result
+  card says on every score that these can raise it.
+
+### Caveats
+
+- 77 people; the age bands above 50 have 11 and 5 healthy people. Exploratory only.
+- Sex codes are as recorded in Figshare's demographics file.
+
+## XAI faithfulness and stability (raw-audio model) — exploratory
+
+Reproduce (about 35 seconds):
+
+```bash
+python models/voice/src/xai_faithfulness.py
+```
+
+Same honest CV as the ladder (77 Figshare people, person-level 5 outer folds,
+each tuned on its own training people). Follows the tapping module's FT-44
+(deletion curve) and FT-45 (stability) checks. Figure:
+`artifacts/xai_deletion_curve.png`.
+
+### Are the reasons faithful? (deletion curve)
+
+For each held-out person the features the model uses are set to the
+training-fold median one by one, in that person's |SHAP| order, and compared
+with the reverse order and 100 random orders of the same used features.
+
+| Model | Pooled AUC after deleting, mean over 1–10 steps: SHAP / random / reverse | p | Mean change in log-odds: SHAP / random / reverse | p |
+|---|---|---|---|---|
+| **L1 logistic (used by the app)** | **0.521** / 0.576 / 0.611 | 0.010 | **0.863** / 0.711 / 0.536 | 0.010 |
+| LightGBM | 0.592 / 0.645 / 0.671 | 0.020 | 2.632 / 1.684 / 1.039 | 0.010 |
+
+Deleting only each person's top SHAP feature drops the L1 model's AUC from
+0.710 to 0.525; a random used feature drops it to 0.658 on average.
+
+### Are the reasons stable?
+
+| Model | Single measures | Card groups (what the doctor sees) |
+|---|---|---|
+| L1, folds' importance ranking, mean Spearman (target 0.70) | 0.22 | 0.67 |
+| L1, same top reason after a bootstrap refit (20 per fold) | 29% | 64% |
+| L1, top-5 measures / top-3 groups overlap (Jaccard) | 0.22 | 0.55 |
+| LightGBM, folds' ranking, mean Spearman | 0.17 | 0.79 |
+| LightGBM, same top reason after refit | 14% | 49% |
+
+Reasons the two fits share point the same way 98% of the time (L1; LightGBM 93%).
+Overall the top groups are voice tone (MFCC), spectrum and pitch (L1).
+
+### What it says
+
+- **The explanations are faithful.** Removing what SHAP names first changes the
+  score and the AUC faster than removing the same features at random (p ≤ 0.02,
+  both models). The card shows what the model actually used.
+- **The exact measure named is not stable; the group mostly is.** With 61–62
+  training people and many near-duplicate measures (5 jitter, 6 shimmer, 26
+  MFCC), a slightly different training set picks a different measure from the
+  same family. The visible card groups measures (decision D12 and
+  `voicePlain.ts`), which roughly doubles stability, but still falls just short
+  of the 0.70 target for L1. Single measures in "technical details" should be
+  read as one of several similar measures.
+- For the linear model, faithfulness is close to guaranteed by construction;
+  the check mainly confirms the implementation and the median baseline.
+  Stability is the real finding, and it improves only with more training people.
+
+### Caveats
+
+- 77 people; one L1 fold kept a single feature, so the fold rankings compare
+  few features (17 used by any fold).
+- Deletion uses the training median, not the SHAP baseline (the training
+  mean), so the curve is a check, not an exact replay of the SHAP values.
+- Faithful means faithful to the model, not to the disease: these are the
+  model's reasons, never causes.
+
+## Age-balanced tests (raw-audio model) — exploratory
+
+Reproduce (about 40 seconds):
+
+```bash
+python models/voice/src/age_balanced.py
+```
+
+The age-matched check above only re-scores a model that was trained with the
+young healthy people. Here age is taken out of training too, two ways
+(person-level nested CV, L1 logistic, seed 42, 1000 bootstrap resamples):
+
+- **Age-adjusted voice**: inside each training fold every voice measure is
+  regressed on age in the healthy training people (normal ageing), and that
+  effect is subtracted for everyone (`AgeAdjuster`). Age is used only for the
+  adjustment, never as a model input.
+- **Same ages only**: people aged 43.1–79.0 (the range both classes cover),
+  trained and tested inside it.
+
+| Test | People (PD / healthy) | Age gap | Voice AUC [95% CI] | Age + sex only |
+|---|---|---|---|---|
+| Current model | 37 / 40 | 19.9 y | 0.710 [0.586, 0.824] | 0.866 [0.769, 0.948] |
+| **Age-adjusted voice** | 37 / 40 | 19.9 y | **0.754 [0.639, 0.865]** | 0.866 |
+| Same ages only, trained there | 34 / 23 | 9.9 y | 0.556 [0.403, 0.706] | 0.746 [0.581, 0.879] |
+
+Age-adjusted minus current: +0.044 [−0.055, +0.135]. Same ages, voice minus
+age + sex: −0.189 [−0.406, +0.030]. Label-permutation control for the
+age-adjusted pipeline (10 shuffles): mean 0.521, max 0.626, pass.
+
+### What it says
+
+- **Voice carries signal beyond normal ageing.** With the healthy ageing trend
+  removed from every measure, voice keeps AUC 0.754, lower bound 0.64. The
+  current model is not just reading age through the voice.
+- **But with same-age people only, voice cannot be shown to work.** Trained on
+  about 46 people per fold, voice scores 0.556 and its CI includes 0.5. This
+  mixes two things that cannot be separated here: fewer training people, and an
+  age gap that is still 9.9 years inside the shared range.
+- So: some voice signal, weak, and not cleanly separated from age on this
+  dataset. More recordings of older healthy people are what would settle it.
+- The age-adjusted model is not better by a margin we can show (CI includes
+  0), and it would need the person's age at upload, so the app keeps the
+  current model.
+
+### Caveats
+
+- The adjustment is linear and learned from healthy training people aged
+  18–79; PD people up to 85 are slightly outside it.
+- 77 people; 57 in the same-age test. Exploratory only.

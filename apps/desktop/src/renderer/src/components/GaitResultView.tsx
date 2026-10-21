@@ -24,26 +24,17 @@ import "./GaitResultView.css";
 export function GaitResultView({
   result,
   videoSeconds = null,
-  demo = false,
   onNewVideo,
 }: {
   result: GaitResult;
   /** Length of the video, when the picker read it; the scored-stretch bar needs it. */
   videoSeconds?: number | null;
-  /** True while the screen shows stand-in records instead of the backend's. */
-  demo?: boolean;
   /** Shown on a result that was not scored, so the clinician can choose another video. */
   onNewVideo?: () => void;
 }) {
   const scored = isScored(result);
   return (
     <div className="gr">
-      {demo && (
-        <p className="gr__notice" role="note">
-          <span className="gr__notice-title">Demo data</span>
-          <span>This result is a stand-in. The gait service is not connected to this screen yet.</span>
-        </p>
-      )}
       <div className="mri__layout">
         <div className="mri__main">
           {scored ? <ReadingCard result={result} /> : <NotScoredCard result={result} onNewVideo={onNewVideo} />}
@@ -259,18 +250,19 @@ function TimelineCard({ result, videoSeconds }: { result: GaitResult; videoSecon
           </div>
           <p className="note">{bar.text} The rest was not used.</p>
         </>
-      ) : (
+      ) : result.walk ? (
         <p className="note">
           Scored {result.walk.seconds.toFixed(1)} s of walking, from {result.walk.start_s.toFixed(1)} s to{" "}
           {result.walk.end_s.toFixed(1)} s of the video.
         </p>
-      )}
+      ) : null}
     </section>
   );
 }
 
 function ChecksCard({ result }: { result: GaitResult }) {
   const rows = checkRows(result);
+  if (rows.length === 0) return null;
   return (
     <section className="card" aria-label="Video checks">
       <h2 className="mri__rail-title">Video checks</h2>
