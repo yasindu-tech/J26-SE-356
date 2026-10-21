@@ -66,6 +66,7 @@ function seconds(n: number): string {
 
 /** How much of the video was scored. */
 export function walkLine(r: GaitResult): string {
+  if (!r.walk) return "";
   return `Scored ${seconds(r.walk.seconds)} s of walking, from ${r.walk.start_s.toFixed(1)} s to ${r.walk.end_s.toFixed(1)} s of the video.`;
 }
 
@@ -158,46 +159,22 @@ export interface CheckRow {
 
 const pct = (x: number): string => `${Math.round(x * 100)}%`;
 
-/** The video checks, in a fixed order, each with what was found and what is needed. */
+/** The video checks, in a fixed order, each with what was found and what is needed. A check the
+ * pipeline did not run is left out (outside 20 to 60 fps the strides are not counted). */
 export function checkRows(r: GaitResult): CheckRow[] {
-  const c = r.gate.checks;
-  return [
-    {
-      key: "frame_rate",
-      label: "Frame rate",
-      value: `${Math.round(c.frame_rate.value)} frames per second`,
-      need: "needs 20 to 60",
-      ok: c.frame_rate.ok,
-    },
-    {
-      key: "leg_visibility",
-      label: "Legs visible",
-      value: `${pct(c.leg_visibility.value)} of frames`,
-      need: `needs at least ${pct(c.leg_visibility.limit)}`,
-      ok: c.leg_visibility.ok,
-    },
-    {
-      key: "filled_share",
-      label: "Frames filled in",
-      value: pct(c.filled_share.value),
-      need: `needs at most ${pct(c.filled_share.limit)}`,
-      ok: c.filled_share.ok,
-    },
-    {
-      key: "facing",
-      label: "Toes ahead of heels",
-      value: `${pct(c.facing.value)} of frames`,
-      need: `needs at least ${pct(c.facing.limit)}`,
-      ok: c.facing.ok,
-    },
-    {
-      key: "strides",
-      label: "Strides found",
-      value: `${Math.round(c.strides.value)} in total, on both feet`,
-      need: `needs at least ${Math.round(c.strides.limit)}`,
-      ok: c.strides.ok,
-    },
-  ];
+  const c = r.gate?.checks;
+  if (!c) return [];
+  const rows: CheckRow[] = [];
+  const add = (key: GaitCheckName, label: string, value: (v: number) => string, need: (l: number) => string): void => {
+    const check = c[key];
+    if (check) rows.push({ key, label, value: value(check.value), need: need(check.limit), ok: check.ok });
+  };
+  add("frame_rate", "Frame rate", (v) => `${Math.round(v)} frames per second`, () => "needs 20 to 60");
+  add("leg_visibility", "Legs visible", (v) => `${pct(v)} of frames`, (l) => `needs at least ${pct(l)}`);
+  add("filled_share", "Frames filled in", (v) => pct(v), (l) => `needs at most ${pct(l)}`);
+  add("facing", "Toes ahead of heels", (v) => `${pct(v)} of frames`, (l) => `needs at least ${pct(l)}`);
+  add("strides", "Strides found", (v) => `${Math.round(v)} in total, on both feet`, (l) => `needs at least ${Math.round(l)}`);
+  return rows;
 }
 
 const ONE_PERSON_WARNINGS = ["You confirmed one person", "One person in view is assumed"];
@@ -231,7 +208,7 @@ export interface Notice {
 /** Things worth knowing about this video: the pipeline's warnings, and a short walk. */
 export function notices(r: GaitResult): Notice[] {
   const items: Notice[] = visibleWarnings(r).map((text) => ({ title: "Check the video", text }));
-  if (isScored(r) && r.walk.seconds < SHORT_WALK_SECONDS) {
+  if (isScored(r) && r.walk && r.walk.seconds < SHORT_WALK_SECONDS) {
     items.push({
       title: "Short walk",
       text: `Only ${seconds(r.walk.seconds)} s of walking was scored, so the reading rests on few steps.`,
@@ -243,7 +220,7 @@ export function notices(r: GaitResult): Notice[] {
 /** One line for traceability: which model, which video, who confirmed one person. */
 export function auditLine(r: GaitResult): string {
   const who = r.one_person_confirmed ? "one person confirmed by you" : "one person assumed";
-  return `Model ${r.model_version} \u00b7 video ${r.video} \u00b7 ${who}`;
+  return `Model ${r.model_version ?? "unknown"} \u00b7 video ${r.video ?? "unknown"} \u00b7 ${who}`;
 }
 
 export interface TimelineBar {
@@ -256,7 +233,7 @@ export interface TimelineBar {
 
 /** Which part of the video was scored, as a bar. Null when the video length is not known. */
 export function timelineBar(r: GaitResult, videoSeconds: number | null): TimelineBar | null {
-  if (videoSeconds === null || videoSeconds <= 0 || r.walk.seconds <= 0) return null;
+  if (!r.walk || videoSeconds === null || videoSeconds <= 0 || r.walk.seconds <= 0) return null;
   const total = Math.max(videoSeconds, r.walk.end_s);
   const clamp = (n: number): number => Math.min(100, Math.max(0, n));
   const left = clamp((r.walk.start_s / total) * 100);

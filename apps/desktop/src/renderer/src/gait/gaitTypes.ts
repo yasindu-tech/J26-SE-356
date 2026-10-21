@@ -14,7 +14,8 @@ export interface GaitGate {
   passed: boolean;
   reasons: string[];
   warnings: string[];
-  checks: Record<GaitCheckName, GaitCheck>;
+  /** A check the pipeline did not run is missing: outside 20 to 60 fps there is no "strides". */
+  checks: Partial<Record<GaitCheckName, GaitCheck>>;
 }
 
 export interface GaitWalk {
@@ -37,12 +38,17 @@ export interface GaitResult {
   modality: "gait";
   schema_version: string;
   available: boolean;
-  /** A short hash of the video, not its name. */
-  video: string;
+  /** "scored", "abstained" or "failed", as the backend sets it. Absent on the mock records. */
+  status?: "scored" | "abstained" | "failed";
+  /** Why the analysis failed. */
+  error?: string | null;
+  /** A short hash of the video, not its name. Null when the analysis failed before reading it. */
+  video: string | null;
   reasons: string[];
   warnings: string[];
-  gate: GaitGate;
-  walk: GaitWalk;
+  /** Null when the analysis failed before the video was checked. */
+  gate: GaitGate | null;
+  walk: GaitWalk | null;
   predicted_class: number | null;
   predicted_label: string | null;
   class_labels: string[];
@@ -52,12 +58,33 @@ export interface GaitResult {
   expected_severity_note: string;
   top_features: GaitFeature[];
   feature_vector: Record<string, number> | null;
-  model_version: string;
+  model_version: string | null;
   one_person_confirmed: boolean;
 }
 
 /** Where a gait analysis stands, as the backend reports it (queued, running, then one final state). */
 export type GaitRunState = "queued" | "running" | "scored" | "abstained" | "failed";
+
+/** GET /api/v1/gait/analyses/{id}: the status only. It has no step list or queue position. */
+export interface GaitAnalysisStatus {
+  id: string;
+  status: GaitRunState;
+  created_at: string;
+  finished_at: string | null;
+  /** Seconds since the upload. */
+  elapsed_s: number;
+  one_person_confirmed: boolean;
+  /** The pseudonymous label typed on the Patient details step, if any. */
+  subject_label: string | null;
+  error: string | null;
+  /** Why the video could not be scored, in plain words. */
+  abstain_reason: string | null;
+}
+
+export interface GaitAnalysisList {
+  items: GaitAnalysisStatus[];
+  total: number;
+}
 
 export interface GaitRunStatus {
   id: string;

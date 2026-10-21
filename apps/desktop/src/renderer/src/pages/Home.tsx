@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { listGaitAnalyses } from "../api/gait.api";
 import { listMriAnalyses } from "../api/mri.api";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
+import type { GaitAnalysisStatus } from "../gait/gaitTypes";
 import type { MriAnalysisStatus } from "../mri/mriTypes";
 import {
   STEP_LABELS,
@@ -15,8 +17,8 @@ import "./Home.css";
 // First screen after sign-in, from the approved design's "Home". The design's metrics
 // (priorities, decisions, referrals, a monthly summary) belong to the combined result, which
 // is not built. The layout stays; the numbers are the real ones for today: this clinician's
-// assessments, each part separate. Gait, tapping and voice are not processed in this build,
-// so they show "—". Nothing here is a placeholder number.
+// analyses, each part separate: an MRI analysis and a gait analysis are separate rows. Tapping
+// and voice are not processed in this build, so they show "—". Nothing here is a placeholder number.
 
 const RECENT_COUNT = 8;
 
@@ -24,28 +26,52 @@ export function Home({
   clinician,
   onNewAssessment,
   onOpenAnalysis,
+  onOpenGait,
   onSeeAll,
 }: {
   clinician: string;
   onNewAssessment: () => void;
   onOpenAnalysis: (id: string) => void;
+  onOpenGait: (id: string) => void;
   onSeeAll: () => void;
 }) {
   const [items, setItems] = useState<MriAnalysisStatus[] | null>(null);
+  const [gaitItems, setGaitItems] = useState<GaitAnalysisStatus[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [gaitFailed, setGaitFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     listMriAnalyses(100)
       .then((list) => !cancelled && setItems(list.items))
       .catch(() => !cancelled && setFailed(true));
+    listGaitAnalyses(100)
+      .then((list) => !cancelled && setGaitItems(list.items))
+      .catch(() => !cancelled && setGaitFailed(true)); // the MRI rows still show
     return () => {
       cancelled = true;
     };
   }, []);
 
   const now = new Date();
-  const summary = items ? homeSummary(items) : null;
+  const mriSummary = items ? homeSummary(items) : null;
+  const gaitList = gaitItems ?? [];
+  const gaitRunning = gaitList.filter((g) => g.status === "queued" || g.status === "running");
+  const summary =
+    mriSummary === null
+      ? null
+      : {
+          counted: mriSummary.counted + gaitList.length,
+          scored: mriSummary.scored + gaitList.filter((g) => g.status === "scored").length,
+          notScored: mriSummary.notScored + gaitList.filter((g) => g.status === "abstained").length,
+          failed: mriSummary.failed + gaitList.filter((g) => g.status === "failed").length,
+          inProgress: mriSummary.inProgress.length + gaitRunning.length,
+        };
+  // MRI and gait analyses are separate rows, newest first.
+  const rows = [
+    ...(items ?? []).map((item) => ({ kind: "mri" as const, item, at: parseBackendTime(item.created_at).getTime() })),
+    ...gaitList.map((item) => ({ kind: "gait" as const, item, at: parseBackendTime(item.created_at).getTime() })),
+  ].sort((a, b) => b.at - a.at);
 
   return (
     <div className="home">
@@ -69,13 +95,33 @@ export function Home({
           Could not load your analyses. Check the backend connection in the top bar.
         </p>
       )}
+      {!failed && gaitFailed && (
+        <p className="home__error" role="alert">
+          Could not load your gait analyses, so they are not listed or counted below.
+        </p>
+      )}
 
       <div className="home__layout">
         <div className="home__main">
-          {summary && summary.inProgress.length > 0 && (
+          {summary && summary.inProgress > 0 && (
             <section className="card home__progress" aria-label="In progress">
               <p className="eyebrow">In progress</p>
-              {summary.inProgress.map((item) => (
+              {gaitRunning.map((item) => (
+                <div key={item.id} className="home__progress-row">
+                  <div>
+                    <p className="home__progress-title">
+                      {item.subject_label ? `${item.subject_label} · ` : ""}Gait part running
+                    </p>
+                    <p className="note">
+                      {item.status === "queued" ? "Waiting for its turn" : "Reading the walk"} · usually about a minute
+                    </p>
+                  </div>
+                  <button type="button" className="btn btn--outline" onClick={() => onOpenGait(item.id)}>
+                    Open →
+                  </button>
+                </div>
+              ))}
+              {(mriSummary?.inProgress ?? []).map((item) => (
                 <div key={item.id} className="home__progress-row">
                   <div>
                     <p className="home__progress-title">
@@ -103,10 +149,10 @@ export function Home({
               </button>
             </div>
             {items === null && !failed && <p className="note">Loading…</p>}
-            {items !== null && items.length === 0 && (
+            {items !== null && rows.length === 0 && (
               <p className="note">None yet. Start one with “New assessment”.</p>
             )}
-            {items !== null && items.length > 0 && (
+            {items !== null && rows.length > 0 && (
               <table className="home__table">
                 <thead>
                   <tr>
@@ -120,22 +166,39 @@ export function Home({
                   </tr>
                 </thead>
                 <tbody>
-                  {items.slice(0, RECENT_COUNT).map((item) => {
-                    const label = statusLabel(item.status);
+                  {rows.slice(0, RECENT_COUNT).map((row) => {
+                    const label = statusLabel(row.item.status);
+                    const running = row.item.status === "queued" || row.item.status === "running";
+                    const tag = <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>;
+                    const none = (
+                      <td className="home__none" title="Not in this build yet">
+                        —
+                      </td>
+                    );
                     return (
-                      <tr key={item.id}>
-                        <td className="mono">{item.subject_label ?? "No ID"}</td>
-                        <td className="mono">{parseBackendTime(item.created_at).toLocaleString()}</td>
-                        <td className="home__none" title="Not in this build yet">—</td>
-                        <td className="home__none" title="Not in this build yet">—</td>
-                        <td className="home__none" title="Not in this build yet">—</td>
-                        <td>
-                          <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>
-                          {item.eddy_profile === "fast" && <span className="mri__tag"> Fast DTI</span>}
+                      <tr key={`${row.kind}-${row.item.id}`}>
+                        <td className="mono">
+                          {row.item.subject_label ?? "No ID"}
                         </td>
+                        <td className="mono">{parseBackendTime(row.item.created_at).toLocaleString()}</td>
+                        {row.kind === "gait" ? <td>{tag}</td> : <td className="home__none" title="Not added to this analysis">—</td>}
+                        {none}
+                        {none}
+                        {row.kind === "mri" ? (
+                          <td>
+                            {tag}
+                            {row.item.eddy_profile === "fast" && <span className="mri__tag"> Fast DTI</span>}
+                          </td>
+                        ) : (
+                          <td className="home__none" title="Not added to this analysis">—</td>
+                        )}
                         <td>
-                          <button type="button" className="home__link" onClick={() => onOpenAnalysis(item.id)}>
-                            {item.status === "queued" || item.status === "running" ? "Open →" : "View →"}
+                          <button
+                            type="button"
+                            className="home__link"
+                            onClick={() => (row.kind === "mri" ? onOpenAnalysis(row.item.id) : onOpenGait(row.item.id))}
+                          >
+                            {running ? "Open →" : "View →"}
                           </button>
                         </td>
                       </tr>
@@ -153,9 +216,10 @@ export function Home({
               Your assessments
               <InfoTip label="About these counts">
                 {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
-                Each counts the MRI part. A “not scored” result means the model declined to score it
-                (for example, an unseen scanner model); it is not a normal result. Gait, tapping and
-                voice are not processed in this build.
+                Each counts one analysis, an MRI scan or a walking video. A “not scored” result means
+                the model declined to score it (for example, an unseen scanner model or a video it
+                could not read); it is not a normal result. Tapping and voice are not processed in
+                this build.
               </InfoTip>
             </p>
             {summary ? (
@@ -164,7 +228,7 @@ export function Home({
                 <ul className="home__counts">
                   <li><span>Scored</span><span className="mono">{summary.scored}</span></li>
                   <li><span>Not scored</span><span className="mono">{summary.notScored}</span></li>
-                  <li><span>In progress</span><span className="mono">{summary.inProgress.length}</span></li>
+                  <li><span>In progress</span><span className="mono">{summary.inProgress}</span></li>
                   <li><span>Failed</span><span className="mono">{summary.failed}</span></li>
                 </ul>
               </>

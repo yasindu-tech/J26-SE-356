@@ -9,7 +9,8 @@ import { InfoTip } from "../components/InfoTip";
 import { ProgressPanel } from "../components/MriProgress";
 import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
-import { GAIT_SOURCE_IS_MOCK, startGaitAnalysis } from "../gait/gaitSource";
+import { uploadGaitVideo } from "../api/gait.api";
+import { getGaitRun } from "../gait/gaitRun";
 import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
@@ -30,8 +31,8 @@ import "./Assessment.css";
 // The assessment workflow from the approved design: 1 Setup, 2 Analysis, 3 Result. The
 // design combines gait, tapping, voice and MRI into one result; here each part is its own
 // upload, is processed on its own and gets its own result, because the step that combines
-// them (fusion) is not built. MRI and gait can be uploaded in this build (one at a time for
-// now); tapping and voice are shown so the whole intended workflow is visible, and are marked
+// them (fusion) is not built. MRI and gait can be uploaded in this build, alone or together;
+// tapping and voice are shown so the whole intended workflow is visible, and are marked
 // as not built.
 
 type Screen =
@@ -42,10 +43,23 @@ type Screen =
   | { view: "analysis"; id: string }
   | { view: "result"; id: string; result: MriResult }
   | { view: "gait-analysis"; id: string }
+  | { view: "parts" }
   | { view: "gait-result"; outcome: GaitOutcome };
 
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
 type GaitOutcome = { kind: "record"; result: GaitResult } | { kind: "failed"; message: string };
+
+/** The parts of one assessment that were started, and how each ended once it has. */
+interface PartsState {
+  mri: { id: string; result: MriResult | null } | null;
+  gait: { id: string; outcome: GaitOutcome | null } | null;
+}
+
+function outcomeOf(status: GaitRunStatus): GaitOutcome {
+  return status.state === "failed" || !status.result
+    ? { kind: "failed", message: status.error ?? "Something went wrong while reading the video." }
+    : { kind: "record", result: status.result };
+}
 
 // One screen per step, so nothing needs scrolling to find the next thing to do.
 const STAGES = ["Patient details", "Modalities", "Review", "Analysis", "Result"] as const;
@@ -58,6 +72,7 @@ const STAGE_HINT: Record<Screen["view"], string> = {
   analysis: "Each part is processed on its own.",
   result: "Each part has its own result.",
   "gait-analysis": "Each part is processed on its own.",
+  parts: "Each part is processed on its own.",
   "gait-result": "Each part has its own result.",
 };
 
@@ -72,6 +87,7 @@ function stageOf(view: Screen["view"]): number {
       return 2;
     case "analysis":
     case "gait-analysis":
+    case "parts":
       return 3;
     case "result":
     case "gait-result":
@@ -137,21 +153,18 @@ function modalitiesProblem(form: Form): string | null {
   if (!form.file && !form.video) {
     return "Add at least one part to analyse: an MRI scan or a walking video.";
   }
-  if (form.file && form.video) {
-    return "MRI and gait together are not connected yet. Choose one of them for now.";
-  }
   if (form.video) {
     const problem = videoProblem(form.video.name, form.video.size);
     if (problem) return problem.text;
     if (!form.onePerson) return "Tick the box to confirm that one person is walking.";
-    return null;
   }
-  if (!form.file) return null; // unreachable: a part is chosen
-  if (!form.file.name.toLowerCase().endsWith(".zip")) {
-    return "Choose a .zip file holding one person's DICOM folder.";
-  }
-  if (form.file.size > MRI_MAX_UPLOAD_MB * 1024 * 1024) {
-    return `The zip is larger than ${MRI_MAX_UPLOAD_MB} MB.`;
+  if (form.file) {
+    if (!form.file.name.toLowerCase().endsWith(".zip")) {
+      return "Choose a .zip file holding one person's DICOM folder.";
+    }
+    if (form.file.size > MRI_MAX_UPLOAD_MB * 1024 * 1024) {
+      return `The zip is larger than ${MRI_MAX_UPLOAD_MB} MB.`;
+    }
   }
   return null;
 }
@@ -159,6 +172,7 @@ function modalitiesProblem(form: Form): string | null {
 /** `openId`: open an existing analysis (Home links to one) instead of starting at step 1. */
 export function Assessment({
   openId = null,
+  openGaitId = null,
   eddyProfile,
   confirmFast,
   clinician,
@@ -167,6 +181,8 @@ export function Assessment({
   onOpenSettings,
 }: {
   openId?: string | null;
+  /** A gait analysis Home asked to open. */
+  openGaitId?: string | null;
   clinician: string;
   /** From Settings: the DTI motion correction new analyses use. */
   eddyProfile: EddyProfile;
@@ -180,6 +196,22 @@ export function Assessment({
   const [label, setLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+  const [parts, setParts] = useState<PartsState | null>(null);
+
+  useEffect(() => {
+    if (!openGaitId) return;
+    getGaitRun(openGaitId)
+      .then((run) => {
+        if (run.state === "queued" || run.state === "running") {
+          setParts({ mri: null, gait: { id: openGaitId, outcome: null } });
+          setScreen({ view: "gait-analysis", id: openGaitId });
+        } else {
+          setScreen({ view: "gait-result", outcome: outcomeOf(run) });
+        }
+      })
+      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+  }, [openGaitId]);
 
   useEffect(() => {
     if (!openId) return;
@@ -198,6 +230,8 @@ export function Assessment({
   function go(next: Screen): void {
     setError(null);
     setConfirming(false);
+    setSendFailed(false);
+    if (next.view === "patient") setParts(null);
     setScreen(next);
   }
 
@@ -210,77 +244,91 @@ export function Assessment({
     }
   }
 
-  async function startGait(video: File): Promise<void> {
-    const trimmed = form.label.trim();
-    setError(null);
-    setConfirming(false);
-    setLabel(trimmed || null);
-    setScreen({ view: "uploading", fraction: 0, part: "gait" });
-    try {
-      const created = await startGaitAnalysis(
-        { file: video, onePersonConfirmed: form.onePerson },
-        (fraction) => setScreen({ view: "uploading", fraction, part: "gait" }),
-      );
-      setScreen({ view: "gait-analysis", id: created.id });
-    } catch (e) {
-      setError(errorText(e, "The video could not be sent."));
-      setScreen({ view: "review" });
-    }
-  }
-
   function gaitFinished(status: GaitRunStatus): void {
-    setScreen({
-      view: "gait-result",
-      outcome:
-        status.state === "failed" || !status.result
-          ? { kind: "failed", message: status.error ?? "Something went wrong while reading the video." }
-          : { kind: "record", result: status.result },
-    });
+    setScreen({ view: "gait-result", outcome: outcomeOf(status) });
   }
 
   /** Back to the video step with the video gone (or kept), and the tick cleared either way. */
   function anotherVideo(keepVideo: boolean): void {
+    // With MRI already sent, only the video goes again: the scan is dropped from the form so it
+    // is not uploaded a second time, and the running MRI part stays on the parts screen.
+    const mriSent = Boolean(parts?.mri);
     setForm({
       ...form,
       onePerson: false,
       ...(keepVideo ? {} : { video: null, videoSeconds: null }),
+      ...(mriSent ? { file: null } : {}),
     });
     go({ view: "modalities" });
+    if (mriSent) setError("The MRI part is already running, so only the video will be sent again.");
+  }
+
+  /** The analyses that started: one part goes to its own screen, two go to the parts screen. */
+  function enter(gaitId: string | null, mriId: string | null): void {
+    // An MRI part sent earlier in this assessment (the video was sent again) is kept.
+    const mri = mriId ? { id: mriId, result: null } : (parts?.mri ?? null);
+    setParts({ mri, gait: gaitId ? { id: gaitId, outcome: null } : null });
+    if (gaitId && mri) setScreen({ view: "parts" });
+    else if (gaitId) setScreen({ view: "gait-analysis", id: gaitId });
+    else if (mriId) setScreen({ view: "analysis", id: mriId });
   }
 
   async function start(): Promise<void> {
-    if (form.video && form.onePerson && !form.file) {
-      await startGait(form.video);
-      return;
-    }
+    const video = form.video && form.onePerson ? form.video : null;
     const file = form.file;
     const year = parseYearOfBirth(form.yearOfBirth, new Date());
-    if (!file || form.sex === "" || year === null) return; // already checked on the earlier steps
-    if (eddyProfile === "fast" && confirmFast && !confirming) {
+    if (!video && !file) return; // already checked on the earlier steps
+    if (file && (form.sex === "" || year === null)) return;
+    if (file && eddyProfile === "fast" && confirmFast && !confirming) {
       setConfirming(true); // ask once; pressing the button again goes ahead
       return;
     }
     const trimmed = form.label.trim();
     setError(null);
     setConfirming(false);
+    setSendFailed(false);
     setLabel(trimmed || null);
-    setScreen({ view: "uploading", fraction: 0 });
+    let gaitId: string | null = null;
+    let mriId: string | null = null;
     try {
-      const created = await uploadMriStudy(
-        {
-          file,
-          age: ageFromYearOfBirth(year, new Date()),
-          sex: form.sex,
-          eddyProfile,
-          ...(trimmed ? { subjectLabel: trimmed } : {}),
-        },
-        (fraction) => setScreen({ view: "uploading", fraction }),
-      );
-      setScreen({ view: "analysis", id: created.id });
+      if (video) {
+        setScreen({ view: "uploading", fraction: 0, part: "gait" });
+        gaitId = (
+          await uploadGaitVideo(
+            { file: video, onePersonConfirmed: form.onePerson, ...(trimmed ? { subjectLabel: trimmed } : {}) },
+            (fraction) => setScreen({ view: "uploading", fraction, part: "gait" }),
+          )
+        ).id;
+      }
+      if (file && year !== null && form.sex !== "") {
+        setScreen({ view: "uploading", fraction: 0 });
+        mriId = (
+          await uploadMriStudy(
+            {
+              file,
+              age: ageFromYearOfBirth(year, new Date()),
+              sex: form.sex,
+              eddyProfile,
+              ...(trimmed ? { subjectLabel: trimmed } : {}),
+            },
+            (fraction) => setScreen({ view: "uploading", fraction }),
+          )
+        ).id;
+      }
     } catch (e) {
-      setError(errorText(e, "The upload failed."));
-      setScreen({ view: "review" });
+      const message = errorText(e, "The upload failed.");
+      if (gaitId || mriId) {
+        // One part is already running: carry on with it and say what was not sent.
+        enter(gaitId, mriId);
+        setError(`The MRI scan was not sent: ${message} The gait part is running and stays in Home.`);
+      } else {
+        setError(message);
+        setSendFailed(true);
+        setScreen({ view: "review" });
+      }
+      return;
     }
+    enter(gaitId, mriId);
   }
 
   const stage = stageOf(screen.view);
@@ -335,6 +383,7 @@ export function Assessment({
           form={form}
           eddyProfile={eddyProfile}
           confirming={confirming}
+          retry={sendFailed}
           onOpenSettings={onOpenSettings}
           onBack={() => go({ view: "modalities" })}
           onStart={() => void start()}
@@ -368,6 +417,22 @@ export function Assessment({
         </div>
       )}
 
+      {screen.view === "parts" && parts && (
+        <PartsScreen
+          parts={parts}
+          onMriDone={(result) =>
+            setParts((p) => (p && p.mri ? { ...p, mri: { ...p.mri, result } } : p))
+          }
+          onGaitDone={(status) =>
+            setParts((p) => (p && p.gait ? { ...p, gait: { ...p.gait, outcome: outcomeOf(status) } } : p))
+          }
+          onError={(message) => setError(message)}
+          onOpenMri={(id, result) => setScreen({ view: "result", id, result })}
+          onOpenGait={(outcome) => setScreen({ view: "gait-result", outcome })}
+          onHome={onHome}
+        />
+      )}
+
       {screen.view === "gait-analysis" && (
         <div className="asm__stack">
           <PartsStrip mri="none" gait="running" />
@@ -391,6 +456,8 @@ export function Assessment({
           onAnotherVideo={() => anotherVideo(false)}
           onTryAgain={() => anotherVideo(true)}
           onHome={onHome}
+          mriState={mriStripState(parts?.mri ?? null)}
+          {...(parts?.mri && parts.gait ? { onBackToParts: () => go({ view: "parts" }) } : {})}
           onNewAssessment={() => {
             setLabel(null);
             setForm(EMPTY_FORM);
@@ -401,7 +468,10 @@ export function Assessment({
 
       {screen.view === "result" && (
         <div className="asm__stack">
-          <PartsStrip mri={screen.result.status} />
+          <PartsStrip
+            mri={screen.result.status}
+            gait={gaitStripState(parts?.gait ?? null)}
+          />
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
           <MriResultView
             result={screen.result}
@@ -413,7 +483,7 @@ export function Assessment({
             }}
           />
           <section className="asm__others" aria-label="Parts that were not provided">
-            {PARTS.filter((p) => p.key !== "mri").map((p) => (
+            {PARTS.filter((p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait)).map((p) => (
               <div key={p.key} className="asm__other">
                 <div className="asm__other-head">
                   <span className="asm__other-title">{p.label}</span>
@@ -427,12 +497,121 @@ export function Assessment({
             ))}
           </section>
           <div>
-            <button type="button" className="btn btn--outline" onClick={onHome}>
-              ← Home
-            </button>
+            {parts?.mri && parts.gait ? (
+              <button type="button" className="btn btn--outline" onClick={() => go({ view: "parts" })}>
+                ← Back to parts
+              </button>
+            ) : (
+              <button type="button" className="btn btn--outline" onClick={onHome}>
+                ← Home
+              </button>
+            )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ parts screen
+
+function mriStripState(m: PartsState["mri"]): MriState | "none" {
+  if (!m) return "none";
+  return m.result ? m.result.status : "running";
+}
+
+function gaitStripState(g: PartsState["gait"]): MriState | "none" {
+  if (!g) return "none";
+  if (!g.outcome) return "running";
+  if (g.outcome.kind === "failed") return "failed";
+  return g.outcome.result.available ? "scored" : "abstained";
+}
+
+/** MRI and gait together: each part runs on its own and opens as its own result. */
+function PartsScreen({
+  parts,
+  onMriDone,
+  onGaitDone,
+  onError,
+  onOpenMri,
+  onOpenGait,
+  onHome,
+}: {
+  parts: PartsState;
+  onMriDone: (result: MriResult) => void;
+  onGaitDone: (status: GaitRunStatus) => void;
+  onError: (message: string) => void;
+  onOpenMri: (id: string, result: MriResult) => void;
+  onOpenGait: (outcome: GaitOutcome) => void;
+  onHome: () => void;
+}) {
+  const { mri, gait } = parts;
+  const bothDone = (!mri || mri.result) && (!gait || gait.outcome);
+  return (
+    <div className="asm__stack">
+      <PartsStrip mri={mriStripState(mri)} gait={gaitStripState(gait)} />
+      <p className="note asm__lead">
+        {bothDone
+          ? "Both parts are ready. Open each result on its own."
+          : "Two parts are being analysed. Each is processed on its own, and you can open one as soon as it is ready."}
+      </p>
+
+      {mri &&
+        (mri.result ? (
+          <section className="card" aria-label="MRI part">
+            <p className="eyebrow">MRI part</p>
+            <h2 className="card__title">
+              {mri.result.status === "scored" ? "The MRI result is ready" : "The MRI part ended without a score"}
+            </h2>
+            <div>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => mri.result && onOpenMri(mri.id, mri.result)}
+              >
+                Open the MRI result
+              </button>
+            </div>
+          </section>
+        ) : (
+          <ProgressPanel id={mri.id} onFinished={onMriDone} onError={onError} />
+        ))}
+
+      {gait &&
+        (gait.outcome ? (
+          <section className="card" aria-label="Gait part">
+            <p className="eyebrow">Gait part</p>
+            <h2 className="card__title">
+              {gait.outcome.kind === "failed"
+                ? "The gait analysis did not finish"
+                : gait.outcome.result.available
+                  ? "The gait result is ready"
+                  : "The video could not be scored"}
+            </h2>
+            <div>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => gait.outcome && onOpenGait(gait.outcome)}
+              >
+                Open the gait result
+              </button>
+            </div>
+          </section>
+        ) : (
+          <div className="mri__layout">
+            <GaitProgress id={gait.id} onFinished={onGaitDone} onError={onError} />
+            <aside className="mri__rail">
+              <GaitWhatIsHappening />
+            </aside>
+          </div>
+        ))}
+
+      <div>
+        <button type="button" className="btn btn--outline" onClick={onHome}>
+          ← Home
+        </button>
+      </div>
     </div>
   );
 }
@@ -468,26 +647,31 @@ function GaitResultPage({
   onAnotherVideo,
   onTryAgain,
   onHome,
+  onBackToParts,
   onNewAssessment,
+  mriState,
 }: {
+  /** Where the MRI part stands when it was sent with this video; "none" when it was not. */
+  mriState: MriState | "none";
   outcome: GaitOutcome;
   videoSeconds: number | null;
   onAnotherVideo: () => void;
   onTryAgain: () => void;
   onHome: () => void;
+  /** Set when MRI was analysed with it: the way back to the parts screen. */
+  onBackToParts?: () => void;
   onNewAssessment: () => void;
 }) {
   const state =
     outcome.kind === "failed" ? "failed" : outcome.result.available ? "scored" : "abstained";
   return (
     <div className="asm__stack">
-      <PartsStrip mri="none" gait={state} />
+      <PartsStrip mri={mriState} gait={state} />
       <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
       {outcome.kind === "record" ? (
         <GaitResultView
           result={outcome.result}
           videoSeconds={videoSeconds}
-          demo={GAIT_SOURCE_IS_MOCK}
           onNewVideo={onAnotherVideo}
         />
       ) : (
@@ -509,7 +693,7 @@ function GaitResultPage({
         </section>
       )}
       <section className="asm__others" aria-label="Parts that were not provided">
-        {PARTS.filter((p) => p.key !== "gait").map((p) => (
+        {PARTS.filter((p) => p.key !== "gait" && !(p.key === "mri" && mriState !== "none")).map((p) => (
           <div key={p.key} className="asm__other">
             <div className="asm__other-head">
               <span className="asm__other-title">{p.label}</span>
@@ -524,9 +708,15 @@ function GaitResultPage({
         ))}
       </section>
       <div className="asm__buttons">
-        <button type="button" className="btn btn--outline" onClick={onHome}>
-          ← Home
-        </button>
+        {onBackToParts ? (
+          <button type="button" className="btn btn--outline" onClick={onBackToParts}>
+            ← Back to parts
+          </button>
+        ) : (
+          <button type="button" className="btn btn--outline" onClick={onHome}>
+            ← Home
+          </button>
+        )}
         <button type="button" className="btn btn--outline" onClick={onNewAssessment}>
           Start a new assessment
         </button>
@@ -853,6 +1043,7 @@ function ReviewStep({
   form,
   eddyProfile,
   confirming,
+  retry,
   onOpenSettings,
   onBack,
   onStart,
@@ -860,6 +1051,8 @@ function ReviewStep({
   form: Form;
   eddyProfile: EddyProfile;
   confirming: boolean;
+  /** The last start did not get through: say "Retry". */
+  retry: boolean;
   onOpenSettings: () => void;
   onBack: () => void;
   onStart: () => void;
@@ -947,7 +1140,7 @@ function ReviewStep({
       <StepButtons
         onBack={onBack}
         onNext={onStart}
-        nextLabel={confirming ? "Yes, start with Fast" : "Start analysis"}
+        nextLabel={confirming ? "Yes, start with Fast" : retry ? "Retry" : "Start analysis"}
       />
     </section>
   );

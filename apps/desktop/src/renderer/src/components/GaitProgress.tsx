@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getGaitRun } from "../gait/gaitSource";
+import { ApiError } from "../api/client";
+import { getGaitRun } from "../gait/gaitRun";
 import type { GaitRunStatus } from "../gait/gaitTypes";
 import { formatElapsed } from "../mri/mriView";
 import "./GaitProgress.css";
@@ -7,7 +8,9 @@ import "./GaitProgress.css";
 // The wait for a gait result. The service reports only waiting and running, so there is no
 // step-by-step bar: an indeterminate bar, the time elapsed, and when it last heard back.
 
-const POLL_MS = 1000;
+const POLL_MS = 2000;
+/** Polls that may fail one after another before the screen gives up. */
+const MAX_FAILURES = 5;
 
 export function GaitProgress({
   id,
@@ -20,15 +23,19 @@ export function GaitProgress({
 }) {
   const [status, setStatus] = useState<GaitRunStatus | null>(null);
   const [lastHeard, setLastHeard] = useState<number | null>(null);
+  const [trouble, setTrouble] = useState(false);
   const [now, setNow] = useState(Date.now());
   const started = useRef(Date.now());
 
   useEffect(() => {
     let cancelled = false;
+    let failures = 0;
     async function poll(): Promise<void> {
       try {
         const next = await getGaitRun(id);
         if (cancelled) return;
+        failures = 0;
+        setTrouble(false);
         setStatus(next);
         setLastHeard(Date.now());
         if (next.state === "scored" || next.state === "abstained" || next.state === "failed") {
@@ -37,8 +44,16 @@ export function GaitProgress({
         }
       } catch (e) {
         if (cancelled) return;
-        onError(e instanceof Error ? e.message : "Could not reach the analysis service.");
-        return;
+        failures += 1;
+        if (failures >= MAX_FAILURES) {
+          onError(
+            e instanceof ApiError && e.code !== "NETWORK_ERROR"
+              ? e.message
+              : "Lost contact with the analysis service. The analysis keeps running there; open it again from Home.",
+          );
+          return;
+        }
+        setTrouble(true); // keep trying; one missed poll is not a failed analysis
       }
       timer = window.setTimeout(() => void poll(), POLL_MS);
     }
@@ -53,7 +68,10 @@ export function GaitProgress({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const elapsed = status ? status.elapsedSeconds : (now - started.current) / 1000;
+  const elapsed =
+    status && lastHeard !== null
+      ? status.elapsedSeconds + Math.max(0, (now - lastHeard) / 1000)
+      : (now - started.current) / 1000;
   const since = lastHeard === null ? null : Math.max(0, Math.round((now - lastHeard) / 1000));
   const waiting = status?.state === "queued";
 
@@ -87,6 +105,12 @@ export function GaitProgress({
               : `Last update from the analysis service ${since} s ago`}
           </span>
         </div>
+
+        {trouble && (
+          <p className="gr__err" role="status">
+            Lost contact with the analysis service. Trying again. The analysis keeps running there.
+          </p>
+        )}
 
         <p className="note">
           If another analysis is already running, this one waits its turn and the line above says

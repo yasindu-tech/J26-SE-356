@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.clinician import Clinician
 from app.schemas.errors import ErrorResponse
 from app.schemas.gait import GaitAnalysisCreated, GaitAnalysisList, GaitAnalysisStatus, GaitResult
+from app.schemas.mri import SUBJECT_LABEL_PATTERN
 from app.services import gait_service
 from app.workers.gait_runner import GaitRunner
 
@@ -33,15 +34,34 @@ def create_analysis(
     one_person_confirmed: Annotated[
         bool, Form(description="Must be true: the clinician confirms one person is walking")
     ],
+    subject_label: Annotated[
+        str | None,
+        Form(
+            pattern=SUBJECT_LABEL_PATTERN,
+            description="Optional pseudonymous label to tell one person's analyses apart "
+            "(letters, digits, '-' and '_'; never a name)",
+        ),
+    ] = None,
     clinician: Clinician = Depends(get_current_clinician),
     db: Session = Depends(get_db),
     runner: GaitRunner = Depends(get_gait_runner),
     settings: Settings = Depends(get_settings),
 ) -> GaitAnalysisCreated:
     row = gait_service.create_analysis(
-        db, clinician, file.file, file.filename, one_person_confirmed, runner, settings
+        db,
+        clinician,
+        file.file,
+        file.filename,
+        one_person_confirmed,
+        runner,
+        settings,
+        subject_label,
     )
-    return GaitAnalysisCreated(id=row.id, status=row.status)  # type: ignore[arg-type]
+    return GaitAnalysisCreated(
+        id=row.id,
+        status=row.status,  # type: ignore[arg-type]
+        subject_label=row.subject_label,
+    )
 
 
 @router.get(
