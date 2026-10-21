@@ -30,7 +30,7 @@ import upload_pipeline as up  # noqa: E402
 from matplotlib.text import Text  # noqa: E402
 from signal_processing import build_signal  # noqa: E402
 from smoothing import smooth_signal  # noqa: E402
-from test_demo_resources import add_model  # noqa: E402
+from test_demo_resources import add_folds, add_model  # noqa: E402
 from test_shap_figures import make_world, text_problems  # noqa: E402
 
 APP = HERE.parent / "demo" / "app.py"
@@ -331,7 +331,7 @@ def test_signal_figure(monkeypatch: pytest.MonkeyPatch, video: Path) -> None:
     r = up.process_video(video, Factory())
     fig = up.signal_figure(r)
     texts = [t.get_text() for t in fig.findobj(Text) if t.get_text()]
-    assert f"Upload {REF}: {r.n_taps} taps detected" in texts
+    assert f"Upload {REF}: {r.n_taps} taps found" in texts
     assert "time (s)" in texts and "thumb-index distance (hand sizes)" in texts
     assert up.FOOTER in texts and "raw" in texts and "smoothed" in texts and "tap peaks" in texts
     lines = fig.axes[0].get_lines()
@@ -355,6 +355,7 @@ def upload_app(
 ) -> AppTest:
     w = make_world(tmp_path, monkeypatch)
     add_model(w["proc"])
+    add_folds(w["proc"])
     monkeypatch.setenv(da.ENV_ROOT, str(w["proc"]))
     monkeypatch.setattr(res, "make_landmarker", lambda: Factory())
     fake_pipeline(monkeypatch)
@@ -387,12 +388,12 @@ def test_upload_shows_summary_frames_figure_and_note(
     assert not app.exception
     summary = [m.value for m in app.markdown if m.value.startswith(f"**Clip {REF}**")]
     assert len(summary) == 1 and re.fullmatch(
-        rf"\*\*Clip {REF}\*\*: 20\.0 s, 30 fps, hand found in 100% of frames, \d+ taps detected",
+        rf"\*\*Clip {REF}\*\*: 20\.0 s, 30 fps, hand found in 100% of frames, \d+ taps found",
         summary[0],
     )
-    assert len(app.image) == 7  # 6 preview frames and the signal figure
+    assert len(app.image) == 9  # 6 frames, signal, SHAP and amplitude figures
     captions = [c for i in app.image for c in i.captions]
-    assert captions[-1] == "Thumb-index distance over time"
+    assert captions[6] == "Thumb-index distance over time"
     assert all(re.fullmatch(r"\d+\.\d s", c) for c in captions[:6])
     text = page(app)
     assert "PATIENT" not in text and "12345" not in text and "visit" not in text

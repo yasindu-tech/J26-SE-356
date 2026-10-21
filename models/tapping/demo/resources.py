@@ -76,6 +76,60 @@ def load_demo_model(target: str, root: Path | None = None) -> lightgbm.Booster:
     return booster
 
 
+FOLD_META = "folds_meta.json"
+FOLD_FILE = "fold_r{repeat}_f{fold}.txt"
+N_FOLD_MODELS = 25
+
+
+def fold_dir(target: str, root: Path | None = None) -> Path:
+    return demo_dir(root) / "folds" / target
+
+
+def fold_sha8(target: str, root: Path | None = None) -> str:
+    """sha8 of the folds meta file: the cache key of the loaded fold models."""
+    path = fold_dir(target, root) / FOLD_META
+    if not path.is_file():
+        raise DemoModelError(f"no fold models for {target}: {TRAIN_HINT}")
+    return cvs.sha8_of(path.read_bytes())
+
+
+def load_fold_models(target: str, root: Path | None = None) -> list[lightgbm.Booster]:
+    """The 25 outer-fold refits of the official run, each checked against the folds meta."""
+    root = processed_root() if root is None else root
+    folder = fold_dir(target, root)
+    meta_path = folder / FOLD_META
+    if not meta_path.is_file():
+        raise DemoModelError(f"no fold models for {target}: {TRAIN_HINT}")
+    meta: dict[str, Any] = json.loads(meta_path.read_text())
+    cols = list(ch.FEATURE_SETS[FEATURE_SET])
+    expected = {
+        "tool": TOOL, "target": target, "n_models": N_FOLD_MODELS,
+        "features_sha8": cvs.sha8_of(json.dumps(cols)),
+        "grid_sha8": ch.grid_sha8("lgbm", ch.grid_for("lgbm")),
+        "lightgbm": lightgbm.__version__,
+    }  # fmt: skip
+    for key, value in expected.items():
+        if meta.get(key) != value:
+            raise DemoModelError(f"fold models for {target}: {key} differs; retrain the models")
+    features = root / "features.csv"
+    if (
+        not features.is_file()
+        or meta.get("inputs_sha8", {}).get("features") != cvs.file_sha256(features)[: cvs.HASH_LEN]
+    ):
+        raise DemoModelError(f"fold models for {target}: features file changed; retrain")
+    models = []
+    for repeat in range(5):
+        for fold in range(5):
+            name = FOLD_FILE.format(repeat=repeat, fold=fold)
+            path = folder / name
+            if not path.is_file():
+                raise DemoModelError(f"fold models for {target}: {name} is missing; retrain")
+            if cvs.sha8_of(path.read_bytes()) != meta.get("files_sha8", {}).get(name):
+                raise DemoModelError(f"fold models for {target}: {name} sha8 differs; retrain")
+            models.append(lightgbm.Booster(model_file=str(path)))
+    return models
+
+
 class LandmarkerHandle:
     """A verified landmarker model file; calling it makes a fresh MediaPipe landmarker."""
 

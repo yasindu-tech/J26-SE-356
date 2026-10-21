@@ -19,7 +19,13 @@ which ``parselmouth`` runs too. This module:
    never seen (another country, telephone audio). An external AUC above chance
    means the transfer works; a drop is the cross-cohort drop CLAUDE.md asks us to
    measure.
-4. Checks the units: the median of each recomputed measure in Figshare healthy
+4. Fewer features (``subset_transfer``): would the transfer work if we kept only
+   the measures that DO match? The model is retrained inside UCI-470 on (a) all
+   16, (b) only those the unit check does not flag, (c) only shimmer and HNR,
+   and each is tested on the external recordings. If (b) and (c) also score
+   near chance, the missing and mismatched features were not the cause: what
+   the UCI-470 model learns is tied to how UCI-470 was recorded.
+5. Checks the units: the median of each recomputed measure in Figshare healthy
    voices is compared with UCI-470 healthy voices. A large ratio means our
    numbers do not mean the same thing as theirs, and is reported, not hidden.
 
@@ -54,6 +60,50 @@ UCI_K_GRID = (4, 8, 16)
 MISMATCH_RATIO = 2.0  # medians more than 2x apart are flagged as a unit or method mismatch
 
 # --- evidence ------------------------------------------------------------------
+
+
+def feature_subsets(units: dict[str, Any]) -> dict[str, list[str]]:
+    """The three feature sets ``subset_transfer`` compares (see the module docstring)."""
+    same_scale = [f for f in UCI_PRAAT_FEATURES if not units[f]["mismatch"]]
+    return {
+        "all_16_recomputable": list(UCI_PRAAT_FEATURES),
+        "same_scale_only": same_scale,
+        "shimmer_and_hnr_only": [f for f in same_scale if "Shimmer" in f or "Harm" in f],
+    }
+
+
+def subset_transfer(
+    X: pd.DataFrame,
+    y: np.ndarray,
+    groups: np.ndarray,
+    external: pd.DataFrame,
+    units: dict[str, Any],
+    n_boot: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Each feature set: nested-CV AUC inside UCI-470 and AUC on the external recordings.
+
+    For the external test the model is tuned and fitted on ALL UCI-470 people (no
+    external person is ever used in training); AUC needs no calibration.
+    """
+    ext_y, ext_groups = external.label.to_numpy(int), external.person.to_numpy()
+    rows = {}
+    for name, cols in feature_subsets(units).items():
+        k_grid = tuple(k for k in UCI_K_GRID if k <= len(cols)) or (len(cols),)
+        print(f"  feature subset {name} ({len(cols)}) ...", flush=True)
+        inside = pipeline.nested_cv_predict(X[cols], y, groups, seed=seed, k_grid=k_grid).proba
+        model, _ = pipeline.fit_tuned(X[cols], y, groups, seed=seed, k_grid=k_grid)
+        outside = model.predict_proba(external[cols].to_numpy(float))[:, 1]
+        rows[name] = {
+            "features": cols,
+            "uci_cv_auc": audio_evidence._estimate(
+                metrics.bootstrap_ci(y, inside, groups, metrics.auc, n_boot, seed)
+            ),
+            "external_auc": audio_evidence._estimate(
+                metrics.bootstrap_ci(ext_y, outside, ext_groups, metrics.auc, n_boot, seed)
+            ),
+        }
+    return rows
 
 
 def load_uci_subset() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
@@ -174,6 +224,7 @@ def run_transfer(
         "uci_holdout_check": voice.model_card["holdout_check"]["auc"],
         "external_test": transfer,
         "unit_check": units,
+        "feature_subsets": subset_transfer(X, y, groups, external, units, n_boot, seed),
     }
     return result, bundle
 
@@ -210,6 +261,12 @@ def main(argv: list[str] | None = None) -> int:
         f"external test ({', '.join(result['external_test']['datasets'])}): AUC "
         f"{a['value']:.3f} [{a['lower']:.3f}, {a['upper']:.3f}]"
     )
+    for name, row in result["feature_subsets"].items():
+        a, b = row["uci_cv_auc"], row["external_auc"]
+        print(
+            f"  {name} ({len(row['features'])}): inside UCI {a['value']:.3f}, "
+            f"external {b['value']:.3f} [{b['lower']:.3f}, {b['upper']:.3f}]"
+        )
     flagged = [k for k, v in result["unit_check"].items() if v["mismatch"]]
     print(
         f"unit check: {len(flagged)} of 16 measures differ more than {MISMATCH_RATIO}x: {flagged}"

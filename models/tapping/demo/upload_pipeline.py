@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import cv2  # noqa: E402
 import hand_landmarks as hl  # noqa: E402
 import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
 import tracking  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
@@ -70,6 +71,9 @@ class UploadResult:
     preview_indices: tuple[int, ...]
     preview_times: tuple[float, ...]
     preview_points: dict[int, np.ndarray]  # frame -> (21, 2) landmark pixels
+    time_offset_s: float  # signal time = tap table time + this (the first kept sample's offset)
+    taps_table: pd.DataFrame  # the official tap table of the clip (input of the Set A features)
+    stats: dict[str, Any]  # the official clip summary numbers (fps, duration_s, ...)
 
 
 @dataclass(eq=False)
@@ -105,13 +109,26 @@ def pick_preview(detected: np.ndarray, n: int = N_PREVIEW) -> np.ndarray:
     return on[np.round(np.linspace(0, len(on) - 1, n)).astype(int)]
 
 
+PLAIN_FLAGS = {  # fixed plain-language texts for the official flag names
+    "low_detection": "the hand was found in fewer frames than expected",
+    "gaps_not_fillable": "the hand was lost for long stretches",
+    "short_clip": "the clip is short",
+    "frame_count_mismatch": "the number of decoded frames differs from the file header",
+    "pts_unreliable": "frame times are missing or not increasing",
+    "landmarks_out_of_frame": "part of the hand left the picture in many frames",
+    "scale_tap_coupling": "the hand size estimate moves with the taps",
+    "info_irregular_timing": "frame times are uneven",
+    "low_range": "the opening range is small, so taps may be missed",
+}
+
+
 def qc_flags(df: Any, stats: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     gating = tracking.Gating()
     metrics = tracking.clip_metrics(df, df.attrs["hand_landmarks"], gating)
-    flags = list(tracking.evaluate_flags(metrics, gating))
+    names = [name for name, _ in tracking.evaluate_flags(metrics, gating)]
     if stats.get("low_range"):
-        flags.append(("low_range", "the aperture range is small, taps may be missed"))
-    return tuple(flags)
+        names.append("low_range")
+    return tuple((n, PLAIN_FLAGS.get(n, "see the research pipeline flag")) for n in names)
 
 
 def process_video(path: str | Path, landmarker_factory: LandmarkerFactory) -> UploadResult:
@@ -171,6 +188,8 @@ def process_video(path: str | Path, landmarker_factory: LandmarkerFactory) -> Up
         median_interval_s=float(result.stats.get("median_interval_s", float("nan"))),
         qc_flags=qc_flags(df, result.stats), preview_indices=tuple(int(i) for i in idx),
         preview_times=tuple(float(pts[i] - t0) for i in idx), preview_points=xy,
+        time_offset_s=float(t_abs[0] - t0),
+        taps_table=taps.reset_index(drop=True), stats=dict(result.stats),
     )  # fmt: skip
 
 
@@ -239,8 +258,8 @@ def signal_figure(r: UploadResult) -> Figure:
     ax.set_ylabel("thumb-index distance (hand sizes)", fontsize=12)
     ax.tick_params(labelsize=11)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(fontsize=11, loc="upper right", frameon=False, ncols=3)
-    fig.suptitle(f"Upload {r.upload_ref}: {r.n_taps} taps detected", fontsize=14)
+    fig.legend(fontsize=11, loc="outside upper right", frameon=False, ncols=3)  # off the curve
+    fig.suptitle(f"Upload {r.upload_ref}: {r.n_taps} taps found", fontsize=14)
     fig.supxlabel(FOOTER, fontsize=11, color="#333333")
     return fig
 
