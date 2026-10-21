@@ -3,6 +3,7 @@ import { AppShell, type NavItem } from "../components/AppShell";
 import { Assessment } from "./Assessment";
 import { Home } from "./Home";
 import { SettingsPage } from "./Settings";
+import { Tapping } from "./Tapping";
 import { loadSettings, saveSettings, type Settings } from "../settings/settings";
 import { VoiceResults } from "./VoiceResults";
 
@@ -10,7 +11,7 @@ import { VoiceResults } from "./VoiceResults";
 // approved design. Voice is not in the navigation: it is reached from the Voice part on the
 // setup screen, because its result is read from a file rather than processed here.
 
-type Screen = "home" | "assessment" | "voice" | "settings";
+type Screen = "home" | "assessment" | "voice" | "tapping" | "settings";
 type NavKey = "home" | "assessment" | "settings";
 
 const ICON = {
@@ -85,15 +86,20 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
       setOpenGaitId(null);
       setScreen("home");
     } else if (key === "settings") {
-      setScreen("settings");
-    } else if (live && (screen === "settings" || screen === "voice")) {
+      setScreen(key);
+    } else if (live && (screen === "settings" || screen === "voice" || screen === "tapping")) {
       setScreen("assessment"); // back to where you were, with the form as you left it
     } else {
       startAssessment();
     }
   }
 
-  const active: NavKey = screen === "home" ? "home" : screen === "settings" ? "settings" : "assessment";
+  const active: NavKey =
+    screen === "home"
+      ? "home"
+      : screen === "settings"
+        ? screen
+        : "assessment";
 
   return (
     <AppShell
@@ -125,7 +131,8 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
         />
       )}
       {/* Stays mounted while the voice file or Settings is open, so the setup form is not lost. */}
-      {(screen === "assessment" || (live && (screen === "voice" || screen === "settings"))) && (
+      {(screen === "assessment" ||
+        (live && (screen === "voice" || screen === "settings" || screen === "tapping"))) && (
         <div hidden={screen !== "assessment"}>
           <Assessment
             key={session}
@@ -140,10 +147,12 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
               setScreen("home");
             }}
             onOpenVoice={() => setScreen("voice")}
+            onOpenTapping={() => setScreen("tapping")}
             onOpenSettings={() => setScreen("settings")}
           />
         </div>
       )}
+      {screen === "tapping" && <Tapping onBack={() => setScreen("assessment")} />}
       {screen === "settings" && (
         <SettingsPage clinician={clinician} settings={settings} onChange={change} />
       )}
