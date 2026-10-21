@@ -4,16 +4,22 @@ import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
 import { GaitPicker } from "../components/GaitPicker";
 import { GaitProgress, GaitWhatIsHappening } from "../components/GaitProgress";
 import { GaitResultView } from "../components/GaitResultView";
+import { VoiceAnalysisProgress } from "../components/VoiceAnalysisProgress";
+import { VoicePicker } from "../components/VoicePicker";
+import { VoiceResultCard } from "../components/VoiceResultCard";
 import { MriResultView } from "../components/MriResultView";
 import { InfoTip } from "../components/InfoTip";
 import { ProgressPanel } from "../components/MriProgress";
 import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import { uploadGaitVideo } from "../api/gait.api";
+import { uploadVoiceRecording } from "../api/voice.api";
 import { getGaitRun } from "../gait/gaitRun";
 import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
+import { voiceFileProblem, voiceFileSummary } from "../voice/voiceFile";
+import { parseVoiceResults, type VoiceResult } from "../voice/voiceResult";
 import {
   EDDY_PROFILE_LABELS,
   FAST_EDDY_WARNING,
@@ -31,9 +37,10 @@ import "./Assessment.css";
 // The assessment workflow from the approved design: 1 Setup, 2 Analysis, 3 Result. The
 // design combines gait, tapping, voice and MRI into one result; here each part is its own
 // upload, is processed on its own and gets its own result, because the step that combines
-// them (fusion) is not built. MRI and gait can be uploaded in this build, alone or together;
-// tapping and voice are shown so the whole intended workflow is visible, and are marked
-// as not built.
+// them (fusion) is not built. MRI, gait and voice can be uploaded in this build, alone or
+// together; tapping is shown so the whole intended workflow is visible, and is marked as not
+// built. Voice differs in one way: the backend answers with the result in a few seconds and
+// keeps neither the recording nor the result, so a voice part has no id and no Home row.
 
 type Screen =
   | { view: "patient" }
@@ -44,15 +51,27 @@ type Screen =
   | { view: "result"; id: string; result: MriResult }
   | { view: "gait-analysis"; id: string }
   | { view: "parts" }
-  | { view: "gait-result"; outcome: GaitOutcome };
+  | { view: "gait-result"; outcome: GaitOutcome }
+  | { view: "voice-analysis"; fileName: string; uploaded: number; since: number | null }
+  | { view: "voice-result"; outcome: VoiceOutcome };
 
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
 type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
+
+/** How a voice analysis ended: a result (scored or not), or a failure with no result. */
+type VoiceOutcome = { kind: "result"; result: VoiceResult } | { kind: "failed"; message: string };
 
 /** The parts of one assessment that were started, and how each ended once it has. */
 interface PartsState {
   mri: { id: string; result: MriResult | null } | null;
   gait: { id: string; outcome: GaitOutcome | null } | null;
+  /** Voice ends before the next part starts, so it always has its outcome. */
+  voice: VoiceOutcome | null;
+}
+
+/** How many parts this assessment started. */
+function partCount(parts: PartsState | null): number {
+  return parts ? [parts.mri, parts.gait, parts.voice].filter(Boolean).length : 0;
 }
 
 function outcomeOf(status: GaitRunStatus): GaitOutcome {
@@ -74,6 +93,8 @@ const STAGE_HINT: Record<Screen["view"], string> = {
   "gait-analysis": "Each part is processed on its own.",
   parts: "Each part is processed on its own.",
   "gait-result": "Each part has its own result.",
+  "voice-analysis": "Each part is processed on its own.",
+  "voice-result": "Each part has its own result.",
 };
 
 function stageOf(view: Screen["view"]): number {
@@ -87,10 +108,12 @@ function stageOf(view: Screen["view"]): number {
       return 2;
     case "analysis":
     case "gait-analysis":
+    case "voice-analysis":
     case "parts":
       return 3;
     case "result":
     case "gait-result":
+    case "voice-result":
       return 4;
   }
 }
@@ -118,6 +141,8 @@ interface Form {
   videoSeconds: number | null;
   /** "One person is walking" ticked for this video. Saved with the result; asked again for every video. */
   onePerson: boolean;
+  /** The recording of a steady "aaah". */
+  voice: File | null;
 }
 
 const EMPTY_FORM: Form = {
@@ -132,6 +157,7 @@ const EMPTY_FORM: Form = {
   video: null,
   videoSeconds: null,
   onePerson: false,
+  voice: null,
 };
 
 /** What is wrong with the patient details, or null when they are fine. */
@@ -150,8 +176,12 @@ function patientProblem(form: Form): string | null {
 
 /** What is wrong with the chosen parts, or null when at least one valid part is chosen. */
 function modalitiesProblem(form: Form): string | null {
-  if (!form.file && !form.video) {
-    return "Add at least one part to analyse: an MRI scan or a walking video.";
+  if (!form.file && !form.video && !form.voice) {
+    return "Add at least one part to analyse: an MRI scan, a walking video or a voice recording.";
+  }
+  if (form.voice) {
+    const problem = voiceFileProblem(form.voice.name, form.voice.size);
+    if (problem) return `${problem.title}. ${problem.text}`;
   }
   if (form.video) {
     const problem = videoProblem(form.video.name, form.video.size);
@@ -204,7 +234,7 @@ export function Assessment({
     getGaitRun(openGaitId)
       .then((run) => {
         if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: { id: openGaitId, outcome: null } });
+          setParts({ mri: null, gait: { id: openGaitId, outcome: null }, voice: null });
           setScreen({ view: "gait-analysis", id: openGaitId });
         } else {
           setScreen({ view: "gait-result", outcome: outcomeOf(run) });
@@ -258,26 +288,66 @@ export function Assessment({
       onePerson: false,
       ...(keepVideo ? {} : { video: null, videoSeconds: null }),
       ...(mriSent ? { file: null } : {}),
+      ...(parts?.voice ? { voice: null } : {}),
     });
     go({ view: "modalities" });
     if (mriSent) setError("The MRI part is already running, so only the video will be sent again.");
   }
 
-  /** The analyses that started: one part goes to its own screen, two go to the parts screen. */
-  function enter(gaitId: string | null, mriId: string | null): void {
-    // An MRI part sent earlier in this assessment (the video was sent again) is kept.
+  /** Back to the voice step for another recording; parts already sent are not sent again. */
+  function anotherRecording(): void {
+    setForm({
+      ...form,
+      voice: null,
+      ...(parts?.mri ? { file: null } : {}),
+      ...(parts?.gait ? { video: null, videoSeconds: null, onePerson: false } : {}),
+    });
+    go({ view: "modalities" });
+    if (parts?.mri || parts?.gait) {
+      setError("The other parts were already sent, so only the new recording will be sent.");
+    }
+  }
+
+  /** Upload and analyse the recording. Never throws: a failure becomes the part's outcome. */
+  async function analyseVoice(recording: File): Promise<VoiceOutcome> {
+    setScreen({ view: "voice-analysis", fileName: recording.name, uploaded: 0, since: null });
+    try {
+      const reply = await uploadVoiceRecording(recording, (fraction) =>
+        setScreen((s) =>
+          s.view === "voice-analysis" && s.since === null
+            ? { ...s, uploaded: fraction, since: fraction >= 1 ? Date.now() : null }
+            : s,
+        ),
+      );
+      const parsed = parseVoiceResults(reply);
+      if (!parsed.ok) return { kind: "failed", message: parsed.message };
+      const [result] = parsed.results;
+      return result ? { kind: "result", result } : { kind: "failed", message: "The backend sent no result." };
+    } catch (e) {
+      return { kind: "failed", message: errorText(e, "Could not reach the backend to analyse the recording.") };
+    }
+  }
+
+  /** The analyses that started: one part goes to its own screen, two or more to the parts screen. */
+  function enter(gaitId: string | null, mriId: string | null, voiceOutcome: VoiceOutcome | null = null): void {
+    // Parts sent earlier in this assessment (when one part was sent again) are kept.
     const mri = mriId ? { id: mriId, result: null } : (parts?.mri ?? null);
-    setParts({ mri, gait: gaitId ? { id: gaitId, outcome: null } : null });
-    if (gaitId && mri) setScreen({ view: "parts" });
+    const gait = gaitId ? { id: gaitId, outcome: null } : voiceOutcome ? (parts?.gait ?? null) : null;
+    const voice = voiceOutcome ?? parts?.voice ?? null;
+    const next: PartsState = { mri, gait, voice };
+    setParts(next);
+    if (partCount(next) > 1) setScreen({ view: "parts" });
     else if (gaitId) setScreen({ view: "gait-analysis", id: gaitId });
     else if (mriId) setScreen({ view: "analysis", id: mriId });
+    else if (voice) setScreen({ view: "voice-result", outcome: voice });
   }
 
   async function start(): Promise<void> {
     const video = form.video && form.onePerson ? form.video : null;
     const file = form.file;
+    const recording = form.voice;
     const year = parseYearOfBirth(form.yearOfBirth, new Date());
-    if (!video && !file) return; // already checked on the earlier steps
+    if (!video && !file && !recording) return; // already checked on the earlier steps
     if (file && (form.sex === "" || year === null)) return;
     if (file && eddyProfile === "fast" && confirmFast && !confirming) {
       setConfirming(true); // ask once; pressing the button again goes ahead
@@ -290,7 +360,18 @@ export function Assessment({
     setLabel(trimmed || null);
     let gaitId: string | null = null;
     let mriId: string | null = null;
+    let voiceOutcome: VoiceOutcome | null = null;
     try {
+      // Voice first: it ends in seconds, before the longer parts are sent.
+      if (recording) {
+        voiceOutcome = await analyseVoice(recording);
+        if (voiceOutcome.kind === "failed" && !video && !file) {
+          setError(voiceOutcome.message);
+          setSendFailed(true);
+          setScreen({ view: "review" });
+          return;
+        }
+      }
       if (video) {
         setScreen({ view: "uploading", fraction: 0, part: "gait" });
         gaitId = (
@@ -319,8 +400,11 @@ export function Assessment({
       const message = errorText(e, "The upload failed.");
       if (gaitId || mriId) {
         // One part is already running: carry on with it and say what was not sent.
-        enter(gaitId, mriId);
+        enter(gaitId, mriId, voiceOutcome);
         setError(`The MRI scan was not sent: ${message} The gait part is running and stays in Home.`);
+      } else if (voiceOutcome) {
+        enter(null, null, voiceOutcome);
+        setError(`${video ? "The walking video" : "The MRI scan"} was not sent: ${message} The voice part is done.`);
       } else {
         setError(message);
         setSendFailed(true);
@@ -328,7 +412,7 @@ export function Assessment({
       }
       return;
     }
-    enter(gaitId, mriId);
+    enter(gaitId, mriId, voiceOutcome);
   }
 
   const stage = stageOf(screen.view);
@@ -429,7 +513,35 @@ export function Assessment({
           onError={(message) => setError(message)}
           onOpenMri={(id, result) => setScreen({ view: "result", id, result })}
           onOpenGait={(outcome) => setScreen({ view: "gait-result", outcome })}
+          onOpenVoice={(outcome) => setScreen({ view: "voice-result", outcome })}
           onHome={onHome}
+        />
+      )}
+
+      {screen.view === "voice-analysis" && (
+        <div className="asm__stack">
+          <PartsStrip mri="none" voice="running" />
+          <VoiceAnalysisProgress
+            fileName={screen.fileName}
+            uploaded={screen.uploaded}
+            analysingSince={screen.since}
+          />
+        </div>
+      )}
+
+      {screen.view === "voice-result" && (
+        <VoiceResultPage
+          outcome={screen.outcome}
+          mriState={mriStripState(parts?.mri ?? null)}
+          gaitState={gaitStripState(parts?.gait ?? null)}
+          onAnotherRecording={anotherRecording}
+          onHome={onHome}
+          {...(partCount(parts) > 1 ? { onBackToParts: () => go({ view: "parts" }) } : {})}
+          onNewAssessment={() => {
+            setLabel(null);
+            setForm(EMPTY_FORM);
+            go({ view: "patient" });
+          }}
         />
       )}
 
@@ -457,7 +569,8 @@ export function Assessment({
           onTryAgain={() => anotherVideo(true)}
           onHome={onHome}
           mriState={mriStripState(parts?.mri ?? null)}
-          {...(parts?.mri && parts.gait ? { onBackToParts: () => go({ view: "parts" }) } : {})}
+          voiceState={voiceStripState(parts?.voice ?? null)}
+          {...(partCount(parts) > 1 ? { onBackToParts: () => go({ view: "parts" }) } : {})}
           onNewAssessment={() => {
             setLabel(null);
             setForm(EMPTY_FORM);
@@ -471,6 +584,7 @@ export function Assessment({
           <PartsStrip
             mri={screen.result.status}
             gait={gaitStripState(parts?.gait ?? null)}
+            voice={voiceStripState(parts?.voice ?? null)}
           />
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
           <MriResultView
@@ -483,7 +597,9 @@ export function Assessment({
             }}
           />
           <section className="asm__others" aria-label="Parts that were not provided">
-            {PARTS.filter((p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait)).map((p) => (
+            {PARTS.filter(
+              (p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait) && !(p.key === "voice" && parts?.voice),
+            ).map((p) => (
               <div key={p.key} className="asm__other">
                 <div className="asm__other-head">
                   <span className="asm__other-title">{p.label}</span>
@@ -491,13 +607,14 @@ export function Assessment({
                 </div>
                 <p className="asm__dash">—</p>
                 <p className="note">
-                  {PART_NOT_BUILT}. Nothing is counted as zero; this part has no result.
+                  {p.available ? "Not added to this assessment" : PART_NOT_BUILT}. Nothing is counted as
+                  zero; this part has no result.
                 </p>
               </div>
             ))}
           </section>
           <div>
-            {parts?.mri && parts.gait ? (
+            {partCount(parts) > 1 ? (
               <button type="button" className="btn btn--outline" onClick={() => go({ view: "parts" })}>
                 ← Back to parts
               </button>
@@ -520,6 +637,12 @@ function mriStripState(m: PartsState["mri"]): MriState | "none" {
   return m.result ? m.result.status : "running";
 }
 
+function voiceStripState(v: VoiceOutcome | null): MriState | "none" {
+  if (!v) return "none";
+  if (v.kind === "failed") return "failed";
+  return v.result.kind === "scored" ? "scored" : "abstained";
+}
+
 function gaitStripState(g: PartsState["gait"]): MriState | "none" {
   if (!g) return "none";
   if (!g.outcome) return "running";
@@ -527,7 +650,7 @@ function gaitStripState(g: PartsState["gait"]): MriState | "none" {
   return g.outcome.result.available ? "scored" : "abstained";
 }
 
-/** MRI and gait together: each part runs on its own and opens as its own result. */
+/** Two or more parts together: each part runs on its own and opens as its own result. */
 function PartsScreen({
   parts,
   onMriDone,
@@ -535,6 +658,7 @@ function PartsScreen({
   onError,
   onOpenMri,
   onOpenGait,
+  onOpenVoice,
   onHome,
 }: {
   parts: PartsState;
@@ -543,18 +667,38 @@ function PartsScreen({
   onError: (message: string) => void;
   onOpenMri: (id: string, result: MriResult) => void;
   onOpenGait: (outcome: GaitOutcome) => void;
+  onOpenVoice: (outcome: VoiceOutcome) => void;
   onHome: () => void;
 }) {
-  const { mri, gait } = parts;
-  const bothDone = (!mri || mri.result) && (!gait || gait.outcome);
+  const { mri, gait, voice } = parts;
+  const allDone = (!mri || mri.result) && (!gait || gait.outcome);
+  const count = partCount(parts);
   return (
     <div className="asm__stack">
-      <PartsStrip mri={mriStripState(mri)} gait={gaitStripState(gait)} />
+      <PartsStrip mri={mriStripState(mri)} gait={gaitStripState(gait)} voice={voiceStripState(voice)} />
       <p className="note asm__lead">
-        {bothDone
-          ? "Both parts are ready. Open each result on its own."
-          : "Two parts are being analysed. Each is processed on its own, and you can open one as soon as it is ready."}
+        {allDone
+          ? `${count === 2 ? "Both" : "All"} parts are ready. Open each result on its own.`
+          : `${count === 2 ? "Two" : "Three"} parts are being analysed. Each is processed on its own, and you can open one as soon as it is ready.`}
       </p>
+
+      {voice && (
+        <section className="card" aria-label="Voice part">
+          <p className="eyebrow">Voice part</p>
+          <h2 className="card__title">
+            {voice.kind === "failed"
+              ? "The voice analysis did not finish"
+              : voice.result.kind === "scored"
+                ? "The voice result is ready"
+                : "The recording could not be scored"}
+          </h2>
+          <div>
+            <button type="button" className="btn btn--primary" onClick={() => onOpenVoice(voice)}>
+              Open the voice result
+            </button>
+          </div>
+        </section>
+      )}
 
       {mri &&
         (mri.result ? (
@@ -621,11 +765,19 @@ function PartsScreen({
 type MriState = "running" | "scored" | "abstained" | "failed" | "queued";
 
 /** Where each of the four parts stands, in one row. A part that was not chosen shows "Not added". */
-function PartsStrip({ mri, gait = "none" }: { mri: MriState | "none"; gait?: MriState | "none" }) {
+function PartsStrip({
+  mri,
+  gait = "none",
+  voice = "none",
+}: {
+  mri: MriState | "none";
+  gait?: MriState | "none";
+  voice?: MriState | "none";
+}) {
   return (
     <ul className="asm__strip" aria-label="Parts of this assessment">
       {PARTS.map((p) => {
-        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : "none";
+        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : p.key === "voice" ? voice : "none";
         const none = state === "none";
         return (
           <li key={p.key} className={`asm__strip-item${none ? " asm__strip-item--none" : ""}`}>
@@ -650,9 +802,12 @@ function GaitResultPage({
   onBackToParts,
   onNewAssessment,
   mriState,
+  voiceState = "none",
 }: {
   /** Where the MRI part stands when it was sent with this video; "none" when it was not. */
   mriState: MriState | "none";
+  /** How the voice part ended when it was sent with this video; "none" when it was not. */
+  voiceState?: MriState | "none";
   outcome: GaitOutcome;
   videoSeconds: number | null;
   onAnotherVideo: () => void;
@@ -666,7 +821,7 @@ function GaitResultPage({
     outcome.kind === "failed" ? "failed" : outcome.result.available ? "scored" : "abstained";
   return (
     <div className="asm__stack">
-      <PartsStrip mri={mriState} gait={state} />
+      <PartsStrip mri={mriState} gait={state} voice={voiceState} />
       <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
       {outcome.kind === "record" ? (
         <GaitResultView
@@ -694,7 +849,12 @@ function GaitResultPage({
         </section>
       )}
       <section className="asm__others" aria-label="Parts that were not provided">
-        {PARTS.filter((p) => p.key !== "gait" && !(p.key === "mri" && mriState !== "none")).map((p) => (
+        {PARTS.filter(
+          (p) =>
+            p.key !== "gait" &&
+            !(p.key === "mri" && mriState !== "none") &&
+            !(p.key === "voice" && voiceState !== "none"),
+        ).map((p) => (
           <div key={p.key} className="asm__other">
             <div className="asm__other-head">
               <span className="asm__other-title">{p.label}</span>
@@ -721,6 +881,83 @@ function GaitResultPage({
         <button type="button" className="btn btn--outline" onClick={onNewAssessment}>
           Start a new assessment
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** A voice result, as its own screen: the result (or the failure), the other parts as not provided. */
+function VoiceResultPage({
+  outcome,
+  mriState,
+  gaitState,
+  onAnotherRecording,
+  onHome,
+  onBackToParts,
+  onNewAssessment,
+}: {
+  outcome: VoiceOutcome;
+  /** Where the other parts stand when they were sent with this recording; "none" when not. */
+  mriState: MriState | "none";
+  gaitState: MriState | "none";
+  onAnotherRecording: () => void;
+  onHome: () => void;
+  /** Set when other parts were analysed with it: the way back to the parts screen. */
+  onBackToParts?: () => void;
+  onNewAssessment: () => void;
+}) {
+  return (
+    <div className="asm__stack">
+      <PartsStrip mri={mriState} gait={gaitState} voice={voiceStripState(outcome)} />
+      <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
+      {outcome.kind === "result" ? (
+        <VoiceResultCard result={outcome.result} />
+      ) : (
+        <section className="card" aria-label="The analysis did not finish">
+          <h2 className="card__title">The voice analysis did not finish</h2>
+          <p className="mri__error" role="alert">
+            {asSentence(outcome.message)} No result was produced, and the recording was not kept.
+          </p>
+        </section>
+      )}
+      <section className="asm__others" aria-label="Parts that were not provided">
+        {PARTS.filter(
+          (p) =>
+            p.key !== "voice" &&
+            !(p.key === "mri" && mriState !== "none") &&
+            !(p.key === "gait" && gaitState !== "none"),
+        ).map((p) => (
+          <div key={p.key} className="asm__other">
+            <div className="asm__other-head">
+              <span className="asm__other-title">{p.label}</span>
+              <span className="mr__chip mr__chip--none">Not provided</span>
+            </div>
+            <p className="asm__dash">—</p>
+            <p className="note">
+              {p.available ? "Not added to this assessment" : PART_NOT_BUILT}. Nothing is counted as
+              zero; this part has no result.
+            </p>
+          </div>
+        ))}
+      </section>
+      <div className="asm__buttons">
+        {onBackToParts ? (
+          <button type="button" className="btn btn--outline" onClick={onBackToParts}>
+            ← Back to parts
+          </button>
+        ) : (
+          <button type="button" className="btn btn--outline" onClick={onHome}>
+            ← Home
+          </button>
+        )}
+        <span className="asm__buttons-end">
+          <button type="button" className="btn btn--outline" onClick={onAnotherRecording}>
+            Analyse another recording
+          </button>
+          <button type="button" className="btn btn--outline" onClick={onNewAssessment}>
+            Start a new assessment
+          </button>
+        </span>
       </div>
     </div>
   );
@@ -904,7 +1141,7 @@ function PatientStep({
   );
 }
 
-/** Step 2: which parts to analyse. MRI and gait can be uploaded in this build. */
+/** Step 2: which parts to analyse. MRI, gait and voice can be uploaded in this build. */
 function ModalitiesStep({
   form,
   eddyProfile,
@@ -1010,25 +1247,34 @@ function ModalitiesStep({
             onConfirmed={(onePerson) => onChange({ ...form, onePerson })}
           />
         </div>
-      </div>
 
-      <div className="asm__others-row">
-        <div className="asm__others-col asm__others-col--row">
-          {PARTS.filter((p) => !p.available).map((p) => (
-            <div key={p.key} className="asm__part asm__part--none asm__part--small">
-              <div className="asm__part-head">
-                <h3 className="asm__part-title">{p.label}</h3>
-                <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
-              </div>
-              <p className="note">{p.provides}.</p>
-              {p.key === "voice" && (
-                <button type="button" className="asm__link" onClick={onOpenVoice}>
-                  Open an existing voice result file →
-                </button>
-              )}
-            </div>
-          ))}
+        <div className="asm__part asm__part--voice">
+          <div className="asm__part-head">
+            <h3 className="asm__part-title">Voice</h3>
+            <span className="mr__chip mr__chip--on">{form.voice ? "Ready to send" : "Available"}</span>
+          </div>
+          <p className="note">
+            {PARTS.find((p) => p.key === "voice")?.provides} of a steady &ldquo;aaah&rdquo;. It gives a
+            referral priority and the reasons behind it. It does not say whether the person has
+            Parkinson&rsquo;s disease. Takes a few seconds.
+          </p>
+          <VoicePicker recording={form.voice} onRecording={(voice) => onChange({ ...form, voice })} />
+          <div>
+            <button type="button" className="asm__link" onClick={onOpenVoice}>
+              Open an existing voice result file →
+            </button>
+          </div>
         </div>
+
+        {PARTS.filter((p) => !p.available).map((p) => (
+          <div key={p.key} className="asm__part asm__part--none asm__part--small">
+            <div className="asm__part-head">
+              <h3 className="asm__part-title">{p.label}</h3>
+              <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
+            </div>
+            <p className="note">{p.provides}.</p>
+          </div>
+        ))}
       </div>
 
       <StepButtons
@@ -1067,12 +1313,14 @@ function ReviewStep({
         <p className="eyebrow">Step 3 of 3</p>
         <h2 className="card__title">
           Review
-          <InfoTip label={form.video ? "Where the video goes" : "Where the scan goes"}>
+          <InfoTip label={form.video ? "Where the video goes" : form.file ? "Where the scan goes" : "Where the recording goes"}>
             {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
             <span className="mono">{API_BASE_URL}</span>
             {form.video
               ? " only when you press Start analysis. The file is deleted there when the analysis ends; the result is kept, and a copy with the skeleton drawn on it when the walk can be read."
               : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
+            {form.voice &&
+              " A voice recording is analysed in a few seconds and deleted straight after; its result is shown here and not stored."}
           </InfoTip>
         </h2>
       </div>
@@ -1128,7 +1376,13 @@ function ReviewStep({
           </div>
         )}
         <div>
-          <dt>Tapping, voice</dt>
+          <dt>Voice</dt>
+          <dd className="mono">
+            {form.voice ? `${form.voice.name} · ${voiceFileSummary(form.voice.name, form.voice.size)}` : "Not added"}
+          </dd>
+        </div>
+        <div>
+          <dt>Tapping</dt>
           <dd>{PART_NOT_BUILT}</dd>
         </div>
       </dl>
