@@ -53,13 +53,40 @@ def files_for(target: str = "ge2", seed: int = 0) -> dict[str, bytes]:
     return tdm.model_files(est, target, 0, [25] + [0] * (len(GRID) - 1), GRID, {"features": "x"}, N)
 
 
+def add_reference(proc: Path) -> None:
+    """A synthetic features.csv (Set A, plus columns the demo must never read) and results table."""
+    (proc / "cv" / "results").mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(7)
+    ref = pd.DataFrame(rng.uniform(0.0, 20.0, size=(30, len(COLS))), columns=COLS)
+    ref.insert(0, "ref", [f"{i:08x}" for i in range(30)])
+    ref["participant"] = "aaaaaaaa"
+    ref["rating"] = 3  # never to be read by the app
+    ref.to_csv(proc / "features.csv", index=False)
+    rows = [
+        {"section": "performance", "target": t, "subject": "lgbm A", "metric": "auroc",
+         "estimate": est, "ci_low": lo, "ci_high": hi}
+        for t, est, lo, hi in (("ge2", 0.87, 0.81, 0.92), ("ge1", 0.895, 0.844, 0.942))
+    ]  # fmt: skip
+    rows.append({"section": "performance", "target": "ge2", "subject": "b1 A",
+                 "metric": "auroc", "estimate": 0.5, "ci_low": 0.4, "ci_high": 0.6})  # fmt: skip
+    path = proc / "cv" / "results" / "results_table.csv"
+    path.write_text(
+        "# a comment line, as in the real file\n" + pd.DataFrame(rows).to_csv(index=False)
+    )
+
+
+def features_sha8(proc: Path) -> dict[str, str]:
+    return {"features": cvs.file_sha256(proc / "features.csv")[: cvs.HASH_LEN]}
+
+
 def add_model(proc: Path, target: str = "ge2", **meta_edit: Any) -> Path:
-    """A valid synthetic demo model under proc/demo (features.csv gets arbitrary bytes)."""
-    (proc / "features.csv").write_text("synthetic\n")
-    inputs = {"features": cvs.file_sha256(proc / "features.csv")[: cvs.HASH_LEN]}
+    """A valid synthetic demo model under proc/demo."""
+    add_reference(proc)
     fr = frame()
     est = tdm.fit_all(fr, target, PARAMS)
-    files = tdm.model_files(est, target, 0, [25] + [0] * (len(GRID) - 1), GRID, inputs, N)
+    files = tdm.model_files(
+        est, target, 0, [25] + [0] * (len(GRID) - 1), GRID, features_sha8(proc), N
+    )
     folder = proc / "demo"
     folder.mkdir(parents=True, exist_ok=True)
     meta_name = res.META_FILE.format(target=target)
@@ -69,6 +96,27 @@ def add_model(proc: Path, target: str = "ge2", **meta_edit: Any) -> Path:
         meta = json.loads((folder / meta_name).read_text())
         meta.update(meta_edit)
         (folder / meta_name).write_text(json.dumps(meta))
+    return folder
+
+
+def add_folds(proc: Path, target: str = "ge2") -> Path:
+    """25 synthetic fold models (bootstrap refits) saved through the real fold_files."""
+    add_reference(proc)
+    fr = frame()
+    x, _ = ch.design_matrix(fr, "A")
+    y = cvs.target_labels(fr, target)
+    rng = np.random.default_rng(3)
+    refits = []
+    for repeat in range(5):
+        for fold in range(5):
+            rows = rng.choice(N, size=N, replace=True)
+            est = ch.make_estimator("lgbm", PARAMS, seed=100 * repeat + fold).fit(x[rows], y[rows])
+            refits.append({"repeat": repeat, "fold": fold, "est": est, "diff": 0.0,
+                           "params": PARAMS, "n_test": 8})  # fmt: skip
+    folder = proc / "demo" / "folds" / target
+    for name, data in tdm.fold_files(refits, target, features_sha8(proc)).items():
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(data)
     return folder
 
 
@@ -258,3 +306,92 @@ def test_landmarker_handle_checks_the_model_file(tmp_path: Path) -> None:
     if hl.DEFAULT_MODEL.is_file():  # the asset is gitignored; skip where it is absent
         handle = res.make_landmarker()
         assert handle.sha256 == hl.EXPECTED_MODEL_SHA256 and callable(handle)
+
+
+# --------------------------------------------------------------------------- fold refits
+
+
+def split_world(tmp_path: Path) -> tuple[Path, Path, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """cv root with best params and an official OOF made by an independent refit loop."""
+    fr = frame()
+    fr["participant"] = [f"p{i // 2:02d}" for i in range(N)]  # 20 participants, 2 clips each
+    rows = []
+    for repeat in range(5):
+        order = np.random.default_rng(repeat).permutation(20)
+        for k, pid in enumerate(order):
+            rows.append({"participant": f"p{pid:02d}", "repeat": repeat, "outer_fold": k % 5})
+    splits = pd.DataFrame(rows)
+    cv_root, out = world(tmp_path, {2: 25})
+    canon = cvs.canonical(fr)
+    x, _ = ch.design_matrix(canon, "A")
+    parts = []
+    for repeat in range(5):
+        member = ch.membership(canon["participant"].to_numpy(), splits, repeat)
+        for fold in range(5):
+            train, test = np.flatnonzero(member != fold), np.flatnonzero(member == fold)
+            est = ch.refit_outer(canon, "lgbm", GRID[2], train, "A", "ge2", test_positions=test)
+            parts.append(pd.DataFrame({"ref": canon["ref"].to_numpy()[test], "repeat": repeat,
+                                       "outer_fold": fold, "y": 0,
+                                       "proba": est.predict_proba(x[test])[:, 1]}))  # fmt: skip
+    oof = pd.concat(parts, ignore_index=True)
+    oof.to_csv(cv_root / "ge2" / "oof_lgbm_A.csv", index=False, float_format="%.17g")
+    return cv_root, out, fr, splits, oof
+
+
+def test_fold_refits_reproduce_the_oof_and_are_saved_deterministically(tmp_path: Path) -> None:
+    cv_root, out, fr, splits, _ = split_world(tmp_path)
+    first = tdm.run_folds(cv_root, out, fr, splits, {"features": "a"}, "ge2")
+    folder = out / "folds" / "ge2"
+    snap = {p.name: p.read_bytes() for p in folder.iterdir()}
+    assert first["n_models"] == 25 and first["oof_max_diff"] == 0.0 and len(snap) == 26
+    second = tdm.run_folds(cv_root, out, fr, splits, {"features": "a"}, "ge2")
+    assert second["meta_sha8"] == first["meta_sha8"]
+    assert snap == {p.name: p.read_bytes() for p in folder.iterdir()}
+    meta = json.loads(snap[res.FOLD_META])
+    assert meta["n_models"] == 25 and len(meta["files_sha8"]) == 25 and len(meta["folds"]) == 25
+    assert meta["files_sha8"]["fold_r3_f2.txt"] == cvs.sha8_of(snap["fold_r3_f2.txt"])
+
+
+def test_a_refit_that_does_not_reproduce_the_oof_is_refused(tmp_path: Path) -> None:
+    cv_root, out, fr, splits, oof = split_world(tmp_path)
+    bad = oof.copy()
+    bad.loc[7, "proba"] += 1e-6
+    bad.to_csv(cv_root / "ge2" / "oof_lgbm_A.csv", index=False, float_format="%.17g")
+    with pytest.raises(GuardFailure, match="does not reproduce"):
+        tdm.run_folds(cv_root, out, fr, splits, {"features": "a"}, "ge2")
+    assert not out.exists()  # nothing is written before every fold has passed
+    wrong_folds = oof.copy()
+    wrong_folds["outer_fold"] = (wrong_folds["outer_fold"] + 1) % 5
+    wrong_folds.to_csv(cv_root / "ge2" / "oof_lgbm_A.csv", index=False, float_format="%.17g")
+    with pytest.raises(GuardFailure, match="does not match the stored folds"):
+        tdm.run_folds(cv_root, out, fr, splits, {"features": "a"}, "ge2")
+
+
+def test_load_fold_models_checks_every_file(tmp_path: Path) -> None:
+    folder = add_folds(tmp_path)
+    models = res.load_fold_models("ge2", tmp_path)
+    assert len(models) == 25 and all(m.num_feature() == len(COLS) for m in models)
+    assert len(res.fold_sha8("ge2", tmp_path)) == 8
+    target = folder / "fold_r2_f3.txt"
+    target.write_bytes(target.read_bytes() + b"\n")
+    with pytest.raises(res.DemoModelError, match="fold_r2_f3.txt sha8 differs"):
+        res.load_fold_models("ge2", tmp_path)
+    target.unlink()
+    with pytest.raises(res.DemoModelError, match="fold_r2_f3.txt is missing"):
+        res.load_fold_models("ge2", tmp_path)
+
+
+def test_load_fold_models_meta_mismatch_and_missing(tmp_path: Path) -> None:
+    with pytest.raises(res.DemoModelError, match="train_demo_model.py"):
+        res.load_fold_models("ge2", tmp_path)
+    folder = add_folds(tmp_path)
+    meta_path = folder / res.FOLD_META
+    meta = json.loads(meta_path.read_text())
+    for key, value in (("grid_sha8", "00000000"), ("lightgbm", "0.0.0"), ("n_models", 24)):
+        meta_path.write_text(json.dumps({**meta, key: value}))
+        with pytest.raises(res.DemoModelError, match="retrain"):
+            res.load_fold_models("ge2", tmp_path)
+    meta_path.write_text(json.dumps(meta))
+    (tmp_path / "features.csv").write_text("changed\n")
+    with pytest.raises(res.DemoModelError, match="features file changed"):
+        res.load_fold_models("ge2", tmp_path)

@@ -21,7 +21,7 @@ sys.path.insert(0, str(HERE))
 import data_access as da  # noqa: E402
 import resources as res  # noqa: E402
 import streamlit as st  # noqa: E402
-from test_demo_resources import add_model  # noqa: E402
+from test_demo_resources import add_model, add_reference  # noqa: E402
 from test_shap_figures import REFS, make_world  # noqa: E402
 
 LABEL_WORDS = re.compile(r"rating|updrs|label|group|control", re.I)
@@ -49,6 +49,7 @@ def fresh_resource_cache() -> None:
 
 def new_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_model: bool = True) -> AppTest:
     w = make_world(tmp_path, monkeypatch)
+    add_reference(w["proc"])
     if with_model:
         add_model(w["proc"])
     monkeypatch.setenv(da.ENV_ROOT, str(w["proc"]))

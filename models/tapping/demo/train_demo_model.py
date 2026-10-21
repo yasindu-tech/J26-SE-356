@@ -1,6 +1,7 @@
-"""Offline demo model (task FT-47), run once, not imported by the app. Rule fixed in advance:
-params = the mode of the official outer-fold best params per target (tie -> earliest grid
-entry); LightGBM Set A fitted on all clips. Demo model; not used for any reported metric.
+"""Offline demo models (tasks FT-47, FT-49), run once, not imported by the app. Rule fixed in
+advance: params = the mode of the official outer-fold best params per target (tie -> earliest
+grid entry); LightGBM Set A fitted on all clips. Also saves the 25 official outer-fold refits
+(each must reproduce the official OOF) for the score band. Not used for any reported metric.
 Run: python models/tapping/demo/train_demo_model.py   (writes data/processed/demo/)
 """
 
@@ -99,12 +100,97 @@ def run_target(
             "sha8": {n: cvs.sha8_of(d) for n, d in files.items()}}  # fmt: skip
 
 
+def fold_refits(
+    frame: pd.DataFrame, splits: pd.DataFrame, oof: pd.DataFrame,
+    best: dict[tuple[int, int], dict[str, Any]], target: str,
+) -> list[dict[str, Any]]:  # fmt: skip
+    """The 25 outer-fold refits as treeshap_heldout makes them; each must reproduce the OOF."""
+    frame = cvs.canonical(frame)
+    x, _ = ch.design_matrix(frame, res.FEATURE_SET)
+    groups, refs = frame["participant"].to_numpy(), frame["ref"].to_numpy()
+    official = {r: g.set_index("ref") for r, g in oof.groupby("repeat")}
+    out: list[dict[str, Any]] = []
+    for repeat in range(tsh.REPEATS):
+        member = ch.membership(groups, splits, repeat)
+        saved = official[repeat].reindex(refs)
+        if saved["proba"].isna().any() or (saved["outer_fold"].to_numpy() != member).any():
+            raise GuardFailure(f"repeat {repeat}: the saved OOF does not match the stored folds")
+        for fold in range(cvs.N_OUTER):
+            train, test = np.flatnonzero(member != fold), np.flatnonzero(member == fold)
+            est = ch.refit_outer(
+                frame, "lgbm", best[(repeat, fold)], train, res.FEATURE_SET, target,
+                test_positions=test,
+            )  # fmt: skip
+            proba = est.predict_proba(x[test])[:, 1]
+            diff = float(np.max(np.abs(proba - saved["proba"].to_numpy()[test])))
+            if not diff <= tsh.OOF_TOL:
+                raise GuardFailure(
+                    f"repeat {repeat} fold {fold}: the refit does not reproduce the official "
+                    f"OOF (max diff {diff:.3g})"
+                )
+            out.append({"repeat": repeat, "fold": fold, "est": est, "diff": diff,
+                        "params": best[(repeat, fold)], "n_test": len(test)})  # fmt: skip
+    return out
+
+
+def fold_files(
+    refits: list[dict[str, Any]], target: str, inputs_sha8: dict[str, str]
+) -> dict[str, bytes]:
+    cols = list(ch.FEATURE_SETS[res.FEATURE_SET])
+    files = {
+        res.FOLD_FILE.format(repeat=r["repeat"], fold=r["fold"]): r["est"]
+        .booster_.model_to_string()
+        .encode()
+        for r in refits
+    }
+    meta = {
+        "tool": res.TOOL, "target": target, "feature_set": res.FEATURE_SET, "model": "lgbm",
+        "columns": cols, "n_models": len(refits), "oof_tolerance": tsh.OOF_TOL,
+        "oof_max_diff": max(r["diff"] for r in refits),
+        "folds": [{"repeat": r["repeat"], "fold": r["fold"], "params": r["params"],
+                   "n_test_rows": r["n_test"], "oof_max_diff": r["diff"]} for r in refits],
+        "files_sha8": {n: cvs.sha8_of(d) for n, d in files.items()},
+        "features_sha8": cvs.sha8_of(json.dumps(cols)),
+        "grid_sha8": ch.grid_sha8("lgbm", ch.grid_for("lgbm")),
+        "inputs_sha8": inputs_sha8, "lightgbm": lightgbm.__version__, "numpy": np.__version__,
+        "note": res.NOTE,
+    }  # fmt: skip
+    files[res.FOLD_META] = (json.dumps(meta, indent=2, sort_keys=True) + "\n").encode()
+    return files
+
+
+def run_folds(
+    cv_root: Path, out_dir: Path, frame: pd.DataFrame, splits: pd.DataFrame,
+    hashes: dict[str, str], target: str,
+) -> dict[str, Any]:  # fmt: skip
+    folder = cv_root / target
+    best_path, oof_path = folder / "best_params_lgbm_A.csv", folder / "oof_lgbm_A.csv"
+    for path in (best_path, oof_path):
+        if not path.is_file():
+            raise InputProblem(f"missing input: {path.name} for {target}")
+    best = tsh.read_best_params(best_path, ch.grid_for("lgbm"))
+    refits = fold_refits(frame, splits, ch.read_oof(oof_path), best, target)
+    inputs = {**hashes, "best_params": cvs.sha8_of(best_path.read_bytes()),
+              "oof": cvs.sha8_of(oof_path.read_bytes())}  # fmt: skip
+    files = fold_files(refits, target, inputs)
+    for name, data in files.items():
+        cvs._atomic(out_dir / "folds" / target / name, data)
+    return {"target": target, "n_models": len(refits),
+            "oof_max_diff": max(r["diff"] for r in refits),
+            "meta_sha8": cvs.sha8_of(files[res.FOLD_META])}  # fmt: skip
+
+
 def render(done: Sequence[dict[str, Any]]) -> str:
     lines = [res.NOTE]
     for d in done:
         lines.append(f"{d['target']}: params {json.dumps(d['params'], sort_keys=True)}")
         lines.append(f"  folds per grid index: {d['counts']}")
         lines.append("  sha8: " + ", ".join(f"{n}={s}" for n, s in d["sha8"].items()))
+        f = d["folds"]
+        lines.append(
+            f"  fold models: {f['n_models']}, max OOF diff {f['oof_max_diff']:.3g}, "
+            f"folds_meta sha8 {f['meta_sha8']}"
+        )
     return "\n".join(lines)
 
 
@@ -122,7 +208,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             splits_path = root / "cv" / target / cvs.OUT_SPLITS
             splits = cvs.load_splits(splits_path, cvs.canonical(frame))
             h = {**hashes, "splits": cvs.sha8_of(splits_path.read_bytes())}
-            done.append(run_target(root / "cv", res.demo_dir(root), frame, splits, h, target))
+            out = res.demo_dir(root)
+            entry = run_target(root / "cv", out, frame, splits, h, target)
+            entry["folds"] = run_folds(root / "cv", out, frame, splits, h, target)
+            done.append(entry)
     except InputProblem as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
