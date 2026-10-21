@@ -1,0 +1,4 @@
+.go { display: flex; flex-direction: column; gap: 12px; }
+.go__title { margin: 0; font-size: 19px; font-weight: 600; }
+.go__video { width: 100%; max-height: 520px; border-radius: 8px; background: #000; }
+.go__error { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }

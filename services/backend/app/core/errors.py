@@ -61,6 +61,10 @@ class GaitResultNotReadyError(AppError):
     status_code, code, message = 409, "GAIT_RESULT_NOT_READY", "The gait analysis has not finished"
 
 
+class GaitOverlayNotFoundError(AppError):
+    status_code, code, message = 404, "GAIT_OVERLAY_NOT_FOUND", "This analysis has no overlay video"
+
+
 class OnePersonNotConfirmedError(AppError):
     # A form field the request did fill in, but not with the one accepted answer.
     status_code, code, message = (
@@ -94,6 +98,7 @@ ERROR_CODES: tuple[str, ...] = (
     MriResultNotReadyError.code,
     GaitAnalysisNotFoundError.code,
     GaitResultNotReadyError.code,
+    GaitOverlayNotFoundError.code,
     InvalidUploadError.code,
     UploadTooLargeError.code,
     VoiceAnalysisFailedError.code,

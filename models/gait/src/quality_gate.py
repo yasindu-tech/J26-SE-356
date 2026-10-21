@@ -101,9 +101,9 @@ def check_walk(
             walk.facing_agreement,
             MIN_FACING_AGREEMENT,
             walk.facing_agreement >= MIN_FACING_AGREEMENT,
-            "The direction the person faces could not be worked out reliably (toes ahead of "
-            f"heels in {walk.facing_agreement:.0%} of frames; at least "
-            f"{MIN_FACING_AGREEMENT:.0%} is needed).",
+            "The direction the person faces could not be worked out reliably, so the video may "
+            "not be filmed from the side (toes ahead of heels in "
+            f"{walk.facing_agreement:.0%} of frames; at least {MIN_FACING_AGREEMENT:.0%} is needed).",
         ),
     ]
     if strides is not None:
@@ -113,7 +113,13 @@ def check_walk(
                 strides,
                 min_strides,
                 strides >= min_strides,
-                f"The walk has {strides} real strides on both feet; at least {min_strides} are needed.",
+                (
+                    f"No steps were found in the walk: the person may be standing still, or the "
+                    f"video may not show a walk (at least {min_strides} strides are needed)."
+                    if strides == 0
+                    else f"The walk has {strides} real strides on both feet; "
+                    f"at least {min_strides} are needed."
+                ),
             )
         )
     warnings: list[str] = []

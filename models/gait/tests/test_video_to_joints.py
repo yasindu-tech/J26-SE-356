@@ -190,10 +190,10 @@ def test_a_video_without_a_frame_rate_or_frames_is_refused(
 ) -> None:
     fake = Fake(monkeypatch, tmp_path, make_trace())
     monkeypatch.setattr(vj, "read_info", lambda _p: VideoInfo(fps, 1920, 1080, 240))
-    with pytest.raises(VideoError, match="no frame rate"):
+    with pytest.raises(VideoError, match="no readable frames"):
         run(fake)
     monkeypatch.setattr(vj, "read_info", lambda _p: VideoInfo(30.0, 1920, 1080, 0))
-    with pytest.raises(VideoError, match="no frame rate or no frames"):
+    with pytest.raises(VideoError, match="no readable frames"):
         run(fake)
 
 
@@ -202,7 +202,7 @@ def test_frames_of_another_size_than_the_file_reports_are_refused(
 ) -> None:
     fake = Fake(monkeypatch, tmp_path, make_trace())
     fake.real = (1080, 1920)  # a phone video whose rotation was not applied
-    with pytest.raises(VideoError, match="rotation was not applied"):
+    with pytest.raises(VideoError, match="rotation setting does not match"):
         run(fake)
     assert fake.asked == []  # refused before the slow step
 
@@ -217,7 +217,7 @@ def test_a_video_with_no_readable_frame_is_refused(
         yield
 
     monkeypatch.setattr(vj, "read_rgb_frames", nothing)
-    with pytest.raises(VideoError, match="no frame could be read"):
+    with pytest.raises(VideoError, match="No frame could be read"):
         run(fake)
 
 
@@ -234,16 +234,16 @@ def test_a_failure_inside_the_pose_step_becomes_a_video_error(
         run(fake)
 
 
-def test_no_person_is_refused_and_the_share_found_is_in_the_message(
+def test_no_person_or_no_legs_is_refused_with_a_message_that_fits_both(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     trace = make_trace(8.0)
     trace.detected[:] = False
-    with pytest.raises(VideoError, match=r"no walk found.*0%"):
+    with pytest.raises(VideoError, match=r"No walk was found.*legs clearly"):
         run(Fake(monkeypatch, tmp_path, trace))
     partial = make_trace(8.0)
     partial.visibility[:, 23:33] = 0.1  # found everywhere, legs never visible
-    with pytest.raises(VideoError, match=r"seen in 100% of the frames.*legs in clear view"):
+    with pytest.raises(VideoError, match=r"No walk was found.*head to feet"):
         run(Fake(monkeypatch, tmp_path, partial))
 
 
@@ -251,7 +251,7 @@ def test_a_stretch_shorter_than_the_minimum_is_not_a_walk(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = Fake(monkeypatch, tmp_path, make_trace(8.0))
-    with pytest.raises(VideoError, match="no walk found"):
+    with pytest.raises(VideoError, match="No walk was found"):
         run(fake, max_seconds=1.5)  # 1.5 s is under the 2 s minimum
     assert run(fake, max_seconds=2.5).seconds == 2.5
 

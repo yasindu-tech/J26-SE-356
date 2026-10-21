@@ -74,11 +74,15 @@ NOT_SCORED = SCORED | {
 }
 
 
+OVERLAY = b"\x00\x00\x00\x18ftypmp42 not a real video"
+
+
 class FakeRunner:
     """Writes what the real runner and predict_video.py would: started.json, then result.json."""
 
-    def __init__(self, finish_with: dict | None) -> None:
+    def __init__(self, finish_with: dict | None, overlay: bytes | None = OVERLAY) -> None:
         self.finish_with = finish_with
+        self.overlay = overlay
         self.jobs: list[GaitJob] = []
 
     def submit(self, job: GaitJob) -> None:
@@ -87,12 +91,18 @@ class FakeRunner:
         job.started_file.write_text(json.dumps({"t": time.time()}))
         if self.finish_with is not None:
             job.video.unlink()
+            if self.overlay is not None:
+                job.overlay_file.write_bytes(self.overlay)
             job.result_file.write_text(json.dumps(self.finish_with))
 
 
 @pytest.fixture
 def gait_env(tmp_path: Path) -> Generator[tuple[Settings, FakeRunner], None, None]:
-    settings = Settings(gait_work_dir=tmp_path / "gait", gait_max_upload_mb=1)
+    settings = Settings(
+        gait_work_dir=tmp_path / "gait",
+        gait_overlay_dir=tmp_path / "overlays",
+        gait_max_upload_mb=1,
+    )
     runner = FakeRunner(SCORED)
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_gait_runner] = lambda: runner
@@ -237,6 +247,68 @@ def test_a_job_running_past_the_time_limit_is_marked_failed(
     assert not (settings.gait_work_dir / aid).exists()
 
 
+# --------------------------------------------------------------------------- the overlay video
+def test_the_overlay_is_kept_and_served_after_the_upload_is_deleted(
+    client: TestClient, seeded_clinician: Clinician, gait_env, db_session: Session
+) -> None:
+    settings, _ = gait_env
+    h = auth(client)
+    aid = upload(client, h).json()["id"]
+    assert client.get(f"/api/v1/gait/analyses/{aid}", headers=h).json()["has_overlay"] is True
+    assert not (settings.gait_work_dir / aid).exists()  # the folder, and so the upload, is gone
+    video = client.get(f"/api/v1/gait/analyses/{aid}/overlay", headers=h)
+    assert video.status_code == 200 and video.headers["content-type"] == "video/mp4"
+    assert video.content == OVERLAY
+    assert (settings.gait_overlay_dir / f"{aid}.mp4").is_file()
+    assert "gait_overlay_view" in {a.action for a in db_session.query(AuditLogEntry).all()}
+    listed = client.get("/api/v1/gait/analyses", headers=h).json()["items"]
+    assert listed[0]["has_overlay"] is True
+
+
+def test_a_not_scored_video_still_gets_its_overlay(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    _, runner = gait_env
+    runner.finish_with = NOT_SCORED
+    h = auth(client)
+    aid = upload(client, h).json()["id"]
+    assert client.get(f"/api/v1/gait/analyses/{aid}/overlay", headers=h).status_code == 200
+
+
+def test_an_analysis_without_an_overlay_says_so(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    _, runner = gait_env
+    runner.overlay = None
+    h = auth(client)
+    aid = upload(client, h).json()["id"]
+    assert client.get(f"/api/v1/gait/analyses/{aid}", headers=h).json()["has_overlay"] is False
+    r = client.get(f"/api/v1/gait/analyses/{aid}/overlay", headers=h)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "GAIT_OVERLAY_NOT_FOUND"
+
+
+def test_a_failed_analysis_keeps_no_overlay(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    settings, runner = gait_env
+    runner.finish_with = {"modality": "gait", "schema_version": "gait-result/1", "status": "failed"}
+    h = auth(client)
+    aid = upload(client, h).json()["id"]
+    assert client.get(f"/api/v1/gait/analyses/{aid}", headers=h).json()["has_overlay"] is False
+    assert not settings.gait_overlay_dir.exists() or not list(settings.gait_overlay_dir.glob("*"))
+
+
+def test_the_overlay_of_a_running_analysis_is_not_there_yet(
+    client: TestClient, seeded_clinician: Clinician, gait_env
+) -> None:
+    _, runner = gait_env
+    runner.finish_with = None
+    h = auth(client)
+    aid = upload(client, h).json()["id"]
+    r = client.get(f"/api/v1/gait/analyses/{aid}/overlay", headers=h)
+    assert r.status_code == 404 and r.json()["error"]["code"] == "GAIT_OVERLAY_NOT_FOUND"
+
+
 # --------------------------------------------------------------------------- refused uploads
 @pytest.mark.parametrize("answer", ["false", "0"])
 def test_an_upload_without_the_one_person_confirmation_is_refused(
@@ -297,6 +369,7 @@ def test_every_gait_route_needs_sign_in(client: TestClient, gait_env) -> None:
         client.get("/api/v1/gait/analyses"),
         client.get(f"/api/v1/gait/analyses/{some}"),
         client.get(f"/api/v1/gait/analyses/{some}/result"),
+        client.get(f"/api/v1/gait/analyses/{some}/overlay"),
         client.get("/api/v1/gait/analyses", headers={"Authorization": "Bearer not-a-token"}),
     ]
     assert all(r.status_code in (401, 403) and "error" in r.json() for r in responses)
@@ -316,7 +389,11 @@ def test_another_clinicians_analysis_is_not_found(
     db_session.commit()
     aid = upload(client, auth(client)).json()["id"]
     h2 = auth(client, "other")
-    for path in (f"/api/v1/gait/analyses/{aid}", f"/api/v1/gait/analyses/{aid}/result"):
+    for path in (
+        f"/api/v1/gait/analyses/{aid}",
+        f"/api/v1/gait/analyses/{aid}/result",
+        f"/api/v1/gait/analyses/{aid}/overlay",
+    ):
         r = client.get(path, headers=h2)
         assert r.status_code == 404 and r.json()["error"]["code"] == "GAIT_ANALYSIS_NOT_FOUND"
     assert client.get("/api/v1/gait/analyses", headers=h2).json()["total"] == 0
@@ -371,25 +448,99 @@ def script(tmp_path: Path, body: str) -> Path:
     return path
 
 
+def overlay_script(tmp_path: Path, body: str | None = None) -> Path:
+    """A stand-in for make_overlay_video.py: ``VIDEO --out FILE``."""
+    path = tmp_path / "fake_overlay.py"
+    path.write_text(
+        "import sys, time\nout = sys.argv[sys.argv.index('--out') + 1]\n"
+        "trace = sys.argv[sys.argv.index('--trace') + 1]\n"
+        + (body or "open(out, 'wb').write(b'overlay')\n")
+    )
+    return path
+
+
 def test_runner_command_passes_the_video_bundle_output_and_confirmation(tmp_path: Path) -> None:
     job = job_in(tmp_path)
-    cmd = SubprocessGaitRunner(Settings(gait_bundle_dir=tmp_path / "b")).command(job)
+    runner = SubprocessGaitRunner(Settings(gait_bundle_dir=tmp_path / "b"))
+    cmd = runner.command(job)
     assert cmd[2] == str(job.video) and cmd[cmd.index("--bundle") + 1] == str(tmp_path / "b")
-    assert cmd[cmd.index("--out") + 1] == str(job.result_file)
+    assert cmd[cmd.index("--out") + 1] == str(job.predict_file)  # result.json comes later
+    assert cmd[cmd.index("--trace") + 1] == str(job.trace_file)
+    assert runner.overlay_command(job)[2:] == [
+        str(job.video),
+        "--trace",
+        str(job.trace_file),
+        "--out",
+        str(job.overlay_file),
+    ]
     assert cmd[-1] == "--one-person-confirmed"
     unconfirmed = GaitJob(job.analysis_id, job.folder, job.video, False)
     assert "--one-person-confirmed" not in SubprocessGaitRunner(Settings()).command(unconfirmed)
 
 
+TRACE = "trace = sys.argv[sys.argv.index('--trace') + 1]\nopen(trace, 'wb').write(b'trace')\n"
+
+
 def test_runner_keeps_the_scripts_result_and_deletes_the_video(tmp_path: Path) -> None:
-    body = "out = sys.argv[sys.argv.index('--out') + 1]\n"
+    body = "out = sys.argv[sys.argv.index('--out') + 1]\n" + TRACE
     body += "open(out, 'w').write(json.dumps({'available': False, 'reasons': ['x']}))\n"
     body += "sys.exit(1)\n"
     job = job_in(tmp_path)
-    settings = Settings(gait_python=sys.executable, gait_script=script(tmp_path, body))
+    settings = Settings(
+        gait_python=sys.executable,
+        gait_script=script(tmp_path, body),
+        gait_overlay_script=overlay_script(tmp_path),
+    )
     SubprocessGaitRunner(settings).run(job)
     assert not job.video.exists() and job.started_file.exists()
     assert json.loads(job.result_file.read_text()) == {"available": False, "reasons": ["x"]}
+    assert not job.predict_file.exists() and job.overlay_file.read_bytes() == b"overlay"
+    assert not job.trace_file.exists()  # the pose trace is a temporary hand-over
+
+
+def test_the_overlay_is_drawn_from_the_saved_trace_after_scoring(tmp_path: Path) -> None:
+    body = "out = sys.argv[sys.argv.index('--out') + 1]\n" + TRACE
+    body += "open(out, 'w').write(json.dumps({'available': True}))\n"
+    draw = "open(out, 'wb').write(b'drawn from ' + open(trace, 'rb').read())\n"
+    job = job_in(tmp_path)
+    settings = Settings(
+        gait_python=sys.executable,
+        gait_script=script(tmp_path, body),
+        gait_overlay_script=overlay_script(tmp_path, draw),
+    )
+    SubprocessGaitRunner(settings).run(job)
+    assert job.overlay_file.read_bytes() == b"drawn from trace"
+    assert json.loads(job.result_file.read_text()) == {"available": True}
+
+
+def test_no_overlay_is_drawn_when_scoring_left_no_trace(tmp_path: Path) -> None:
+    body = "out = sys.argv[sys.argv.index('--out') + 1]\n"  # refused early: no pose pass, no trace
+    body += "open(out, 'w').write(json.dumps({'available': False, 'reasons': ['x']}))\n"
+    job = job_in(tmp_path)
+    settings = Settings(
+        gait_python=sys.executable,
+        gait_script=script(tmp_path, body),
+        gait_overlay_script=overlay_script(tmp_path),
+    )
+    SubprocessGaitRunner(settings).run(job)
+    assert job.result_file.exists() and not job.overlay_file.exists()
+
+
+def test_a_failing_overlay_does_not_fail_the_analysis_and_leaves_no_half_file(
+    tmp_path: Path,
+) -> None:
+    body = "out = sys.argv[sys.argv.index('--out') + 1]\n" + TRACE
+    body += "open(out, 'w').write(json.dumps({'available': True}))\n"
+    broken = "open(out, 'wb').write(b'half')\nsys.exit(1)\n"
+    job = job_in(tmp_path)
+    settings = Settings(
+        gait_python=sys.executable,
+        gait_script=script(tmp_path, body),
+        gait_overlay_script=overlay_script(tmp_path, broken),
+    )
+    SubprocessGaitRunner(settings).run(job)
+    assert json.loads(job.result_file.read_text()) == {"available": True}
+    assert not job.overlay_file.exists()
 
 
 @pytest.mark.parametrize(
@@ -408,10 +559,11 @@ def test_runner_writes_a_failure_and_deletes_the_video_when_the_script_gives_no_
     settings = Settings(
         gait_python=python or sys.executable,
         gait_script=script(tmp_path, body),
+        gait_overlay_script=overlay_script(tmp_path, "time.sleep(5)\n"),
         gait_timeout_minutes=minutes,
     )
     SubprocessGaitRunner(settings).run(job)
-    assert not job.video.exists()
+    assert not job.video.exists() and not job.overlay_file.exists()
     result = json.loads(job.result_file.read_text())
     assert (
         result["status"] == "failed" and result["modality"] == "gait" and words in result["error"]

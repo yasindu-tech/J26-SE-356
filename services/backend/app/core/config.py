@@ -45,10 +45,12 @@ class Settings(BaseSettings):
 
     # Gait analyses (models/gait/src/predict_video.py runs as a separate process, one video at a
     # time, in its own worker so a gait video never waits behind an MRI scan). The uploaded
-    # video is deleted as soon as the analysis ends.
+    # video is deleted when the analysis ends; the overlay video drawn from it is kept.
     gait_work_dir: Path = REPO_ROOT / "data" / "backend" / "gait"
     gait_python: str = sys.executable  # interpreter with the models/gait dependencies
     gait_script: Path = REPO_ROOT / "models" / "gait" / "src" / "predict_video.py"
+    gait_overlay_script: Path = REPO_ROOT / "models" / "gait" / "src" / "make_overlay_video.py"
+    gait_overlay_dir: Path = REPO_ROOT / "data" / "backend" / "gait_overlays"
     gait_bundle_dir: Path = (
         REPO_ROOT / "models" / "gait" / "artifacts" / "models" / "xgboost" / "bundle"
     )

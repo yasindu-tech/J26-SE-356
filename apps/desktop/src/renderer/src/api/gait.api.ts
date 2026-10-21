@@ -70,6 +70,19 @@ export function getGaitResult(id: string): Promise<GaitResult> {
   return apiFetch<GaitResult>(`${BASE}/${encodeURIComponent(id)}/result`);
 }
 
+/** The overlay video as a blob (a video element cannot send the sign-in header itself). */
+export async function getGaitOverlay(id: string): Promise<Blob> {
+  const path = `${BASE}/${encodeURIComponent(id)}/overlay`;
+  const send = () => fetch(`${API_BASE_URL}${path}`, { headers: requestHeaders(undefined) });
+  let response = await send();
+  if (response.status === 401 && (await refreshAccessToken())) response = await send();
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    throw toApiError(body, `The overlay video could not be loaded (status ${response.status})`);
+  }
+  return response.blob();
+}
+
 export function listGaitAnalyses(limit = 20): Promise<GaitAnalysisList> {
   return apiFetch<GaitAnalysisList>(`${BASE}?limit=${limit}`);
 }

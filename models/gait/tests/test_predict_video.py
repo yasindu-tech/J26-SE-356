@@ -282,3 +282,45 @@ def test_cli_writes_the_record_to_a_file_with_the_confirmation(
     assert "You confirmed one person is walking" in capsys.readouterr().out
     assert run_cli(fake, bundle_dir, "--out", str(out), "--people", "2") == 1
     assert json.loads(out.read_text())["available"] is False
+
+
+# --------------------------------------------------------------------------- quick pre-check
+def test_a_video_refused_by_the_pre_check_is_not_scored_and_the_pose_pass_is_skipped(
+    predictor: GaitPredictor, fake: Fake, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    reason = "This does not look like a video of someone walking: no person with the legs in view was found."
+    monkeypatch.setattr(pv, "prescreen", lambda *a, **k: reason)
+    r = predictor.predict(fake.video, trace_out=tmp_path / "t.npz")
+    assert_not_scored(r)
+    assert r["reasons"] == [reason] and r["gate"]["passed"] is False and r["walk"] is None
+    assert fake.asked == [] and not (tmp_path / "t.npz").exists()  # no pose pass, no trace
+
+
+def test_the_pre_check_looks_at_the_part_that_will_be_read(
+    predictor: GaitPredictor, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[tuple[Path, Path, float | None]] = []
+    monkeypatch.setattr(pv, "prescreen", lambda p, m, s=None: seen.append((p, m, s)))
+    predictor.predict(fake.video)
+    assert seen == [(fake.video, fake.model, predictor.max_seconds)]
+
+
+def test_the_pose_trace_is_saved_when_asked_for(
+    predictor: GaitPredictor, fake: Fake, tmp_path: Path
+) -> None:
+    from pose_trace_io import load_trace
+
+    target = tmp_path / "out" / "t.npz"
+    assert predictor.predict(fake.video, trace_out=target)["available"] is True
+    back = load_trace(target)
+    assert back.fps == fake.trace.fps and back.n_frames > 0
+    assert predictor.predict(fake.video)["available"] is True  # and not when it is not
+
+
+def test_the_pose_trace_is_saved_even_when_no_walk_is_found(
+    bundle_dir: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    trace = make_trace()
+    f = Fake(monkeypatch, tmp_path, replace(trace, detected=np.zeros_like(trace.detected)))
+    r = GaitPredictor(bundle_dir, f.model).predict(f.video, trace_out=tmp_path / "t.npz")
+    assert "no walk found" in r["reasons"][0] and (tmp_path / "t.npz").is_file()
