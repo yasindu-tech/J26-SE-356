@@ -13,7 +13,7 @@ class GaitAnalysis(Base):
 
     Holds no patient identifiers and no file name (only the optional pseudonymous label): the result JSON carries the walk's
     features, scores and explanation only. The video is deleted from disk when the
-    analysis ends.
+    analysis ends; the overlay video drawn from it is kept as a file named by the analysis ID.
     """
 
     __tablename__ = "gait_analyses"

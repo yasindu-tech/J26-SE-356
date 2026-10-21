@@ -2,8 +2,9 @@
 
 Flow: create_analysis saves the video under data/backend/gait/<id>/ (named by the analysis ID,
 never by its own name) and hands it to the runner. The runner deletes the video when the
-process ends and leaves result.json. Reads pick that file up, store the result in the database
-and delete the folder, so nothing of the upload is left on disk once it has been read.
+process ends and leaves result.json, plus overlay.mp4 (the video with the skeleton and heel
+strikes drawn on it). Reads pick result.json up, store the result in the database, move the
+overlay to gait_overlay_dir/<id>.mp4 and delete the folder, so the upload itself is not kept.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.errors import (
     GaitAnalysisNotFoundError,
+    GaitOverlayNotFoundError,
     GaitResultNotReadyError,
     InvalidUploadError,
     OnePersonNotConfirmedError,
@@ -39,6 +41,17 @@ NOT_A_VIDEO = f"The upload must be a video file ({', '.join(GAIT_VIDEO_TYPES)})"
 
 def _folder(settings: Settings, analysis_id: uuid.UUID) -> Path:
     return settings.gait_work_dir / str(analysis_id)
+
+
+def overlay_path(settings: Settings, analysis_id: uuid.UUID) -> Path:
+    return settings.gait_overlay_dir / f"{analysis_id}.mp4"
+
+
+def _keep_overlay(folder: Path, settings: Settings, analysis_id: uuid.UUID) -> None:
+    drawn = folder / "overlay.mp4"
+    if drawn.is_file():
+        settings.gait_overlay_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(drawn, overlay_path(settings, analysis_id))
 
 
 def _audit(db: Session, clinician: Clinician, action: str, analysis_id: uuid.UUID) -> None:
@@ -138,6 +151,8 @@ def refresh_from_disk(db: Session, row: GaitAnalysis, settings: Settings) -> Non
         else:  # the runner's own failure record
             status, error = "failed", str(result.get("error") or "the gait analysis failed")[:500]
         row.result_json = json.dumps({**result, "status": status})
+        if status != "failed":
+            _keep_overlay(folder, settings, row.id)
         _finish(db, row, status, error)
         shutil.rmtree(folder, ignore_errors=True)
         return
@@ -154,7 +169,7 @@ def refresh_from_disk(db: Session, row: GaitAnalysis, settings: Settings) -> Non
         _finish(db, row, "failed", "the analysis was interrupted")
 
 
-def _status(row: GaitAnalysis) -> GaitAnalysisStatus:
+def _status(row: GaitAnalysis, settings: Settings) -> GaitAnalysisStatus:
     result = json.loads(row.result_json) if row.result_json else {}
     reasons = result.get("reasons") or []
     end = row.finished_at or utc_now()
@@ -168,6 +183,7 @@ def _status(row: GaitAnalysis) -> GaitAnalysisStatus:
         subject_label=row.subject_label,
         error=row.error,
         abstain_reason=" ".join(reasons) if row.status == "abstained" and reasons else None,
+        has_overlay=overlay_path(settings, row.id).is_file(),
     )
 
 
@@ -176,7 +192,7 @@ def get_status(
 ) -> GaitAnalysisStatus:
     row = _own(db, clinician, analysis_id)
     refresh_from_disk(db, row, settings)
-    return _status(row)
+    return _status(row, settings)
 
 
 def list_analyses(
@@ -187,7 +203,7 @@ def list_analyses(
     rows = q.order_by(GaitAnalysis.created_at.desc()).offset(offset).limit(limit).all()
     for r in rows:
         refresh_from_disk(db, r, settings)
-    return [_status(r) for r in rows], total
+    return [_status(r, settings) for r in rows], total
 
 
 def get_result(
@@ -200,3 +216,16 @@ def get_result(
     _audit(db, clinician, "gait_result_view", row.id)
     db.commit()
     return json.loads(row.result_json)
+
+
+def get_overlay(
+    db: Session, clinician: Clinician, analysis_id: uuid.UUID, settings: Settings
+) -> Path:
+    row = _own(db, clinician, analysis_id)
+    refresh_from_disk(db, row, settings)
+    path = overlay_path(settings, row.id)
+    if not path.is_file():
+        raise GaitOverlayNotFoundError
+    _audit(db, clinician, "gait_overlay_view", row.id)
+    db.commit()
+    return path

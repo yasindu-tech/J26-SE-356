@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_clinician, get_gait_runner
@@ -116,3 +117,24 @@ def get_result(
     settings: Settings = Depends(get_settings),
 ) -> GaitResult:
     return GaitResult.model_validate(gait_service.get_result(db, clinician, analysis_id, settings))
+
+
+@router.get(
+    "/analyses/{analysis_id}/overlay",
+    response_class=FileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="The walking video with the skeleton and the counted heel strikes drawn on it (mp4)",
+    responses={
+        200: {"content": {"video/mp4": {}}},
+        401: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def get_overlay(
+    analysis_id: uuid.UUID,
+    clinician: Clinician = Depends(get_current_clinician),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    path = gait_service.get_overlay(db, clinician, analysis_id, settings)
+    return FileResponse(path, media_type="video/mp4")

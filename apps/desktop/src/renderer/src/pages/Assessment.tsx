@@ -12,7 +12,7 @@ import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import { uploadGaitVideo } from "../api/gait.api";
 import { getGaitRun } from "../gait/gaitRun";
 import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
-import { gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
+import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import {
   EDDY_PROFILE_LABELS,
@@ -47,7 +47,7 @@ type Screen =
   | { view: "gait-result"; outcome: GaitOutcome };
 
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
-type GaitOutcome = { kind: "record"; result: GaitResult } | { kind: "failed"; message: string };
+type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
 
 /** The parts of one assessment that were started, and how each ended once it has. */
 interface PartsState {
@@ -58,7 +58,7 @@ interface PartsState {
 function outcomeOf(status: GaitRunStatus): GaitOutcome {
   return status.state === "failed" || !status.result
     ? { kind: "failed", message: status.error ?? "Something went wrong while reading the video." }
-    : { kind: "record", result: status.result };
+    : { kind: "record", id: status.id, result: status.result };
 }
 
 // One screen per step, so nothing needs scrolling to find the next thing to do.
@@ -99,19 +99,32 @@ function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-type Hand = "" | "right" | "left" | "unknown";
+type Handedness = "" | "right" | "left" | "unknown";
+
+/** Why the person is being assessed. Kept on this screen only; not sent, no model uses it. */
+const REASONS = [
+  ["tremor", "Tremor"],
+  ["slowness", "Slowness or stiffness"],
+  ["walking", "Walking or balance changes"],
+  ["early", "Smell loss or sleep changes"],
+  ["family", "Family history"],
+  ["routine", "Routine screening"],
+  ["other", "Other"],
+] as const;
+type Reason = "" | (typeof REASONS)[number][0];
 
 interface Form {
   label: string;
   yearOfBirth: string;
   sex: "" | "M" | "F";
-  /** Free text, kept on this screen only. Not sent anywhere in this build. */
-  reason: string;
+  reason: Reason;
+  /** Free text when the reason is "Other". Kept on this screen only. */
+  reasonOther: string;
   /** "Screening consent explained and recorded" ticked. Not stored in this build. */
   consent: boolean;
   /** Free text, kept on this screen only; no model uses it. */
   medication: string;
-  hand: Hand;
+  handedness: Handedness;
   file: File | null;
   /** The walking video, and its length when the picker could read it. */
   video: File | null;
@@ -125,9 +138,10 @@ const EMPTY_FORM: Form = {
   yearOfBirth: "",
   sex: "",
   reason: "",
+  reasonOther: "",
   consent: false,
   medication: "",
-  hand: "",
+  handedness: "",
   file: null,
   video: null,
   videoSeconds: null,
@@ -476,15 +490,7 @@ export function Assessment({
             gait={gaitStripState(parts?.gait ?? null)}
           />
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
-          <MriResultView
-            result={screen.result}
-            label={label}
-            onNewAnalysis={() => {
-              setLabel(null);
-              setForm(EMPTY_FORM);
-              go({ view: "patient" });
-            }}
-          />
+          <MriResultView result={screen.result} />
           <section className="asm__others" aria-label="Parts that were not provided">
             {PARTS.filter((p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait)).map((p) => (
               <div key={p.key} className="asm__other">
@@ -499,7 +505,7 @@ export function Assessment({
               </div>
             ))}
           </section>
-          <div>
+          <div className="asm__result-actions">
             {parts?.mri && parts.gait ? (
               <button type="button" className="btn btn--outline" onClick={() => go({ view: "parts" })}>
                 ← Back to parts
@@ -509,6 +515,17 @@ export function Assessment({
                 ← Home
               </button>
             )}
+            <button
+              type="button"
+              className="btn btn--outline"
+              onClick={() => {
+                setLabel(null);
+                setForm(EMPTY_FORM);
+                go({ view: "patient" });
+              }}
+            >
+              New assessment
+            </button>
           </div>
         </div>
       )}
@@ -674,6 +691,7 @@ function GaitResultPage({
       {outcome.kind === "record" ? (
         <GaitResultView
           result={outcome.result}
+          analysisId={outcome.id}
           videoSeconds={videoSeconds}
           onNewVideo={onAnotherVideo}
         />
@@ -681,7 +699,7 @@ function GaitResultPage({
         <section className="card" aria-label="The analysis did not finish">
           <h2 className="card__title">The analysis did not finish</h2>
           <p className="mri__error" role="alert">
-            {outcome.message} No result was produced. The video was deleted from the server. Try the
+            {asSentence(outcome.message)} No result was produced. The video was deleted from the server. Try the
             same video again, or choose another one.
           </p>
           <div className="asm__buttons">
@@ -847,16 +865,34 @@ function PatientStep({
         <dd>{clinician}</dd>
       </dl>
 
-      <label className="mri__field">
-        <span className="mri__label">Reason for the assessment</span>
-        <input
-          className="mri__input"
-          value={form.reason}
-          maxLength={200}
-          placeholder="e.g. slowness and right-hand tremor, 8 months"
-          onChange={(e) => onChange({ ...form, reason: e.target.value })}
-        />
-      </label>
+      <fieldset className="asm__reasons">
+        <legend className="mri__label">Reason for the assessment</legend>
+        <div className="asm__pills">
+          {REASONS.map(([value, text]) => (
+            <label key={value} className="asm__pill">
+              <input
+                type="radio"
+                name="reason"
+                value={value}
+                checked={form.reason === value}
+                onChange={() => onChange({ ...form, reason: value })}
+              />
+              <span>{text}</span>
+            </label>
+          ))}
+        </div>
+        {form.reason === "other" && (
+          <input
+            className="mri__input"
+            aria-label="Other reason"
+            value={form.reasonOther}
+            maxLength={200}
+            placeholder="Describe the reason"
+            autoFocus
+            onChange={(e) => onChange({ ...form, reasonOther: e.target.value })}
+          />
+        )}
+      </fieldset>
 
       <label className="asm__check">
         <input
@@ -880,7 +916,7 @@ function PatientStep({
         />
       </label>
 
-      <fieldset className="asm__hand">
+      <fieldset className="asm__handedness">
         <legend className="mri__label">Handedness</legend>
         {(
           [
@@ -893,8 +929,8 @@ function PatientStep({
             <input
               type="radio"
               name="handedness"
-              checked={form.hand === value}
-              onChange={() => onChange({ ...form, hand: value })}
+              checked={form.handedness === value}
+              onChange={() => onChange({ ...form, handedness: value })}
             />
             {text}
           </label>
@@ -1002,7 +1038,10 @@ function ModalitiesStep({
               {form.video ? (form.onePerson ? "Ready to send" : "Video chosen") : "Available"}
             </span>
           </div>
-          <p className="note">{PARTS[0]?.provides}. Takes about a minute.</p>
+          <p className="note">
+            {PARTS[0]?.provides}. It grades how the person walks (no, mild or moderate-to-severe
+            impairment). It does not say whether they have Parkinson&rsquo;s disease. Takes about a minute.
+          </p>
           <GaitPicker
             video={form.video}
             videoSeconds={form.videoSeconds}
@@ -1075,11 +1114,11 @@ function ReviewStep({
         <p className="eyebrow">Step 3 of 3</p>
         <h2 className="card__title">
           Review
-          <InfoTip label="Where the scan goes">
+          <InfoTip label={form.video ? "Where the video goes" : "Where the scan goes"}>
             {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
             <span className="mono">{API_BASE_URL}</span>
             {form.video
-              ? " only when you press Start analysis. It is deleted there when the analysis ends, and only the result is kept."
+              ? " only when you press Start analysis. The file is deleted there when the analysis ends; the result is kept, and a copy with the skeleton drawn on it when the walk can be read."
               : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
           </InfoTip>
         </h2>

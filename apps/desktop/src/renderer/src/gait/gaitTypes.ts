@@ -79,6 +79,8 @@ export interface GaitAnalysisStatus {
   error: string | null;
   /** Why the video could not be scored, in plain words. */
   abstain_reason: string | null;
+  /** The video with the skeleton and heel strikes drawn on it can be played. */
+  has_overlay: boolean;
 }
 
 export interface GaitAnalysisList {

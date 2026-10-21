@@ -1,116 +1,72 @@
+import type { ReactNode } from "react";
 import type { MriResult } from "../mri/mriTypes";
 import {
-  FAST_EDDY_NOTICE,
-  caveats,
+  driverBars,
   eddyProfileOf,
-  missingRows,
+  formatSigned,
   modelSetLabel,
+  scoreBand,
+  SCORE_AXIS,
   statusLabel,
 } from "../mri/mriView";
-import { plainDrivers, plainReading, reliabilityLine } from "../mri/mriPlain";
-import { buildMriReportHtml, downloadHtml, reportFileName } from "../reports/mriReport";
+import {
+  PART_CAPTIONS,
+  PART_STATE_LABELS,
+  PART_TITLES,
+  driverText,
+  eddyMinutes,
+  partState,
+  plainReading,
+  safeImage,
+  type ScanPart,
+} from "../mri/mriPlain";
 import "./MriResultView.css";
 
-// The MRI module's result for a general clinician: a plain reading, how far to lean on the
-// model, what mattered most, and what to keep in mind. The numbers (raw log-odds score and
-// interval, SHAP contributions, feature vector, AUC with its confidence interval, quality
-// checks) are in the technical report the clinician can download from this page.
+// The MRI module's result: the reading, the T1 and DTI pictures, what drove the reading,
+// and the numbers in "More details" sections that open and close. Everything is on the
+// page; nothing is downloaded.
 //
-// It shows no High/Moderate/Low priority and no percentage: the score is not calibrated and
-// the fusion step that sets a priority is not built. A lower reading is never a clearance.
+// No High/Moderate/Low priority and no percentage: the score is not calibrated and the
+// step that combines parts is not built. A part that was not used is shown as "—", never 0.
 
-export function MriResultView({
-  result,
-  label = null,
-  onNewAnalysis,
-}: {
-  result: MriResult;
-  /** The pseudonymous ID of this assessment, for the report. */
-  label?: string | null;
-  onNewAnalysis?: () => void;
-}) {
-  const fast = eddyProfileOf(result) === "fast";
+const PARTS: readonly ScanPart[] = ["t1", "dti"];
+const TOP_DRIVERS = 5;
 
-  function download(): void {
-    const now = new Date();
-    downloadHtml(reportFileName(label, now), buildMriReportHtml(result, { label, generatedAt: now }));
-  }
-
+export function MriResultView({ result }: { result: MriResult }) {
+  const scored = result.status === "scored" && result.score !== null;
   return (
     <div className="mr">
-      {fast && (
-        <p className="mr__notice" role="note">
-          {FAST_EDDY_NOTICE}
-        </p>
-      )}
-
-      {result.status === "scored" && result.score ? (
-        <ReadingCard result={result} onDownload={download} />
-      ) : (
-        <NotScoredCard result={result} onDownload={download} />
-      )}
-
-      <PartsRow result={result} />
-      <MissingBlock result={result} onNewAnalysis={onNewAnalysis} />
-      {result.status === "scored" && result.explanation && <MatteredCard result={result} />}
-      <KeepInMind result={result} />
-      <p className="note">{result.disclaimer}</p>
+      {scored ? <ReadingCard result={result} /> : <NotScoredCard result={result} />}
+      <ScanImages result={result} />
+      {scored && <ExplanationCard result={result} />}
+      <MoreDetails result={result} />
     </div>
   );
 }
 
 // ------------------------------------------------------------------ reading
 
-function DownloadButton({ onDownload }: { onDownload: () => void }) {
-  return (
-    <div className="mr__download">
-      <button type="button" className="btn btn--outline" onClick={onDownload}>
-        Download technical report
-      </button>
-      <span className="note">
-        The score, intervals, model test results, measurements and quality checks, for your records
-        or a colleague who wants the detail. Saved to your computer; nothing is sent.
-      </span>
-    </div>
-  );
-}
-
-function ReadingCard({ result, onDownload }: { result: MriResult; onDownload: () => void }) {
+function ReadingCard({ result }: { result: MriResult }) {
   if (!result.score) return null;
   const reading = plainReading(result.score);
   return (
     <section className="card mr__reading-card" aria-label="Reading">
-      <p className="eyebrow">MRI · {modelSetLabel(result.model_set)} · one part of the assessment</p>
+      <p className="eyebrow">MRI · {modelSetLabel(result.model_set)} model · research prototype</p>
       <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
       <p className="mr__reading-detail">{reading.detail}</p>
-
-      <div className="mr__rely">
-        <p className="eyebrow">How far to lean on it</p>
-        <p className="mr__text">{reliabilityLine(result.model_card)}</p>
-      </div>
-
-      <p className="note">
-        This is a screening aid for prioritising specialist review. It is not a diagnosis and it
-        gives no referral priority: the reading comes from one part of the platform, and the step
-        that combines parts is not built yet.
-      </p>
-      <DownloadButton onDownload={onDownload} />
     </section>
   );
 }
 
-function NotScoredCard({ result, onDownload }: { result: MriResult; onDownload: () => void }) {
-  const label = statusLabel(result.status);
+function NotScoredCard({ result }: { result: MriResult }) {
+  const status = statusLabel(result.status);
   return (
     <section className="card mr__reading-card mr__score--none" aria-label="Reading">
-      <p className="eyebrow">MRI · one part of the assessment</p>
-      <h2 className="mr__reading-head">{label.text}</h2>
-      <p className="mr__big mono mr__big--none">—</p>
+      <p className="eyebrow">MRI · research prototype</p>
+      <h2 className="mr__reading-head">{status.text}</h2>
       {result.status === "abstained" && (
         <p className="mr__reading-detail">
-          The model did not score this scan: {result.abstain_reason}. That is deliberate, because a
-          guess from unusable input would be worse than no reading. It is{" "}
-          <strong>not counted as zero</strong> and not read as normal.
+          No score for this scan: {result.abstain_reason}. It is not counted as zero.
         </p>
       )}
       {result.status === "failed" && (
@@ -125,115 +81,289 @@ function NotScoredCard({ result, onDownload }: { result: MriResult; onDownload: 
           ))}
         </ul>
       )}
-      <DownloadButton onDownload={onDownload} />
     </section>
   );
 }
 
-// -------------------------------------------------------------------- parts
+// ------------------------------------------------------------------- images
 
-function PartsRow({ result }: { result: MriResult }) {
+function ScanImages({ result }: { result: MriResult }) {
   return (
-    <section className="mr__parts" aria-label="What was used">
-      {(["t1", "dti"] as const).map((part) => {
-        const used = result.availability[part] ?? false;
-        const found = result.inputs[part]?.found ?? false;
+    <section className="mr__images" aria-label="Scans">
+      {PARTS.map((part) => {
+        const state = partState(result, part);
+        const input = result.inputs[part];
+        const image = state === "used" ? safeImage(input?.qc_image) : null;
+        const scanner = [input?.manufacturer, input?.scanner_model].filter(Boolean).join(" ");
         return (
-          <div key={part} className={`mr__part${used ? "" : " mr__part--none"}`}>
+          <figure key={part} className={`mr__image-card${state === "used" ? "" : " mr__part--none"}`}>
             <div className="mr__part-head">
-              <span className="mr__part-title">{part === "t1" ? "T1 scan" : "DTI scan"}</span>
-              <span className={`mr__chip ${used ? "mr__chip--on" : "mr__chip--none"}`}>
-                {used ? "Used" : found ? "Not used" : "Not in the upload"}
+              <span className="mr__part-title">{PART_TITLES[part]}</span>
+              <span className={`mr__chip ${state === "used" ? "mr__chip--on" : "mr__chip--none"}`}>
+                {PART_STATE_LABELS[state]}
               </span>
             </div>
-            {!used && (
-              <p className="note">
-                <span className="mono">—</span> Not counted as zero.
-              </p>
+            {image ? (
+              <img className="mr__image" src={image} alt={`${PART_TITLES[part]} after processing`} />
+            ) : (
+              <div className="mr__image-empty">
+                <span className="mono">—</span>
+                <span className="note">
+                  {state === "used" ? "No picture was produced." : "Not counted as zero."}
+                </span>
+              </div>
             )}
-          </div>
+            {image && <figcaption className="note">{PART_CAPTIONS[part]}</figcaption>}
+            {state === "used" && scanner && <p className="mr__meta">{scanner}</p>}
+          </figure>
         );
       })}
     </section>
   );
 }
 
-function MissingBlock({
-  result,
-  onNewAnalysis,
-}: {
-  result: MriResult;
-  onNewAnalysis?: () => void;
-}) {
-  const rows = missingRows(result);
-  if (rows.length === 0) return null;
+// -------------------------------------------------------------- explanation
+
+function ExplanationCard({ result }: { result: MriResult }) {
+  const drivers = result.explanation?.top_drivers ?? [];
+  if (drivers.length === 0) return null;
+  const bars = driverBars(drivers.slice(0, TOP_DRIVERS));
   return (
-    <section className="mr__missing" aria-label="What is missing">
-      <h2 className="mr__h2">What was not used, and what that means</h2>
-      <ul className="mr__list">
-        {rows.map((row) => (
-          <li key={row.key}>
-            <strong>{row.what}</strong> — {row.detail.toLowerCase()}. {row.effect}
+    <section className="card mr__explain" aria-label="What drove the reading">
+      <div className="mr__section-head">
+        <h2 className="mr__h2">What drove this reading</h2>
+        <div className="mr__shap-legend note" aria-hidden="true">
+          <span>
+            <i className="mr__key mr__key--outline" /> lower
+          </span>
+          <span>
+            <i className="mr__key mr__key--solid" /> higher
+          </span>
+        </div>
+      </div>
+      <ul className="mr__bars">
+        {bars.map((b) => (
+          <li key={b.feature} className="mr__bar-row">
+            <span className="mr__bar-label">{b.label}</span>
+            <span className="mr__lane mr__lane--lower">
+              {b.side === "lower" && (
+                <i className="mr__bar mr__bar--outline" style={{ width: `${b.widthPct}%` }} />
+              )}
+            </span>
+            <span className="mr__zero" aria-hidden="true" />
+            <span className="mr__lane">
+              {b.side === "higher" && (
+                <i className="mr__bar mr__bar--solid" style={{ width: `${b.widthPct}%` }} />
+              )}
+            </span>
+            <span className="mr__sr">{driverText(b)}</span>
           </li>
         ))}
       </ul>
-      {onNewAnalysis && (
-        <div>
-          <button type="button" className="btn btn--outline mr__small-btn" onClick={onNewAnalysis}>
-            Start a new assessment
-          </button>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ------------------------------------------------------------------ mattered
-
-function MatteredCard({ result }: { result: MriResult }) {
-  const drivers = plainDrivers(result.explanation?.top_drivers ?? []);
-  if (drivers.length === 0) return null;
-  return (
-    <section className="card" aria-label="What mattered most">
-      <h2 className="mr__h2">What mattered most</h2>
-      <ul className="mr__list mr__list--large">
-        {drivers.map((d) => (
-          <li key={d.key}>{d.text}</li>
-        ))}
-      </ul>
       <p className="note">
-        These show what moved the model&rsquo;s reading. They are not causes and not findings about
-        this person&rsquo;s brain. The full list, with the numbers, is in the technical report.
+        Each bar is how much one measurement moved the model&rsquo;s reading (SHAP). It shows what
+        the model used, not a cause.
       </p>
     </section>
   );
 }
 
-// ---------------------------------------------------------------- keep in mind
+// ------------------------------------------------------------- more details
 
-function KeepInMind({ result }: { result: MriResult }) {
-  const c = caveats(result);
-  const items = [
-    ...(c.population ? [c.population] : []),
-    ...c.limits,
-    ...(c.outsideRange.length > 0
-      ? [
-          `${c.outsideRange.length} measurement${c.outsideRange.length === 1 ? " was" : "s were"} outside what the model was trained on, so the reading may be less reliable than it looks.`,
-        ]
-      : []),
-  ];
+function Details({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="card" aria-label="Keep in mind">
-      <h2 className="mr__h2">Keep in mind</h2>
-      {items.length > 0 ? (
-        <ul className="mr__list">
-          {items.map((text) => (
-            <li key={text}>{text}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mr__text">The model card reported no limits for this result.</p>
-      )}
+    <details className="mr__acc-item">
+      <summary className="mr__acc-head">
+        <span className="mr__acc-title">{title}</span>
+        {hint && <span className="note">{hint}</span>}
+        <span className="mr__acc-chevron" aria-hidden="true" />
+      </summary>
+      <div className="mr__acc-body">{children}</div>
+    </details>
+  );
+}
+
+function Rows({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <ul className="mr__checks">
+      {rows.map(([k, v]) => (
+        <li key={k}>
+          <span>{k}</span>
+          <span className="mono">{v}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MoreDetails({ result }: { result: MriResult }) {
+  return (
+    <section className="mr__acc" aria-label="More details">
+      <h2 className="mr__h2">More details</h2>
+      {result.score && <ScoreDetails result={result} />}
+      <ModelDetails result={result} />
+      <ScanDetails result={result} />
+      {result.explanation && result.status === "scored" && <ExplanationDetails result={result} />}
+      {result.feature_vector && <MeasurementDetails result={result} />}
     </section>
+  );
+}
+
+function ScoreDetails({ result }: { result: MriResult }) {
+  const s = result.score;
+  if (!s) return null;
+  const band = scoreBand(s);
+  return (
+    <Details title="Score" hint={`${formatSigned(s.value)} (${formatSigned(s.interval_95[0])} to ${formatSigned(s.interval_95[1])})`}>
+      <div className="mr__band-wrap" aria-hidden="true">
+        <div className="mr__band">
+          <span className="mr__band-track" />
+          <span className="mr__band-ci" style={{ left: `${band.low}%`, width: `${band.width}%` }} />
+          <span className="mr__band-zero" style={{ left: `${band.zero}%` }} />
+          <span className="mr__band-point" style={{ left: `${band.point}%` }} />
+        </div>
+        <div className="mr__band-labels">
+          <span style={{ left: "0%" }}>{SCORE_AXIS[0]} control side</span>
+          <span style={{ left: `${band.zero}%` }}>0</span>
+          <span style={{ left: "100%" }}>Parkinson&rsquo;s side +{SCORE_AXIS[1]}</span>
+        </div>
+      </div>
+      <Rows
+        rows={[
+          ["Raw score (log-odds)", formatSigned(s.value)],
+          ["95% interval", `${formatSigned(s.interval_95[0])} to ${formatSigned(s.interval_95[1])}`],
+          ["Interval method", s.interval_method],
+          ["Calibrated probability", s.calibrated ? "yes" : "no (raw score only)"],
+        ]}
+      />
+      <p className="note">{s.meaning}</p>
+    </Details>
+  );
+}
+
+function ModelDetails({ result }: { result: MriResult }) {
+  const card = result.model_card;
+  const cv = card?.cross_validated;
+  const people = card?.training_people;
+  const rows: [string, ReactNode][] = [
+    ["Model", `${modelSetLabel(result.model_set)} · ${result.model_version ?? "—"}`],
+  ];
+  if (people) rows.push(["Trained on", `${people.total} people (${people.pd} PD, ${people.control} controls)`]);
+  if (cv) {
+    rows.push(["AUC on unseen people", `${cv.auc_mean.toFixed(2)} (95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)})`]);
+    rows.push([
+      "Balanced accuracy",
+      `${(cv.balanced_accuracy_mean * 100).toFixed(0)}% (95% CI ${(cv.balanced_accuracy_ci[0] * 100).toFixed(0)}–${(cv.balanced_accuracy_ci[1] * 100).toFixed(0)}%)`,
+    ]);
+    rows.push(["Cross-validation", `${cv.folds ?? "—"} folds × ${cv.repeats ?? "—"} repeats, split by person`]);
+  }
+  return (
+    <Details title="The model" hint={cv ? `AUC ${cv.auc_mean.toFixed(2)}` : undefined}>
+      <Rows rows={rows} />
+      {card?.known_limits && card.known_limits.length > 0 && (
+        <>
+          <p className="mr__sub">Known limits (model card)</p>
+          <ul className="mr__list">
+            {card.known_limits.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Details>
+  );
+}
+
+function ScanDetails({ result }: { result: MriResult }) {
+  return (
+    <Details title="Scans and quality checks">
+      {PARTS.map((part) => {
+        const input = result.inputs[part];
+        const state = partState(result, part);
+        const rows: [string, ReactNode][] = [["Status", PART_STATE_LABELS[state]]];
+        if (input?.series_description) rows.push(["Series", input.series_description]);
+        if (input?.manufacturer || input?.scanner_model) {
+          rows.push(["Scanner", [input.manufacturer, input.scanner_model].filter(Boolean).join(" ")]);
+        }
+        if (input?.voxel_mm) rows.push(["Voxel size", `${input.voxel_mm.join(" × ")} mm`]);
+        for (const [k, v] of Object.entries(input?.checks ?? {})) {
+          rows.push([k.replace(/_/g, " "), typeof v === "number" ? v.toPrecision(4) : String(v)]);
+        }
+        if (part === "dti" && input?.eddy?.profile) {
+          const minutes = eddyMinutes(input.eddy.seconds);
+          const fast = eddyProfileOf(result) === "fast";
+          rows.push([
+            "Motion correction",
+            `${input.eddy.profile}${minutes !== null ? `, ${minutes} min` : ""}${fast ? " (not validated against full)" : ""}`,
+          ]);
+        }
+        return (
+          <div key={part} className="mr__acc-group">
+            <p className="mr__sub">{PART_TITLES[part]}</p>
+            <Rows rows={rows} />
+          </div>
+        );
+      })}
+    </Details>
+  );
+}
+
+function ExplanationDetails({ result }: { result: MriResult }) {
+  const ex = result.explanation;
+  if (!ex) return null;
+  return (
+    <Details title="Explanation" hint={ex.method}>
+      <Rows
+        rows={[
+          ["Method", ex.method],
+          ["Base value (log-odds)", formatSigned(ex.base_value)],
+          ...ex.top_drivers.map((d): [string, ReactNode] => [d.label, formatSigned(d.contribution, 3)]),
+        ]}
+      />
+      <p className="note">
+        Contributions are in log-odds and add up from the base value to the score. {ex.caveat}
+      </p>
+    </Details>
+  );
+}
+
+function MeasurementDetails({ result }: { result: MriResult }) {
+  const fv = result.feature_vector;
+  if (!fv) return null;
+  const attributions = result.explanation?.feature_attributions ?? {};
+  const outside = new Set(fv.outside_training_range);
+  return (
+    <Details
+      title="All measurements"
+      hint={`${fv.names.length} measurements${outside.size ? ` · ${outside.size} outside training range` : ""}`}
+    >
+      <div className="mr__table-wrap">
+        <table className="mr__table">
+          <thead>
+            <tr>
+              <th>Measurement</th>
+              <th>Raw</th>
+              <th>Adjusted for scanner</th>
+              <th>Contribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fv.names.map((name, i) => (
+              <tr key={name} className={outside.has(name) ? "mr__row--outside" : undefined}>
+                <td title={name}>{fv.labels[i] ?? name}</td>
+                <td className="mono">{fv.raw[i].toPrecision(4)}</td>
+                <td className="mono">{fv.harmonised[i].toPrecision(4)}</td>
+                <td className="mono">
+                  {attributions[name] !== undefined ? formatSigned(attributions[name], 3) : "–"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="note">
+        Scanner adjustment (ComBat) batch: {Object.values(fv.scanner_batch).join(", ") || "—"}.
+      </p>
+    </Details>
   );
 }

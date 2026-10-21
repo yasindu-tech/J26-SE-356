@@ -33,14 +33,16 @@
 .gr__notice { padding: 12px 18px; border: 1px solid var(--color-caution); border-radius: 10px; background: var(--color-caution-tint); color: var(--color-neutral-900); display: flex; flex-direction: column; gap: 6px; }
 .gr__notice-title { margin: 0; font-size: 14px; font-weight: 600; }
 .gr__shap { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border: 1px solid var(--color-neutral-200); border-radius: 8px; background: var(--color-surface); }
-.gr__shap-row, .gr__shap-axis { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: center; gap: var(--spacing-md); }
-.gr__shap-label { font-size: 14px; }
+.gr__shap-row, .gr__shap-axis { display: grid; grid-template-columns: 190px minmax(0, 1fr) 48px; align-items: center; gap: var(--spacing-md); }
+.gr__shap-label { display: flex; flex-direction: column; font-size: 14px; }
+.gr__shap-value { font-size: 12px; color: var(--color-neutral-600); }
+.gr__shap-num { font-size: 13px; font-variant-numeric: tabular-nums; text-align: right; }
 .gr__shap-plot { position: relative; display: block; height: 18px; }
-.gr__shap-plot::before { content: ""; position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--color-neutral-300); }
+.gr__shap-plot::before { content: ""; position: absolute; top: -3px; bottom: -3px; left: 50%; width: 2px; margin-left: -1px; background: var(--color-neutral-600); }
 .gr__shap-bar { position: absolute; top: 0; height: 100%; box-sizing: border-box; border: 2px solid var(--color-primary); }
 .gr__shap-bar--towards { left: 50%; border-radius: 0 4px 4px 0; background: var(--color-primary); }
-.gr__shap-bar--away { right: 50%; border-radius: 4px 0 0 4px; background: var(--color-surface); }
-.gr__shap-axis-labels { display: grid; grid-template-columns: 1fr 1fr; font-size: 12px; color: var(--color-neutral-600); }
+.gr__shap-bar--away { right: 50%; border-radius: 4px 0 0 4px; border-color: #9a5b00; background: #c9822b; }
+.gr__shap-axis-labels { display: grid; grid-template-columns: 1fr 1fr; font-size: 13px; color: var(--color-neutral-700, var(--color-neutral-600)); }
 .gr__shap-axis-labels span:first-child { padding-right: var(--spacing-sm); text-align: right; }
 .gr__shap-axis-labels span:last-child { padding-left: var(--spacing-sm); }
 .gr__drivers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--spacing-md); }

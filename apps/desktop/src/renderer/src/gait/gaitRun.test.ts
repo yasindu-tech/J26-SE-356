@@ -18,6 +18,7 @@ function status(over: Partial<GaitAnalysisStatus>): GaitAnalysisStatus {
     subject_label: null,
     error: null,
     abstain_reason: null,
+    has_overlay: false,
     ...over,
   };
 }

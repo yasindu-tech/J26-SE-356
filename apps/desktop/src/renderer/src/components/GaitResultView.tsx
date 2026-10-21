@@ -1,6 +1,7 @@
 import type { GaitResult } from "../gait/gaitTypes";
 import {
   RELIABILITY_LINE,
+  asSentence,
   auditLine,
   checkRows,
   classBars,
@@ -12,6 +13,7 @@ import {
   shapBars,
   timelineBar,
 } from "../gait/gaitView";
+import { GaitOverlayCard } from "./GaitOverlayCard";
 import "./GaitResultView.css";
 
 // The gait result for a general clinician, from the approved screens: a plain reading, the three
@@ -23,10 +25,13 @@ import "./GaitResultView.css";
 
 export function GaitResultView({
   result,
+  analysisId = null,
   videoSeconds = null,
   onNewVideo,
 }: {
   result: GaitResult;
+  /** The analysis, so the video with the skeleton drawn on it can be played. */
+  analysisId?: string | null;
   /** Length of the video, when the picker read it; the scored-stretch bar needs it. */
   videoSeconds?: number | null;
   /** Shown on a result that was not scored, so the clinician can choose another video. */
@@ -38,6 +43,7 @@ export function GaitResultView({
       <div className="mri__layout">
         <div className="mri__main">
           {scored ? <ReadingCard result={result} /> : <NotScoredCard result={result} onNewVideo={onNewVideo} />}
+          {analysisId && <GaitOverlayCard analysisId={analysisId} />}
           {scored ? <MatteredCard result={result} /> : <TipsCard />}
           {scored && <p className="note mono">{auditLine(result)}</p>}
         </div>
@@ -77,7 +83,7 @@ function ReadingCard({ result }: { result: GaitResult }) {
             </span>
           </div>
         ))}
-        <p className="note">The model&rsquo;s scores for each level, drawn to scale. They are not chances.</p>
+        <p className="note">Bar length shows the model&rsquo;s score for each level. These scores are not probabilities.</p>
       </div>
 
       {notices(result).map((notice) => (
@@ -92,9 +98,8 @@ function ReadingCard({ result }: { result: GaitResult }) {
         <p className="gr__text">{RELIABILITY_LINE}</p>
       </div>
       <p className="note">
-        This is a screening aid for prioritising specialist review. It is not a diagnosis and it gives
-        no referral priority: the reading comes from one part of the platform, and the step that
-        combines parts is not built yet.
+        This is a screening aid to help prioritise specialist review. It is not a diagnosis. It does not
+        set a referral priority, which needs the other parts of the assessment.
       </p>
     </section>
   );
@@ -124,7 +129,7 @@ function NotScoredCard({ result, onNewVideo }: { result: GaitResult; onNewVideo?
         <div className="gr__notice" role="note">
           <span className="gr__notice-title">Why</span>
           {result.reasons.map((reason) => (
-            <span key={reason}>{reason}</span>
+            <span key={reason}>{asSentence(reason)}</span>
           ))}
         </div>
       )}
@@ -166,8 +171,9 @@ function VideoCard() {
     <section className="card" aria-label="What happens to the video">
       <h2 className="mri__rail-title">What happens to the video</h2>
       <p className="mri__body-text">
-        It was deleted from the server when the analysis ended. This outcome is kept so the
-        assessment shows what happened.
+        The file you uploaded was deleted from the server when the analysis ended. This outcome is
+        kept so the assessment shows what happened, together with a copy with the skeleton drawn on
+        it when the pose step could read the walk.
       </p>
     </section>
   );
@@ -211,13 +217,17 @@ function ShapChart({ result }: { result: GaitResult }) {
     <div className="gr__shap" role="img" aria-label={`How much each input moved the score. ${description}.`}>
       {bars.map((bar) => (
         <div key={bar.key} className="gr__shap-row">
-          <span className="gr__shap-label">{bar.label}</span>
+          <span className="gr__shap-label">
+            {bar.label}
+            {bar.valueText && <span className="gr__shap-value">{bar.valueText}</span>}
+          </span>
           <span className="gr__shap-plot">
             <span
               className={`gr__shap-bar ${bar.towards ? "gr__shap-bar--towards" : "gr__shap-bar--away"}`}
               style={{ width: `${bar.widthPercent / 2}%` }}
             />
           </span>
+          <span className="gr__shap-num">{bar.shapText}</span>
         </div>
       ))}
       <div className="gr__shap-axis" aria-hidden="true">
@@ -226,8 +236,9 @@ function ShapChart({ result }: { result: GaitResult }) {
           <span>Away from the highest-scoring level</span>
           <span>Towards it</span>
         </span>
+        <span />
       </div>
-      <p className="note">Bar length shows how much each input moved the score, drawn to scale.</p>
+      <p className="note">Bar length shows how much each input moved the score, drawn to scale. The numbers are the model&rsquo;s own units, for comparing these bars with each other. They are not probabilities and cannot be compared between walks.</p>
     </div>
   );
 }
