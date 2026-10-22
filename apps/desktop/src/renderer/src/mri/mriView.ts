@@ -345,14 +345,14 @@ export interface PartInfo {
   label: string;
   /** What the clinician provides for this part. */
   provides: string;
-  /** Whether this build can upload and process it. MRI and gait can today. */
+  /** Whether this build can process it. MRI, gait and finger tapping can today. */
   available: boolean;
 }
 
 /** The four parts of the platform, each processed and shown on its own. */
 export const PARTS: readonly PartInfo[] = [
   { key: "gait", label: "Gait", provides: "A phone video of the person walking", available: true },
-  { key: "tapping", label: "Finger tapping", provides: "A phone recording of finger tapping", available: false },
+  { key: "tapping", label: "Finger tapping", provides: "A phone recording of finger tapping", available: true },
   { key: "voice", label: "Voice", provides: "A phone voice recording", available: true },
   { key: "mri", label: "MRI", provides: "One person's T1 and DTI study (zipped DICOM)", available: true },
 ];

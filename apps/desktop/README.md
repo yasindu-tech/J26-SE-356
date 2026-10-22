@@ -59,6 +59,24 @@ After sign-in, the MRI tab works like this:
 
 Backend setup for this screen is in `services/backend/README.md` (MRI analyses).
 
+## Finger-tapping part (`tapping/`)
+
+Finger tapping is the third part of the assessment, next to MRI and Gait, and works like Gait. In
+the Modalities step the clinician chooses a phone video (MP4, MOV or M4V, up to 200 MB). It is
+uploaded to the backend (`POST /api/v1/tapping/analyses`, see `services/backend/README.md`),
+analysed there in the background by `models/tapping/src/predict_clip.py`, and the screen polls
+the status like the gait screen does. The result is stored in PostgreSQL, so it appears under
+**Recent assessments** on Home and can be reopened from there, and the analysis keeps running if
+the clinician leaves the screen. The backend must run natively (not in the Docker `backend`
+container) because the tapping model needs `lightgbm`, `mediapipe` and `shap`.
+
+The result shows a model score (not a probability, no priority, no combined result), the five
+measurements that moved it, the thumb-index signal, the per-tap amplitude and a one-page PDF
+(`Download PDF` saves `summary_<clip ref>.pdf` through the main process). The file name of the
+video is never shown; only its hashed ref is. The "Open the finger-tapping demo" link (the
+Streamlit research demo, `main/tappingWindow.ts`) is kept. The tapping IPC contract is in
+`shared/tappingIpc.ts`; the renderer reaches it through `tapping/tappingBridge.ts`.
+
 ## Setup
 ```bash
 cp .env.example .env   # set VITE_API_BASE_URL if the backend isn't on localhost:8000

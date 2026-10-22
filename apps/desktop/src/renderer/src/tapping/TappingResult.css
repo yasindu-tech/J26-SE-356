@@ -1,0 +1,34 @@
+/* Finger-tapping result: the charts. Colours come only from the shared tokens already used by
+   the gait and MRI results. Direction is a solid or an outlined bar as well as words, so it never
+   rests on colour alone. */
+
+.tp__scale { position: relative; height: 22px; margin: 6px 0 2px; }
+.tp__scale-track { position: absolute; left: 0; right: 0; top: 7px; height: 8px; border-radius: 4px; background: var(--color-neutral-100); }
+.tp__scale-band { position: absolute; top: 7px; height: 8px; border-radius: 4px; background: var(--color-primary-muted); }
+.tp__scale-mark { position: absolute; top: 1px; width: 4px; height: 20px; margin-left: -2px; border-radius: 2px; background: var(--color-primary); }
+.tp__scale-threshold { position: absolute; top: 3px; width: 0; height: 16px; border-left: 2px dashed var(--color-neutral-600); }
+.tp__scale-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--color-neutral-600); }
+
+.tp__chart { display: block; width: 100%; height: auto; }
+.tp__axis { stroke: var(--color-neutral-300); stroke-width: 1; }
+.tp__grid { stroke: var(--color-neutral-100); stroke-width: 1; }
+.tp__tick { fill: var(--color-neutral-600); font-size: 11px; }
+.tp__label { fill: var(--color-neutral-900); font-size: 12px; }
+.tp__sub { fill: var(--color-neutral-600); font-size: 11px; }
+.tp__axis-title { fill: var(--color-neutral-600); font-size: 11px; }
+.tp__line { fill: none; stroke: var(--color-primary-hover); stroke-width: 1.8; stroke-linejoin: round; }
+.tp__peak { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: 2; }
+.tp__point { fill: var(--color-primary); }
+.tp__fit { stroke: var(--color-primary-hover); stroke-width: 2.4; stroke-dasharray: 7 4; }
+.tp__bar--up { fill: var(--color-primary); stroke: var(--color-primary); stroke-width: 2; }
+.tp__bar--down { fill: var(--color-surface); stroke: var(--color-primary); stroke-width: 2; }
+.tp__zero { stroke: var(--color-neutral-300); stroke-width: 1; }
+
+.tp__frames { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-sm); margin: 0; padding: 0; list-style: none; }
+.tp__frame { display: flex; flex-direction: column; gap: 2px; }
+.tp__frame img { display: block; width: 100%; height: auto; border: 1px solid var(--color-neutral-200); border-radius: 6px; }
+.tp__facts { display: grid; grid-template-columns: auto 1fr; gap: 6px var(--spacing-md); margin: 0; font-size: 14px; }
+.tp__facts dt { color: var(--color-neutral-600); }
+.tp__facts dd { margin: 0; }
+.tp__flags { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.tp__save-note { margin: 0; font-size: 13px; color: var(--color-neutral-600); }

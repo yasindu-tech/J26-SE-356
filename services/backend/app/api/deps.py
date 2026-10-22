@@ -57,6 +57,20 @@ def get_gait_runner():  # noqa: ANN201 (returns the app-wide GaitRunner)
     return _gait_runner
 
 
+_tapping_runner = None
+
+
+def get_tapping_runner():  # noqa: ANN201 (returns the app-wide TappingRunner)
+    """The one background runner for tapping analyses (tests override this dependency)."""
+    global _tapping_runner
+    if _tapping_runner is None:
+        from app.core.config import get_settings
+        from app.workers.tapping_runner import SubprocessTappingRunner
+
+        _tapping_runner = SubprocessTappingRunner(get_settings())
+    return _tapping_runner
+
+
 _voice_runner = None
 
 

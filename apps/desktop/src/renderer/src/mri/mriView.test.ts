@@ -341,7 +341,7 @@ describe("assessment parts", () => {
 
   it("lists the four parts and marks MRI, gait and voice as available in this build", () => {
     expect(PARTS.map((p) => p.key)).toEqual(["gait", "tapping", "voice", "mri"]);
-    expect(PARTS.filter((p) => p.available).map((p) => p.key)).toEqual(["gait", "voice", "mri"]);
+    expect(PARTS.filter((p) => p.available).map((p) => p.key)).toEqual(["gait", "tapping", "voice", "mri"]);
   });
 });
 

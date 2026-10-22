@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     gait_max_upload_mb: int = 500
     gait_timeout_minutes: float = 15.0
 
+    # Finger-tapping analyses (models/tapping/src/predict_clip.py runs as a separate process, one
+    # video at a time, in its own worker). The uploaded video is deleted when the analysis ends;
+    # the result (with its one-page PDF) is stored in the database. The interpreter needs
+    # lightgbm, mediapipe and shap, and the tapping demo models and landmarker file must exist.
+    tapping_work_dir: Path = REPO_ROOT / "data" / "backend" / "tapping"
+    tapping_python: str = sys.executable  # interpreter with the models/tapping dependencies
+    tapping_script: Path = REPO_ROOT / "models" / "tapping" / "src" / "predict_clip.py"
+    tapping_max_upload_mb: int = 200
+    tapping_timeout_minutes: float = 10.0
+
     # Voice analyses (models/voice/src/analyze_audio.py runs as a separate process). A recording
     # takes a few seconds, so the request waits for the result. The uploaded audio is deleted as
     # soon as the analysis ends and the result is not stored.
