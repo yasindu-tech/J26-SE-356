@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { driverText, eddyMinutes, partState, plainReading, safeImage } from "./mriPlain";
+import { driverText, eddyMinutes, partProblems, partState, plainReading, safeImage } from "./mriPlain";
 
 describe("plainReading", () => {
   const track = {
@@ -68,6 +68,20 @@ describe("partState", () => {
     expect(partState(result(false, true), "t1")).toBe("not-used");
     expect(partState(result(false, false), "t1")).toBe("missing");
     expect(partState({ availability: {}, inputs: {} }, "dti")).toBe("missing");
+  });
+});
+
+describe("partProblems", () => {
+  it("gives each part only its own reasons", () => {
+    const result = {
+      validation: {
+        usable: true,
+        problems: ["DTI failed a processing step or check: eddy failed", "no 3D T1 series found"],
+      },
+    };
+    expect(partProblems(result, "dti")).toEqual(["DTI failed a processing step or check: eddy failed"]);
+    expect(partProblems(result, "t1")).toEqual(["no 3D T1 series found"]);
+    expect(partProblems({ validation: null }, "dti")).toEqual([]);
   });
 });
 

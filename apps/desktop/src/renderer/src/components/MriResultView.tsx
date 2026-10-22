@@ -16,6 +16,7 @@ import {
   STRENGTH_LABELS,
   driverText,
   eddyMinutes,
+  partProblems,
   partState,
   plainReading,
   safeImage,
@@ -128,6 +129,12 @@ function ScanImages({ result }: { result: MriResult }) {
               </div>
             )}
             {image && <figcaption className="note">{PART_CAPTIONS[part]}</figcaption>}
+            {state !== "used" &&
+              partProblems(result, part).map((p) => (
+                <p key={p} className="mr__why">
+                  {p}
+                </p>
+              ))}
             {state === "used" && scanner && <p className="mr__meta">{scanner}</p>}
           </figure>
         );

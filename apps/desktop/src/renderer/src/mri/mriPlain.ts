@@ -109,6 +109,13 @@ export const PART_STATE_LABELS: Record<PartState, string> = {
   missing: "Not in the upload",
 };
 
+/** The pipeline's reasons for not using this part (e.g. "DTI failed a processing step or
+ *  check: ..."), from the result's validation problems. Empty when there are none. */
+export function partProblems(result: Pick<MriResult, "validation">, part: ScanPart): string[] {
+  const tag = part === "t1" ? /\bT1\b/ : /\bDTI\b/;
+  return (result.validation?.problems ?? []).filter((p) => tag.test(p));
+}
+
 /** Only a data: URL of an image is shown; anything else is ignored. */
 export function safeImage(src: string | null | undefined): string | null {
   return typeof src === "string" && src.startsWith("data:image/") ? src : null;

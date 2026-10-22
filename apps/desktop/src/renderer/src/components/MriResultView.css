@@ -195,6 +195,12 @@
   color: var(--color-neutral-600);
 }
 
+.mr__why {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-900);
+}
+
 .mr__image-empty .note {
   font-size: 13px;
 }
