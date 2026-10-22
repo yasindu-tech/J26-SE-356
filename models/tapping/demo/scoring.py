@@ -127,6 +127,9 @@ def context(features: dict[str, float], reference: pd.DataFrame) -> dict[str, di
         ref = reference[c].to_numpy(dtype=float)
         ref = ref[np.isfinite(ref)]
         v = features[c]
+        if not np.isfinite(v):  # a missing value has no percentile and is not 'outside'
+            out[c] = {"percentile": float("nan"), "in_range": True}
+            continue
         out[c] = {
             "percentile": float(percentileofscore(ref, v, kind="mean")),
             "in_range": bool(ref.min() <= v <= ref.max()),
@@ -183,8 +186,12 @@ def wording(rows: list[Contribution]) -> list[str]:
     out = []
     for r in rows:
         name, unit = PLAIN[r["feature"]]
-        pct = ordinal(int(round(r["percentile"])))
-        head = f"{name} ({r['value']:.2f} {unit}, {pct} percentile of the research clips)"
+        value = f"{r['value']:.2f} {unit}" if np.isfinite(r["value"]) else "not available"
+        pct = (
+            f"{ordinal(int(round(r['percentile'])))} percentile of the research clips"
+            if np.isfinite(r["percentile"]) else "percentile not available"
+        )  # fmt: skip
+        head = f"{name} ({value}, {pct})"
         if abs(r["shap"]) < NEGLIGIBLE:
             text = f"{head} had almost no effect on the score ({r['shap']:+.2f} log-odds)"
         else:
@@ -196,8 +203,10 @@ def wording(rows: list[Contribution]) -> list[str]:
     return out
 
 
-def shap_figure(rows: list[Contribution], title: str) -> Figure:
-    fig = Figure(figsize=(11.5, 4.2), dpi=110, layout="constrained")
+def shap_figure(rows: list[Contribution], title: str, compact: bool = False) -> Figure:
+    """The bar figure; ``compact`` is the same content at page size with larger relative fonts."""
+    big, mid, small = (10, 9.5, 11) if compact else (12, 11, 14)
+    fig = Figure(figsize=(7.0, 2.7) if compact else (11.5, 4.2), dpi=110, layout="constrained")
     FigureCanvasAgg(fig)
     ax = fig.add_subplot(111)
     labels = [f"{PLAIN[r['feature']][0]} ({r['value']:.2f} {PLAIN[r['feature']][1]})" for r in rows]
@@ -208,8 +217,8 @@ def shap_figure(rows: list[Contribution], title: str) -> Figure:
     ax.set_yticks(y, labels)
     span = max(float(np.abs(vals).max()), 0.1) * 1.15
     ax.set_xlim(-span, span)
-    ax.set_xlabel(X_LABEL, fontsize=12)
-    ax.tick_params(labelsize=11)
+    ax.set_xlabel(X_LABEL, fontsize=big)
+    ax.tick_params(labelsize=mid)
     ax.spines[["top", "right"]].set_visible(False)
-    fig.suptitle(title, fontsize=14)
+    fig.suptitle(title, fontsize=small)
     return fig
