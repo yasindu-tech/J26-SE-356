@@ -12,14 +12,11 @@ import {
   isFinal,
   parseBackendTime,
   stepState,
-  updateActivity,
-  type ActivityEntry,
 } from "../mri/mriView";
 import { InfoTip } from "./InfoTip";
 import "../pages/MriAnalysis.css";
 
-// The MRI part's progress view: step bar, what the analysis service last reported, and an
-// activity list built from the reports this screen has seen.
+// The MRI part's progress view: step bar and what the analysis service last reported.
 
 // What the backend answers when there is no usable session (401 after a failed
 // renewal; 403 from HTTPBearer when no token is sent at all).
@@ -39,7 +36,6 @@ interface ProgressPanelProps {
 
 export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
   const [status, setStatus] = useState<MriAnalysisStatus | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [lastContact, setLastContact] = useState<number | null>(null);
   // The parent passes new callback functions on every render; keeping them in refs
@@ -64,7 +60,6 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
         if (stopped) return;
         setStatus(next);
         setLastContact(Date.now());
-        setActivity((log) => updateActivity(log, next, new Date()));
         if (isFinal(next.status)) {
           finishedRef.current(await getMriResult(id));
           return;
@@ -166,29 +161,6 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
               : `Last update from the analysis service ${sinceContact} s ago`}
           </span>
         </div>
-
-      </section>
-
-      <section className="card">
-        <h2 className="mri__rail-title">
-          Activity
-          <InfoTip label="About this list">
-            Listed as this screen sees each report. It is not a stored log, and it starts when you
-            open this screen.
-          </InfoTip>
-        </h2>
-        {activity.length === 0 ? (
-          <p className="note">Nothing reported yet.</p>
-        ) : (
-          <ol className="mri__activity mono">
-            {activity.map((entry) => (
-              <li key={entry.key}>
-                <span className="mri__activity-time">{formatClock(new Date(entry.at))}</span>
-                <span>{entry.text}</span>
-              </li>
-            ))}
-          </ol>
-        )}
       </section>
     </div>
   );
