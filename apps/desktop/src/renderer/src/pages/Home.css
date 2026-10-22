@@ -125,3 +125,18 @@
 .home__none {
   color: var(--color-neutral-600);
 }
+
+/* A part's status in the table; the whole tag opens that analysis. */
+.home__cell {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.home__cell:hover .mri__tag,
+.home__cell:focus-visible .mri__tag {
+  text-decoration: underline;
+}
