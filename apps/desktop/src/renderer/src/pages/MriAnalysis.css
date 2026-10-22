@@ -278,7 +278,9 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  /* convert, t1, dti, features, score, explain — dti (eddy correction) is the slow step,
+     from tens of minutes to over an hour, so its bar reads as the longest one. */
+  grid-template-columns: 1fr 1fr 2.5fr 1fr 1fr 1fr;
   gap: 4px;
 }
 
