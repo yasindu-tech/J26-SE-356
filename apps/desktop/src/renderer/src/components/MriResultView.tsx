@@ -334,6 +334,7 @@ function ScanDetails({ result }: { result: MriResult }) {
 
 function ExplanationDetails({ result }: { result: MriResult }) {
   const ex = result.explanation;
+  const checks = result.model_card?.explanation_checks ?? null;
   if (!ex) return null;
   return (
     <Details title="Explanation" hint={ex.method}>
@@ -344,6 +345,27 @@ function ExplanationDetails({ result }: { result: MriResult }) {
           ...ex.top_drivers.map((d): [string, ReactNode] => [d.label, formatSigned(d.contribution, 3)]),
         ]}
       />
+      {checks && (
+        <>
+          <p className="mr__sub">How the explanation was checked ({checks.people ?? "—"} people, unseen by each model)</p>
+          <Rows
+            rows={[
+              [
+                "Deletion test (faithfulness)",
+                `${checks.deletion_passed ? "Pass" : "Fail"}: removing the top 5 moved the score ${formatSigned(checks.deletion_mean_top_minus_random, 2)} more than 5 random (95% CI ${formatSigned(checks.deletion_ci_95[0], 2)} to ${formatSigned(checks.deletion_ci_95[1], 2)})`,
+              ],
+              [
+                "Stability across model copies",
+                `Spearman ${checks.stability_mean_spearman.toFixed(2)} (95% CI ${checks.stability_ci_95[0].toFixed(2)}–${checks.stability_ci_95[1].toFixed(2)}), target 0.70: ${checks.stability_meets_target ? "met" : "not met"}`,
+              ],
+              [
+                "Top-5 overlap between copies",
+                `${Math.round(checks.top5_overlap * 100)}%${checks.top5_overlap_by_chance != null ? ` (chance ${Math.round(checks.top5_overlap_by_chance * 100)}%)` : ""}`,
+              ],
+            ]}
+          />
+        </>
+      )}
       <p className="note">
         Contributions are in log-odds and add up from the base value to the score. {ex.caveat}
       </p>

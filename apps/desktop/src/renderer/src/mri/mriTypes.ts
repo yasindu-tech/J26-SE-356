@@ -115,6 +115,21 @@ export interface MriModelCard {
   };
   known_limits?: string[];
   track_record?: MriTrackRecord | null;
+  explanation_checks?: MriExplanationChecks | null;
+}
+
+/** Faithfulness (deletion) and stability checks of the explanation, from explain_checks.py. */
+export interface MriExplanationChecks {
+  source: string;
+  people: number | null;
+  deletion_passed: boolean;
+  deletion_mean_top_minus_random: number;
+  deletion_ci_95: [number, number];
+  stability_mean_spearman: number;
+  stability_ci_95: [number, number];
+  stability_meets_target: boolean;
+  top5_overlap: number;
+  top5_overlap_by_chance: number | null;
 }
 
 export interface MriResult {
