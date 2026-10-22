@@ -63,6 +63,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
   // `openId`: an analysis Home asked to open. `session` restarts the workflow at Setup.
   const [openId, setOpenId] = useState<string | null>(null);
   const [openGaitId, setOpenGaitId] = useState<string | null>(null);
+  const [openTappingId, setOpenTappingId] = useState<string | null>(null);
   const [session, setSession] = useState(0);
   // True once an assessment screen exists, so a visit to Settings can return to it unchanged.
   const [live, setLive] = useState(false);
@@ -70,6 +71,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
   function startAssessment(): void {
     setOpenId(null);
     setOpenGaitId(null);
+    setOpenTappingId(null);
     setSession((n) => n + 1);
     setLive(true);
     setScreen("assessment");
@@ -84,6 +86,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
     if (key === "home") {
       setOpenId(null);
       setOpenGaitId(null);
+      setOpenTappingId(null);
       setScreen("home");
     } else if (key === "settings") {
       setScreen(key);
@@ -116,6 +119,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
           onOpenAnalysis={(id) => {
             setOpenId(id);
             setOpenGaitId(null);
+            setOpenTappingId(null);
             setSession((n) => n + 1);
             setLive(true);
             setScreen("assessment");
@@ -123,6 +127,15 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
           onOpenGait={(id) => {
             setOpenId(null);
             setOpenGaitId(id);
+            setOpenTappingId(null);
+            setSession((n) => n + 1);
+            setLive(true);
+            setScreen("assessment");
+          }}
+          onOpenTapping={(id) => {
+            setOpenId(null);
+            setOpenGaitId(null);
+            setOpenTappingId(id);
             setSession((n) => n + 1);
             setLive(true);
             setScreen("assessment");
@@ -138,12 +151,14 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
             key={session}
             openId={openId}
             openGaitId={openGaitId}
+            openTappingId={openTappingId}
             clinician={clinician}
             eddyProfile={settings.mri.eddyProfile}
             confirmFast={settings.mri.confirmFast}
             onHome={() => {
               setOpenId(null);
               setOpenGaitId(null);
+              setOpenTappingId(null);
               setScreen("home");
             }}
             onOpenVoice={() => setScreen("voice")}

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { listGaitAnalyses } from "../api/gait.api";
 import { listMriAnalyses } from "../api/mri.api";
+import { listTappingAnalyses } from "../api/tapping.api";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
 import type { GaitAnalysisStatus } from "../gait/gaitTypes";
 import type { MriAnalysisStatus } from "../mri/mriTypes";
+import type { TappingAnalysisStatus } from "../tapping/tappingTypes";
 import {
   STEP_LABELS,
   greeting,
@@ -17,8 +19,8 @@ import "./Home.css";
 // First screen after sign-in, from the approved design's "Home". The design's metrics
 // (priorities, decisions, referrals, a monthly summary) belong to the combined result, which
 // is not built. The layout stays; the numbers are the real ones for today: this clinician's
-// analyses, each part separate: an MRI analysis and a gait analysis are separate rows. Tapping
-// and voice are not processed in this build, so they show "—". Nothing here is a placeholder number.
+// analyses, each part separate: an MRI, a gait and a tapping analysis are separate rows. Voice is
+// not processed in this build, so it shows "—". Nothing here is a placeholder number.
 
 const RECENT_COUNT = 8;
 
@@ -27,18 +29,22 @@ export function Home({
   onNewAssessment,
   onOpenAnalysis,
   onOpenGait,
+  onOpenTapping,
   onSeeAll,
 }: {
   clinician: string;
   onNewAssessment: () => void;
   onOpenAnalysis: (id: string) => void;
   onOpenGait: (id: string) => void;
+  onOpenTapping: (id: string) => void;
   onSeeAll: () => void;
 }) {
   const [items, setItems] = useState<MriAnalysisStatus[] | null>(null);
   const [gaitItems, setGaitItems] = useState<GaitAnalysisStatus[] | null>(null);
+  const [tappingItems, setTappingItems] = useState<TappingAnalysisStatus[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [gaitFailed, setGaitFailed] = useState(false);
+  const [tappingFailed, setTappingFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +54,9 @@ export function Home({
     listGaitAnalyses(100)
       .then((list) => !cancelled && setGaitItems(list.items))
       .catch(() => !cancelled && setGaitFailed(true)); // the MRI rows still show
+    listTappingAnalyses(100)
+      .then((list) => !cancelled && setTappingItems(list.items))
+      .catch(() => !cancelled && setTappingFailed(true)); // the other rows still show
     return () => {
       cancelled = true;
     };
@@ -57,20 +66,32 @@ export function Home({
   const mriSummary = items ? homeSummary(items) : null;
   const gaitList = gaitItems ?? [];
   const gaitRunning = gaitList.filter((g) => g.status === "queued" || g.status === "running");
+  const tappingList = tappingItems ?? [];
+  const tappingRunning = tappingList.filter((t) => t.status === "queued" || t.status === "running");
   const summary =
     mriSummary === null
       ? null
       : {
-          counted: mriSummary.counted + gaitList.length,
-          scored: mriSummary.scored + gaitList.filter((g) => g.status === "scored").length,
-          notScored: mriSummary.notScored + gaitList.filter((g) => g.status === "abstained").length,
-          failed: mriSummary.failed + gaitList.filter((g) => g.status === "failed").length,
-          inProgress: mriSummary.inProgress.length + gaitRunning.length,
+          counted: mriSummary.counted + gaitList.length + tappingList.length,
+          scored:
+            mriSummary.scored +
+            gaitList.filter((g) => g.status === "scored").length +
+            tappingList.filter((t) => t.status === "scored").length,
+          notScored:
+            mriSummary.notScored +
+            gaitList.filter((g) => g.status === "abstained").length +
+            tappingList.filter((t) => t.status === "abstained").length,
+          failed:
+            mriSummary.failed +
+            gaitList.filter((g) => g.status === "failed").length +
+            tappingList.filter((t) => t.status === "failed").length,
+          inProgress: mriSummary.inProgress.length + gaitRunning.length + tappingRunning.length,
         };
-  // MRI and gait analyses are separate rows, newest first.
+  // MRI, gait and tapping analyses are separate rows, newest first.
   const rows = [
     ...(items ?? []).map((item) => ({ kind: "mri" as const, item, at: parseBackendTime(item.created_at).getTime() })),
     ...gaitList.map((item) => ({ kind: "gait" as const, item, at: parseBackendTime(item.created_at).getTime() })),
+    ...tappingList.map((item) => ({ kind: "tapping" as const, item, at: parseBackendTime(item.created_at).getTime() })),
   ].sort((a, b) => b.at - a.at);
 
   return (
@@ -100,6 +121,11 @@ export function Home({
           Could not load your gait analyses, so they are not listed or counted below.
         </p>
       )}
+      {!failed && tappingFailed && (
+        <p className="home__error" role="alert">
+          Could not load your finger-tapping analyses, so they are not listed or counted below.
+        </p>
+      )}
 
       <div className="home__layout">
         <div className="home__main">
@@ -117,6 +143,21 @@ export function Home({
                     </p>
                   </div>
                   <button type="button" className="btn btn--outline" onClick={() => onOpenGait(item.id)}>
+                    Open →
+                  </button>
+                </div>
+              ))}
+              {tappingRunning.map((item) => (
+                <div key={item.id} className="home__progress-row">
+                  <div>
+                    <p className="home__progress-title">
+                      {item.subject_label ? `${item.subject_label} · ` : ""}Finger-tapping part running
+                    </p>
+                    <p className="note">
+                      {item.status === "queued" ? "Waiting for its turn" : "Reading the recording"} · usually under a minute
+                    </p>
+                  </div>
+                  <button type="button" className="btn btn--outline" onClick={() => onOpenTapping(item.id)}>
                     Open →
                   </button>
                 </div>
@@ -175,14 +216,15 @@ export function Home({
                         —
                       </td>
                     );
+                    const notAdded = <td className="home__none" title="Not added to this analysis">—</td>;
                     return (
                       <tr key={`${row.kind}-${row.item.id}`}>
                         <td className="mono">
                           {row.item.subject_label ?? "No ID"}
                         </td>
                         <td className="mono">{parseBackendTime(row.item.created_at).toLocaleString()}</td>
-                        {row.kind === "gait" ? <td>{tag}</td> : <td className="home__none" title="Not added to this analysis">—</td>}
-                        {none}
+                        {row.kind === "gait" ? <td>{tag}</td> : notAdded}
+                        {row.kind === "tapping" ? <td>{tag}</td> : notAdded}
                         {none}
                         {row.kind === "mri" ? (
                           <td>
@@ -196,7 +238,13 @@ export function Home({
                           <button
                             type="button"
                             className="home__link"
-                            onClick={() => (row.kind === "mri" ? onOpenAnalysis(row.item.id) : onOpenGait(row.item.id))}
+                            onClick={() =>
+                              row.kind === "mri"
+                                ? onOpenAnalysis(row.item.id)
+                                : row.kind === "gait"
+                                  ? onOpenGait(row.item.id)
+                                  : onOpenTapping(row.item.id)
+                            }
                           >
                             {running ? "Open →" : "View →"}
                           </button>
@@ -216,10 +264,10 @@ export function Home({
               Your assessments
               <InfoTip label="About these counts">
                 {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
-                Each counts one analysis, an MRI scan or a walking video. A “not scored” result means
-                the model declined to score it (for example, an unseen scanner model or a video it
-                could not read); it is not a normal result. Tapping and voice are not processed in
-                this build.
+                Each counts one analysis: an MRI scan, a walking video or a finger-tapping video. A
+                “not scored” result means the model declined to score it (for example, an unseen
+                scanner model or a video it could not read); it is not a normal result. Voice is not
+                processed in this build.
               </InfoTip>
             </p>
             {summary ? (

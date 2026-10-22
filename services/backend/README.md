@@ -157,6 +157,33 @@ worker (`app/workers/gait_runner.py`); it takes about a minute.
 - **Settings:** `GAIT_WORK_DIR`, `GAIT_PYTHON`, `GAIT_SCRIPT`, `GAIT_BUNDLE_DIR`, `GAIT_OVERLAY_SCRIPT`, `GAIT_OVERLAY_DIR`,
   `GAIT_MAX_UPLOAD_MB` (500), `GAIT_TIMEOUT_MINUTES` (15).
 
+## Finger-tapping analyses
+
+`POST /api/v1/tapping/analyses` takes one finger-tapping video (`.mp4`, `.mov`, `.m4v`; multipart
+field `file`), an optional `target` (`ge2`, the primary study target, or `ge1`) and the same optional
+`subject_label` as MRI, and answers `202` with an analysis ID. The video runs through
+`models/tapping/src/predict_clip.py` in a separate process, one at a time, in its own worker
+(`app/workers/tapping_runner.py`); it takes under a minute. Same submit-then-poll contract as gait.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/tapping/analyses` | your analyses, newest first |
+| `GET /api/v1/tapping/analyses/{id}` | status (`scored`, `abstained` with the reason, `failed`) and elapsed time |
+| `GET /api/v1/tapping/analyses/{id}/result` | the `TappingResult` (`tapping-result/1`): score, contributions, curves, one-page PDF (base64). `409` until finished |
+
+- The video is saved under its analysis ID (its own name is never kept) in
+  `data/backend/tapping/<id>/` and deleted when the analysis ends. The result is stored in the
+  `tapping_analyses` table (PostgreSQL in the Docker stack; migration `d4a7c1e95b28`).
+- A video the program read but could not score (no hand found, too long) is `abstained` with its
+  plain reason. `failed` means the analysis itself could not run (timeout, program missing, backend restart).
+- Like MRI and gait, it does not run inside the Docker `backend` container (no `lightgbm`,
+  `mediapipe` or `shap` there). Run the backend natively against the Docker database (see "Run with
+  Docker" above): `docker compose stop backend`, then start `uvicorn` from the repository's `.venv`.
+  It needs `data/processed`, the demo models (`models/tapping/demo/train_demo_model.py`) and
+  `models/tapping/artifacts/hand_landmarker.task`.
+- **Settings:** `TAPPING_WORK_DIR`, `TAPPING_PYTHON`, `TAPPING_SCRIPT`, `TAPPING_MAX_UPLOAD_MB` (200),
+  `TAPPING_TIMEOUT_MINUTES` (10).
+
 ## Voice analyses
 
 `POST /api/v1/voice/analyses` takes one recording of a sustained "aaah" (`.wav`, `.flac`, `.ogg`,

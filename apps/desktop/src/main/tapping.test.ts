@@ -22,7 +22,7 @@ import {
   type PrerequisiteDeps,
   type Timers,
 } from "./tapping";
-import type { TappingStatus } from "../shared/ipc";
+import type { TappingStatus } from "../shared/tappingIpc";
 
 // ---------------------------------------------------------------------------- helpers
 

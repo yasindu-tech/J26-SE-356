@@ -65,6 +65,19 @@ class GaitOverlayNotFoundError(AppError):
     status_code, code, message = 404, "GAIT_OVERLAY_NOT_FOUND", "This analysis has no overlay video"
 
 
+class TappingAnalysisNotFoundError(AppError):
+    # Also returned for another clinician's analysis, so IDs cannot be probed.
+    status_code, code, message = 404, "TAPPING_ANALYSIS_NOT_FOUND", "Tapping analysis not found"
+
+
+class TappingResultNotReadyError(AppError):
+    status_code, code, message = (
+        409,
+        "TAPPING_RESULT_NOT_READY",
+        "The tapping analysis has not finished",
+    )
+
+
 class OnePersonNotConfirmedError(AppError):
     # A form field the request did fill in, but not with the one accepted answer.
     status_code, code, message = (
@@ -99,6 +112,8 @@ ERROR_CODES: tuple[str, ...] = (
     GaitAnalysisNotFoundError.code,
     GaitResultNotReadyError.code,
     GaitOverlayNotFoundError.code,
+    TappingAnalysisNotFoundError.code,
+    TappingResultNotReadyError.code,
     InvalidUploadError.code,
     UploadTooLargeError.code,
     VoiceAnalysisFailedError.code,

@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile, stat } from "fs/promises";
 import { basename, join } from "path";
 import { IPC_OPEN_VOICE_RESULT, type OpenResultFileReply } from "../shared/ipc";
+import { registerTappingAnalysis } from "./tappingAnalysisIpc";
 import { registerTapping } from "./tappingWindow";
 
 // A voice result file is a few kB; anything far larger is the wrong file.
@@ -65,6 +66,7 @@ function createMainWindow(): void {
 app.whenReady().then(() => {
   ipcMain.handle(IPC_OPEN_VOICE_RESULT, openVoiceResultFile);
   registerTapping();
+  registerTappingAnalysis();
   createMainWindow();
 
   app.on("activate", () => {
