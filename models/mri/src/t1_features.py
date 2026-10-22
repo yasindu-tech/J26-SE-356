@@ -332,19 +332,27 @@ def build_table(results: list[SubjectFeatures], meta: dict[str, dict[str, str]])
     return table
 
 
-def scanner_metadata(conversion_table: Path) -> dict[str, dict[str, str]]:
-    """Pseudonym -> scanner model, manufacturer and site key, from the conversion table."""
+def scanner_metadata(conversion_tables: Path | list[Path]) -> dict[str, dict[str, str]]:
+    """Pseudonym -> scanner model, manufacturer and site key, from the conversion tables.
+
+    Every batch of downloads has its own conversion table, so all of them are read; a person
+    missing from every table keeps a blank scanner, which training refuses to guess.
+    """
     import pandas as pd
 
-    df = pd.read_csv(conversion_table, dtype=str).fillna("")
-    df = df[(df["status"] == "ok") & (df["kind"] == "t1")]
+    tables = [conversion_tables] if isinstance(conversion_tables, Path) else conversion_tables
     meta = {}
-    for _, row in df.iterrows():
-        meta[pseudonym(row["subject_id"])] = {
-            "scanner_model": row.get("model", ""),
-            "manufacturer": row.get("manufacturer", ""),
-            "site_key": row.get("site_key", ""),  # blank stays blank, never "no site"
-        }
+    for t in tables:
+        df = pd.read_csv(t, dtype=str).fillna("")
+        if not {"status", "kind", "subject_id"} <= set(df.columns):
+            continue
+        df = df[(df["status"] == "ok") & (df["kind"] == "t1")]
+        for _, row in df.iterrows():
+            meta[pseudonym(row["subject_id"])] = {
+                "scanner_model": row.get("model", ""),
+                "manufacturer": row.get("manufacturer", ""),
+                "site_key": row.get("site_key", ""),  # blank stays blank, never "no site"
+            }
     return meta
 
 
@@ -355,7 +363,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--t1-dir", type=Path, default=REPO / "data/processed/t1")
     ap.add_argument("--table", type=Path, default=REPO / "data/interim/t1_preprocess_table.csv")
     ap.add_argument(
-        "--conversion", type=Path, default=REPO / "data/interim/mri_conversion_table.csv"
+        "--conversion",
+        type=Path,
+        nargs="+",
+        default=sorted((REPO / "data/interim").glob("*conversion*.csv")),
+        help="conversion tables (default: every data/interim/*conversion*.csv)",
     )
     ap.add_argument("--atlas", type=Path, default=DEFAULT_ATLAS)
     ap.add_argument("--atlas-xml", type=Path, default=DEFAULT_ATLAS_XML)

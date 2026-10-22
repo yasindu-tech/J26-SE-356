@@ -106,6 +106,7 @@ def test_score_matches_the_final_model_and_has_an_interval(trained) -> None:
     assert chosen is b.sets["t1"]
     low, high = parts["interval"]
     assert low <= high and parts["n_copies"] == 4
+    assert 0 <= parts["copies_above_zero"] <= parts["n_copies"]
     assert sum(parts["contrib"].values()) + parts["base"] == pytest.approx(parts["value"])
 
 

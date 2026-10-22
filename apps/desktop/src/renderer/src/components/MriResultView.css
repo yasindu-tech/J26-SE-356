@@ -84,6 +84,43 @@
   font-size: 16px;
 }
 
+.mr__reading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Strength of the lean: words carry the meaning; the border style backs it up
+   (solid, dashed, dotted), so it does not depend on colour. */
+.mr__strength {
+  padding: 4px 10px;
+  border: 2px solid var(--color-primary);
+  border-radius: 999px;
+  color: var(--color-neutral-900);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mr__strength--moderate {
+  border-style: dashed;
+}
+
+.mr__strength--weak {
+  border-style: dotted;
+  border-color: var(--color-neutral-600);
+}
+
+.mr__facts {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--color-neutral-600);
+}
+
 /* ------------------------------------------------------------------- images */
 
 .mr__images {
@@ -156,6 +193,12 @@
   background: var(--color-neutral-100);
   font-size: 28px;
   color: var(--color-neutral-600);
+}
+
+.mr__why {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-neutral-900);
 }
 
 .mr__image-empty .note {

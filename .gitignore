@@ -76,3 +76,6 @@ models/gait/docs/*.md
 
 # Tapping working notes
 models/tapping/docs/*.md
+
+# Model bundles are shared privately, never committed
+*.zip

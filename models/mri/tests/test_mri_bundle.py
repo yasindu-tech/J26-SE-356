@@ -59,6 +59,38 @@ def test_set_has_final_model_fold_copies_map_and_card(tmp_path: Path) -> None:
     assert set(s.feature_ranges) == set(T1_COLS)
 
 
+def test_track_record_counts_how_often_each_lean_was_right(tmp_path: Path) -> None:
+    run = tmp_path / "r1"
+    run.mkdir()
+    pd.DataFrame(
+        {"subject": list("abcdef"), "y": [1, 1, 0, 0, 0, 1], "lgbm_t1": [0.9, 0.6, 0.7, 0.2, 0.4, 0.3]}
+    ).to_csv(run / "predictions_t1.csv", index=False)
+    tr = mb.track_record("t1", "r1", tmp_path)
+    assert tr["leans_pd"] == {"n": 3, "correct": 2}  # 0.9 PD, 0.6 PD, 0.7 control
+    assert tr["leans_control"] == {"n": 3, "correct": 2}  # 0.2, 0.4 control; 0.3 PD
+    assert mb.track_record("t1", "missing", tmp_path) is None
+
+
+def test_explanation_checks_summary_comes_from_the_newest_run_of_the_set(tmp_path: Path) -> None:
+    def write(name: str, set_name: str, passed: bool) -> None:
+        d = tmp_path / name
+        d.mkdir()
+        payload = {
+            "set": set_name, "people": 37,
+            "deletion": {"passed": passed, "mean_top_minus_random": 0.2, "ci_95": [0.1, 0.3]},
+            "stability": {"mean_spearman": 0.6, "spearman_ci_95": [0.5, 0.7], "meets_target": False,
+                          "mean_top5_overlap": 0.4, "top5_overlap_by_chance": 0.05},
+        }
+        (d / "explain_checks.json").write_text(json.dumps(payload))
+
+    write("explain_20260101_000000", "paired", False)
+    write("explain_20260102_000000", "paired", True)
+    write("explain_20260103_000000", "t1", False)
+    s = mb.explanation_checks("paired", tmp_path)
+    assert s["source"] == "explain_20260102_000000" and s["deletion_passed"] is True
+    assert mb.explanation_checks("dti", tmp_path) is None
+
+
 def test_saved_bundle_scores_exactly_like_the_fitted_one(tmp_path: Path) -> None:
     d, s = small_set(tmp_path)
     out = mb.save_bundle(mb.Bundle("v1", {"t1": s}, "now", "abc"), tmp_path)
