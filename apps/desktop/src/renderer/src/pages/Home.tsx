@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listGaitAnalyses } from "../api/gait.api";
 import { listMriAnalyses } from "../api/mri.api";
 import { listTappingAnalyses } from "../api/tapping.api";
 import { InfoTip } from "../components/InfoTip";
 import { PageHeader } from "../components/PageHeader";
 import type { GaitAnalysisStatus } from "../gait/gaitTypes";
-import type { MriAnalysisStatus } from "../mri/mriTypes";
+import type { AnalysisStatus, MriAnalysisStatus } from "../mri/mriTypes";
 import type { TappingAnalysisStatus } from "../tapping/tappingTypes";
+import { useVoiceRuns } from "../voice/voiceHistory";
+import { groupAssessments } from "./homeRows";
 import {
   STEP_LABELS,
   greeting,
@@ -19,10 +21,13 @@ import "./Home.css";
 // First screen after sign-in, from the approved design's "Home". The design's metrics
 // (priorities, decisions, referrals, a monthly summary) belong to the combined result, which
 // is not built. The layout stays; the numbers are the real ones for today: this clinician's
-// analyses, each part separate: an MRI, a gait and a tapping analysis are separate rows. Voice is
-// not processed in this build, so it shows "—". Nothing here is a placeholder number.
+// analyses. One row is one assessment (same pseudonymous ID, started close together) with a cell
+// for each part, so parts run together show side by side, each with its own status. Voice is not
+// stored by the backend, so its cell shows this session's runs only. Nothing here is a
+// placeholder number. The lists refresh every few seconds while any part is still running.
 
 const RECENT_COUNT = 8;
+const REFRESH_MS = 5000;
 
 export function Home({
   clinician,
@@ -46,21 +51,43 @@ export function Home({
   const [gaitFailed, setGaitFailed] = useState(false);
   const [tappingFailed, setTappingFailed] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const voiceRuns = useVoiceRuns();
+
+  const refresh = useCallback((isCurrent: () => boolean) => {
     listMriAnalyses(100)
-      .then((list) => !cancelled && setItems(list.items))
-      .catch(() => !cancelled && setFailed(true));
+      .then((list) => isCurrent() && (setItems(list.items), setFailed(false)))
+      .catch(() => isCurrent() && setFailed(true));
     listGaitAnalyses(100)
-      .then((list) => !cancelled && setGaitItems(list.items))
-      .catch(() => !cancelled && setGaitFailed(true)); // the MRI rows still show
+      .then((list) => isCurrent() && (setGaitItems(list.items), setGaitFailed(false)))
+      .catch(() => isCurrent() && setGaitFailed(true)); // the other rows still show
     listTappingAnalyses(100)
-      .then((list) => !cancelled && setTappingItems(list.items))
-      .catch(() => !cancelled && setTappingFailed(true)); // the other rows still show
-    return () => {
-      cancelled = true;
-    };
+      .then((list) => isCurrent() && (setTappingItems(list.items), setTappingFailed(false)))
+      .catch(() => isCurrent() && setTappingFailed(true)); // the other rows still show
   }, []);
+
+  const anyRunning =
+    (items ?? []).some((a) => a.status === "queued" || a.status === "running") ||
+    (gaitItems ?? []).some((a) => a.status === "queued" || a.status === "running") ||
+    (tappingItems ?? []).some((a) => a.status === "queued" || a.status === "running");
+
+  useEffect(() => {
+    let live = true;
+    refresh(() => live);
+    return () => {
+      live = false;
+    };
+  }, [refresh]);
+
+  // While anything is running, look again every few seconds so a part that finishes changes its cell.
+  useEffect(() => {
+    if (!anyRunning) return;
+    let live = true;
+    const timer = window.setInterval(() => refresh(() => live), REFRESH_MS);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [anyRunning, refresh]);
 
   const now = new Date();
   const mriSummary = items ? homeSummary(items) : null;
@@ -72,27 +99,32 @@ export function Home({
     mriSummary === null
       ? null
       : {
-          counted: mriSummary.counted + gaitList.length + tappingList.length,
+          counted: mriSummary.counted + gaitList.length + tappingList.length + voiceRuns.length,
           scored:
+            voiceRuns.filter((v) => v.status === "scored").length +
             mriSummary.scored +
             gaitList.filter((g) => g.status === "scored").length +
             tappingList.filter((t) => t.status === "scored").length,
           notScored:
+            voiceRuns.filter((v) => v.status === "abstained").length +
             mriSummary.notScored +
             gaitList.filter((g) => g.status === "abstained").length +
             tappingList.filter((t) => t.status === "abstained").length,
           failed:
+            voiceRuns.filter((v) => v.status === "failed").length +
             mriSummary.failed +
             gaitList.filter((g) => g.status === "failed").length +
             tappingList.filter((t) => t.status === "failed").length,
           inProgress: mriSummary.inProgress.length + gaitRunning.length + tappingRunning.length,
         };
-  // MRI, gait and tapping analyses are separate rows, newest first.
-  const rows = [
-    ...(items ?? []).map((item) => ({ kind: "mri" as const, item, at: parseBackendTime(item.created_at).getTime() })),
-    ...gaitList.map((item) => ({ kind: "gait" as const, item, at: parseBackendTime(item.created_at).getTime() })),
-    ...tappingList.map((item) => ({ kind: "tapping" as const, item, at: parseBackendTime(item.created_at).getTime() })),
-  ].sort((a, b) => b.at - a.at);
+  // One row per assessment, newest first.
+  const rows = groupAssessments(
+    items ?? [],
+    gaitList,
+    tappingList,
+    voiceRuns,
+    (iso) => parseBackendTime(iso).getTime(),
+  );
 
   return (
     <div className="home">
@@ -203,55 +235,30 @@ export function Home({
                     <th>Tapping</th>
                     <th>Voice</th>
                     <th>MRI</th>
-                    <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.slice(0, RECENT_COUNT).map((row) => {
-                    const label = statusLabel(row.item.status);
-                    const running = row.item.status === "queued" || row.item.status === "running";
-                    const tag = <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>;
-                    const none = (
-                      <td className="home__none" title="Not in this build yet">
-                        —
-                      </td>
-                    );
-                    const notAdded = <td className="home__none" title="Not added to this analysis">—</td>;
-                    return (
-                      <tr key={`${row.kind}-${row.item.id}`}>
-                        <td className="mono">
-                          {row.item.subject_label ?? "No ID"}
-                        </td>
-                        <td className="mono">{parseBackendTime(row.item.created_at).toLocaleString()}</td>
-                        {row.kind === "gait" ? <td>{tag}</td> : notAdded}
-                        {row.kind === "tapping" ? <td>{tag}</td> : notAdded}
-                        {none}
-                        {row.kind === "mri" ? (
-                          <td>
-                            {tag}
-                            {row.item.eddy_profile === "fast" && <span className="mri__tag"> Fast DTI</span>}
-                          </td>
-                        ) : (
-                          <td className="home__none" title="Not added to this analysis">—</td>
-                        )}
-                        <td>
-                          <button
-                            type="button"
-                            className="home__link"
-                            onClick={() =>
-                              row.kind === "mri"
-                                ? onOpenAnalysis(row.item.id)
-                                : row.kind === "gait"
-                                  ? onOpenGait(row.item.id)
-                                  : onOpenTapping(row.item.id)
-                            }
+                  {rows.slice(0, RECENT_COUNT).map((row) => (
+                    <tr key={row.key}>
+                      <td className="mono">{row.label ?? "No ID"}</td>
+                      <td className="mono">{new Date(row.startedAt).toLocaleString()}</td>
+                      <PartCell part={row.gait} onOpen={onOpenGait} />
+                      <PartCell part={row.tapping} onOpen={onOpenTapping} />
+                      <td>
+                        {row.voice ? (
+                          <span
+                            className={`mri__tag mri__tag--${statusLabel(row.voice.status).tone}`}
+                            title="Voice results are not stored; this is from this session"
                           >
-                            {running ? "Open →" : "View →"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            {statusLabel(row.voice.status).text}
+                          </span>
+                        ) : (
+                          <span className="home__none" title="Not added to this analysis">—</span>
+                        )}
+                      </td>
+                      <PartCell part={row.mri} onOpen={onOpenAnalysis} fast={row.mri?.eddy_profile === "fast"} />
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
@@ -264,10 +271,10 @@ export function Home({
               Your assessments
               <InfoTip label="About these counts">
                 {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
-                Each counts one analysis: an MRI scan, a walking video or a finger-tapping video. A
+                Each counts one analysis: an MRI scan, a walking video, a finger-tapping video or a voice recording. A
                 “not scored” result means the model declined to score it (for example, an unseen
-                scanner model or a video it could not read); it is not a normal result. Voice is not
-                processed in this build.
+                scanner model or a video it could not read); it is not a normal result. Voice results
+                are not stored, so only voice recordings from this session are counted.
               </InfoTip>
             </p>
             {summary ? (
@@ -296,5 +303,33 @@ export function Home({
         </aside>
       </div>
     </div>
+  );
+}
+
+/** One part's cell in a row: its own status, and a click opens that analysis. */
+function PartCell({
+  part,
+  onOpen,
+  fast = false,
+}: {
+  part: { id: string; status: AnalysisStatus } | null;
+  onOpen: (id: string) => void;
+  fast?: boolean;
+}) {
+  if (!part) {
+    return (
+      <td className="home__none" title="Not added to this analysis">
+        —
+      </td>
+    );
+  }
+  const label = statusLabel(part.status);
+  return (
+    <td>
+      <button type="button" className="home__cell" onClick={() => onOpen(part.id)} title="Open this part">
+        <span className={`mri__tag mri__tag--${label.tone}`}>{label.text}</span>
+        {fast && <span className="mri__tag"> Fast DTI</span>}
+      </button>
+    </td>
   );
 }

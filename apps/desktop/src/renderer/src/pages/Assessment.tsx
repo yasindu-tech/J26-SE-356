@@ -33,6 +33,7 @@ import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import { voiceFileProblem, voiceFileSummary } from "../voice/voiceFile";
+import { recordVoiceRun } from "../voice/voiceHistory";
 import { parseVoiceResults, type VoiceResult } from "../voice/voiceResult";
 import {
   EDDY_PROFILE_LABELS,
@@ -383,6 +384,16 @@ export function Assessment({
 
   /** Upload and analyse the recording. Never throws: a failure becomes the part's outcome. */
   async function analyseVoice(recording: File): Promise<VoiceOutcome> {
+    const outcome = await runVoice(recording);
+    // The backend keeps no voice result, so Home learns of this run from here (this session only).
+    recordVoiceRun(
+      form.label.trim() || null,
+      outcome.kind === "failed" ? "failed" : outcome.result.kind === "scored" ? "scored" : "abstained",
+    );
+    return outcome;
+  }
+
+  async function runVoice(recording: File): Promise<VoiceOutcome> {
     setScreen({ view: "voice-analysis", fileName: recording.name, uploaded: 0, since: null });
     try {
       const reply = await uploadVoiceRecording(recording, (fraction) =>
@@ -1437,44 +1448,55 @@ function PatientStep({
         <span>Screening consent explained and recorded</span>
       </label>
 
-      <label className="mri__field">
-        <span className="mri__label">
-          Current medication <span className="asm__muted">(affects interpretation)</span>
-        </span>
-        <input
-          className="mri__input"
-          value={form.medication}
-          maxLength={200}
-          placeholder="e.g. metoclopramide 10 mg"
-          onChange={(e) => onChange({ ...form, medication: e.target.value })}
-        />
-      </label>
+      <div className="asm__pair">
+        <label className="mri__field">
+          <span className="mri__label">
+            Current medication <span className="asm__muted">(affects interpretation)</span>
+          </span>
+          <input
+            className="mri__input"
+            value={form.medication}
+            maxLength={200}
+            placeholder="e.g. metoclopramide 10 mg"
+            onChange={(e) => onChange({ ...form, medication: e.target.value })}
+          />
+        </label>
 
-      <fieldset className="asm__handedness">
-        <legend className="mri__label">Handedness</legend>
-        {(
-          [
-            ["right", "Right"],
-            ["left", "Left"],
-            ["unknown", "Unknown"],
-          ] as const
-        ).map(([value, text]) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name="handedness"
-              checked={form.handedness === value}
-              onChange={() => onChange({ ...form, handedness: value })}
-            />
-            {text}
-          </label>
-        ))}
-      </fieldset>
+        <fieldset className="asm__handedness">
+          <legend className="mri__label">Handedness</legend>
+          {(
+            [
+              ["right", "Right"],
+              ["left", "Left"],
+              ["unknown", "Unknown"],
+            ] as const
+          ).map(([value, text]) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="handedness"
+                checked={form.handedness === value}
+                onChange={() => onChange({ ...form, handedness: value })}
+              />
+              {text}
+            </label>
+          ))}
+        </fieldset>
+      </div>
 
       <StepButtons onNext={onNext} nextLabel="Next: Modalities →" />
     </form>
   );
 }
+
+type ModalityTab = "mri" | "gait" | "voice" | "tapping";
+
+const MODALITY_TABS: readonly (readonly [ModalityTab, string])[] = [
+  ["mri", "MRI"],
+  ["gait", "Gait"],
+  ["voice", "Voice"],
+  ["tapping", "Finger tapping"],
+];
 
 /** Step 2: which parts to analyse. MRI, gait, voice and finger tapping can be uploaded in this build. */
 function ModalitiesStep({
@@ -1497,6 +1519,7 @@ function ModalitiesStep({
   onNext: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
+  const [tab, setTab] = useState<ModalityTab>("mri");
   const file = form.file;
   const setFile = (f: File | null) => onChange({ ...form, file: f });
 
@@ -1510,8 +1533,42 @@ function ModalitiesStep({
         </h2>
       </div>
 
+      <div className="asm__tabs" role="tablist" aria-label="Parts to analyse">
+        {MODALITY_TABS.map(([key, text]) => {
+          const chosen =
+            key === "mri"
+              ? form.file !== null
+              : key === "gait"
+                ? form.video !== null
+                : key === "voice"
+                  ? form.voice !== null
+                  : form.tappingVideo !== null;
+          return (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              id={`asm-tab-${key}`}
+              aria-selected={tab === key}
+              aria-controls={`asm-panel-${key}`}
+              className={`asm__tab${tab === key ? " asm__tab--on" : ""}${chosen ? " asm__tab--chosen" : ""}`}
+              onClick={() => setTab(key)}
+            >
+              {text}
+              {chosen && <span className="asm__tab-mark">Added</span>}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="asm__modalities">
-        <div className="asm__part asm__part--mri">
+        <div
+          className="asm__part asm__part--mri"
+          role="tabpanel"
+          id="asm-panel-mri"
+          aria-labelledby="asm-tab-mri"
+          hidden={tab !== "mri"}
+        >
           <div className="asm__part-head">
             <h3 className="asm__part-title">MRI</h3>
             <span className="mr__chip mr__chip--on">Available</span>
@@ -1565,7 +1622,13 @@ function ModalitiesStep({
           )}
         </div>
 
-        <div className="asm__part asm__part--gait">
+        <div
+          className="asm__part asm__part--gait"
+          role="tabpanel"
+          id="asm-panel-gait"
+          aria-labelledby="asm-tab-gait"
+          hidden={tab !== "gait"}
+        >
           <div className="asm__part-head">
             <h3 className="asm__part-title">Gait</h3>
             <span className="mr__chip mr__chip--on">
@@ -1585,7 +1648,13 @@ function ModalitiesStep({
           />
         </div>
 
-        <div className="asm__part asm__part--voice">
+        <div
+          className="asm__part asm__part--voice"
+          role="tabpanel"
+          id="asm-panel-voice"
+          aria-labelledby="asm-tab-voice"
+          hidden={tab !== "voice"}
+        >
           <div className="asm__part-head">
             <h3 className="asm__part-title">Voice</h3>
             <span className="mr__chip mr__chip--on">{form.voice ? "Ready to send" : "Available"}</span>
@@ -1603,7 +1672,13 @@ function ModalitiesStep({
           </div>
         </div>
 
-        <div className="asm__part asm__part--tapping">
+        <div
+          className="asm__part asm__part--tapping"
+          role="tabpanel"
+          id="asm-panel-tapping"
+          aria-labelledby="asm-tab-tapping"
+          hidden={tab !== "tapping"}
+        >
           <div className="asm__part-head">
             <h3 className="asm__part-title">Finger tapping</h3>
             <span className="mr__chip mr__chip--on">{form.tappingVideo ? CHIP_CHOSEN : CHIP_AVAILABLE}</span>

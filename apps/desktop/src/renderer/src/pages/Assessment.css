@@ -430,3 +430,64 @@
   padding: 0;
   margin-bottom: 6px;
 }
+
+/* Modalities: one part at a time, chosen from tabs, so the step does not scroll. */
+.asm__tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.asm__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+  cursor: pointer;
+}
+
+.asm__tab:hover {
+  color: var(--color-primary);
+}
+
+.asm__tab--on {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.asm__tab-mark {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.asm__modalities {
+  display: block;
+}
+
+.asm__part[hidden] {
+  display: none;
+}
+
+/* Patient: medication and handedness side by side. */
+.asm__pair {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .asm__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
