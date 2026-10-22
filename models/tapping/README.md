@@ -263,6 +263,24 @@ Outputs go to `data/interim/landmarks/` and `data/interim/tracking_manifest.csv`
   0.3`. A larger input resolution needs a new `track_clip` parameter (it changes the pixel
   rule), so it is left for FT-18; the runner already compares the whole `detector` dict.
 
+## Model bundle for other laptops
+`python models/tapping/src/tapping_bundle.py build` packs the demo model and the 25 fold
+models of each target (`ge2`, `ge1`), the hand landmarker, 101 percentiles per Set A feature
+and a model card into `data/models/tapping/<version>/`, with `manifest.json` (SHA-256 of
+every file) and `data/models/tapping/CURRENT`. `scripts/export_models.py --module tapping`
+zips it; teammates unzip at the repo root (see `docs/models-install.md`).
+
+- `predict_clip.py` uses the bundle whenever `CURRENT` exists. A changed, missing or extra
+  file fails the clip ("failed their integrity check"); it never falls back to
+  `data/processed`. Without a bundle it reads `data/processed`, as before.
+- The bundle has no `features.csv` and no per-clip row: "Nth percentile of the research
+  clips" comes from the 101 percentiles. On the 233 research clips the percentile differs
+  from the full-table value by at most 0.89 points (checked over 4001 values per feature);
+  the score, band and SHAP values are identical. p0 and p100 are each feature's smallest
+  and largest clip value, so the range check is unchanged.
+- `build` refuses to write a bundle with person-level JSON keys or any research clip or
+  participant id in its files, and refuses a version that is not newer than `CURRENT`.
+
 ## Known problems
 - Tapping features are **derived from the same behaviour** the MDS-UPDRS item
   rates. This is acceptable — raw kinematics, not a clinician's score — but it

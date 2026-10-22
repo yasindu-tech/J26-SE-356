@@ -24,6 +24,7 @@ import data_access as da  # noqa: E402
 import predict_clip as pc  # noqa: E402
 import resources as res  # noqa: E402
 import scoring as sc  # noqa: E402
+import tapping_bundle as tb  # noqa: E402
 import upload_pipeline as up  # noqa: E402
 from test_demo_resources import add_folds, add_model  # noqa: E402
 from test_demo_upload import DATA, Factory, fake_pipeline, synthetic_df  # noqa: E402
@@ -44,7 +45,8 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, models: bool = True) 
     if models:
         add_folds(w["proc"])
     monkeypatch.setenv(da.ENV_ROOT, str(w["proc"]))
-    monkeypatch.setattr(res, "make_landmarker", lambda: Factory())
+    monkeypatch.setenv(tb.ENV_ROOT, str(tmp_path / "no_bundle"))  # never this laptop's bundle
+    monkeypatch.setattr(res, "make_landmarker", lambda *a: Factory())
     fake_pipeline(monkeypatch)
     monkeypatch.setattr(
         up, "preview_frames", lambda p, idx, lm: [np.zeros((60, 400, 3), np.uint8)] * len(idx)
