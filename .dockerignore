@@ -3,6 +3,11 @@
 # Docker build, so it cannot end up inside an image (CLAUDE.md section 4).
 *
 !services/backend/
+# The voice module's code and package list, so voice analyses run in the container. Its
+# tests, notebooks and artifacts (the trained model) stay out: the model is mounted instead.
+!models/voice/requirements.txt
+!models/voice/src/
+models/**/__pycache__
 services/backend/**/__pycache__
 services/backend/**/*.pyc
 services/backend/.env
