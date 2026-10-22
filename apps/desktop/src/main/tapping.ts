@@ -5,7 +5,7 @@
 
 import { win32, posix, join, resolve } from "path";
 import { createServer } from "net";
-import type { TappingBounds, TappingStatus } from "../shared/ipc";
+import type { TappingBounds, TappingStatus } from "../shared/tappingIpc";
 
 export const HOST = "127.0.0.1";
 export const HEALTH_INTERVAL_MS = 500;

@@ -11,6 +11,20 @@ import { PageHeader } from "../components/PageHeader";
 import { API_BASE_URL, MRI_MAX_UPLOAD_MB } from "../constants/config";
 import { uploadGaitVideo } from "../api/gait.api";
 import { getGaitRun } from "../gait/gaitRun";
+import { TappingPicker } from "../tapping/TappingPicker";
+import { TappingProgress, TappingWhatIsHappening } from "../tapping/TappingProgress";
+import { TappingResultView } from "../tapping/TappingResult";
+import { uploadTappingVideo } from "../api/tapping.api";
+import { getTappingRun } from "../tapping/tappingRun";
+import type { TappingOutcome, TappingRunStatus } from "../tapping/tappingTypes";
+import {
+  CHIP_AVAILABLE,
+  CHIP_CHOSEN,
+  outcomeOf as tappingOutcomeOf,
+  stripState as tappingStripState,
+  videoProblem as tappingVideoProblem,
+  videoSummary as tappingVideoSummary,
+} from "../tapping/tappingView";
 import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
@@ -39,12 +53,14 @@ type Screen =
   | { view: "patient" }
   | { view: "modalities" }
   | { view: "review" }
-  | { view: "uploading"; fraction: number; part?: "gait" }
+  | { view: "uploading"; fraction: number; part?: "gait" | "tapping" }
   | { view: "analysis"; id: string }
   | { view: "result"; id: string; result: MriResult }
   | { view: "gait-analysis"; id: string }
   | { view: "parts" }
-  | { view: "gait-result"; outcome: GaitOutcome };
+  | { view: "gait-result"; outcome: GaitOutcome }
+  | { view: "tapping-analysis"; id: string }
+  | { view: "tapping-result"; outcome: TappingOutcome };
 
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
 type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
@@ -53,6 +69,16 @@ type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: 
 interface PartsState {
   mri: { id: string; result: MriResult | null } | null;
   gait: { id: string; outcome: GaitOutcome | null } | null;
+  tapping: { id: string; outcome: TappingOutcome | null } | null;
+}
+
+/** How many parts of this assessment were started. */
+function partCount(p: PartsState | null): number {
+  return p ? [p.mri, p.gait, p.tapping].filter(Boolean).length : 0;
+}
+
+function tappingOutcomeFor(run: TappingRunStatus): TappingOutcome {
+  return tappingOutcomeOf(run);
 }
 
 function outcomeOf(status: GaitRunStatus): GaitOutcome {
@@ -74,6 +100,8 @@ const STAGE_HINT: Record<Screen["view"], string> = {
   "gait-analysis": "Each part is processed on its own.",
   parts: "Each part is processed on its own.",
   "gait-result": "Each part has its own result.",
+  "tapping-analysis": "Each part is processed on its own.",
+  "tapping-result": "Each part has its own result.",
 };
 
 function stageOf(view: Screen["view"]): number {
@@ -87,10 +115,12 @@ function stageOf(view: Screen["view"]): number {
       return 2;
     case "analysis":
     case "gait-analysis":
+    case "tapping-analysis":
     case "parts":
       return 3;
     case "result":
     case "gait-result":
+    case "tapping-result":
       return 4;
   }
 }
@@ -131,6 +161,10 @@ interface Form {
   videoSeconds: number | null;
   /** "One person is walking" ticked for this video. Saved with the result; asked again for every video. */
   onePerson: boolean;
+  /** The finger-tapping video, its length and hashed ref when the picker could read them. */
+  tappingVideo: File | null;
+  tappingSeconds: number | null;
+  tappingRef: string | null;
 }
 
 const EMPTY_FORM: Form = {
@@ -146,6 +180,9 @@ const EMPTY_FORM: Form = {
   video: null,
   videoSeconds: null,
   onePerson: false,
+  tappingVideo: null,
+  tappingSeconds: null,
+  tappingRef: null,
 };
 
 /** What is wrong with the patient details, or null when they are fine. */
@@ -164,8 +201,12 @@ function patientProblem(form: Form): string | null {
 
 /** What is wrong with the chosen parts, or null when at least one valid part is chosen. */
 function modalitiesProblem(form: Form): string | null {
-  if (!form.file && !form.video) {
-    return "Add at least one part to analyse: an MRI scan or a walking video.";
+  if (!form.file && !form.video && !form.tappingVideo) {
+    return "Add at least one part to analyse: an MRI scan, a walking video or a finger-tapping video.";
+  }
+  if (form.tappingVideo) {
+    const problem = tappingVideoProblem(form.tappingVideo.name, form.tappingVideo.size);
+    if (problem) return problem.text;
   }
   if (form.video) {
     const problem = videoProblem(form.video.name, form.video.size);
@@ -187,6 +228,7 @@ function modalitiesProblem(form: Form): string | null {
 export function Assessment({
   openId = null,
   openGaitId = null,
+  openTappingId = null,
   eddyProfile,
   confirmFast,
   clinician,
@@ -198,6 +240,8 @@ export function Assessment({
   openId?: string | null;
   /** A gait analysis Home asked to open. */
   openGaitId?: string | null;
+  /** A tapping analysis Home asked to open. */
+  openTappingId?: string | null;
   clinician: string;
   /** From Settings: the DTI motion correction new analyses use. */
   eddyProfile: EddyProfile;
@@ -220,7 +264,7 @@ export function Assessment({
     getGaitRun(openGaitId)
       .then((run) => {
         if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: { id: openGaitId, outcome: null } });
+          setParts({ mri: null, gait: { id: openGaitId, outcome: null }, tapping: null });
           setScreen({ view: "gait-analysis", id: openGaitId });
         } else {
           setScreen({ view: "gait-result", outcome: outcomeOf(run) });
@@ -228,6 +272,20 @@ export function Assessment({
       })
       .catch((e) => setError(errorText(e, "Could not open that analysis.")));
   }, [openGaitId]);
+
+  useEffect(() => {
+    if (!openTappingId) return;
+    getTappingRun(openTappingId)
+      .then((run) => {
+        if (run.state === "queued" || run.state === "running") {
+          setParts({ mri: null, gait: null, tapping: { id: openTappingId, outcome: null } });
+          setScreen({ view: "tapping-analysis", id: openTappingId });
+        } else {
+          setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(run) });
+        }
+      })
+      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+  }, [openTappingId]);
 
   useEffect(() => {
     if (!openId) return;
@@ -269,31 +327,59 @@ export function Assessment({
     // With MRI already sent, only the video goes again: the scan is dropped from the form so it
     // is not uploaded a second time, and the running MRI part stays on the parts screen.
     const mriSent = Boolean(parts?.mri);
+    const tappingKept = Boolean(parts?.tapping); // its video is not analysed a second time
     setForm({
       ...form,
       onePerson: false,
       ...(keepVideo ? {} : { video: null, videoSeconds: null }),
       ...(mriSent ? { file: null } : {}),
+      ...(tappingKept ? { tappingVideo: null, tappingSeconds: null, tappingRef: null } : {}),
     });
     go({ view: "modalities" });
     if (mriSent) setError("The MRI part is already running, so only the video will be sent again.");
+    else if (tappingKept) setError("The finger-tapping part is already done, so only the walking video will be sent again.");
   }
 
-  /** The analyses that started: one part goes to its own screen, two go to the parts screen. */
-  function enter(gaitId: string | null, mriId: string | null): void {
-    // An MRI part sent earlier in this assessment (the video was sent again) is kept.
+  /** Back to the modalities step to analyse the finger-tapping video again (or another one). */
+  function anotherTapping(keepVideo: boolean): void {
+    const mriSent = Boolean(parts?.mri);
+    const gaitSent = Boolean(parts?.gait);
+    setForm({
+      ...form,
+      ...(keepVideo ? {} : { tappingVideo: null, tappingSeconds: null, tappingRef: null }),
+      ...(mriSent ? { file: null } : {}),
+      ...(gaitSent ? { video: null, videoSeconds: null, onePerson: false } : {}),
+    });
+    go({ view: "modalities" });
+    if (mriSent || gaitSent) {
+      setError("The other parts are already sent, so only the finger-tapping video will be analysed again.");
+    }
+  }
+
+  function tappingFinished(status: TappingRunStatus): void {
+    setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(status) });
+  }
+
+  /** The analyses that started: one part goes to its own screen, more go to the parts screen. */
+  function enter(gaitId: string | null, mriId: string | null, tappingId: string | null): void {
+    // Parts sent earlier in this assessment (one part was sent again) are kept.
     const mri = mriId ? { id: mriId, result: null } : (parts?.mri ?? null);
-    setParts({ mri, gait: gaitId ? { id: gaitId, outcome: null } : null });
-    if (gaitId && mri) setScreen({ view: "parts" });
-    else if (gaitId) setScreen({ view: "gait-analysis", id: gaitId });
-    else if (mriId) setScreen({ view: "analysis", id: mriId });
+    const gait = gaitId ? { id: gaitId, outcome: null } : (parts?.gait ?? null);
+    const tapping = tappingId ? { id: tappingId, outcome: null } : (parts?.tapping ?? null);
+    const started: PartsState = { mri, gait, tapping };
+    setParts(started);
+    if (partCount(started) > 1) setScreen({ view: "parts" });
+    else if (gait) setScreen({ view: "gait-analysis", id: gait.id });
+    else if (mri) setScreen({ view: "analysis", id: mri.id });
+    else if (tapping) setScreen({ view: "tapping-analysis", id: tapping.id });
   }
 
   async function start(): Promise<void> {
     const video = form.video && form.onePerson ? form.video : null;
     const file = form.file;
+    const tappingVideo = form.tappingVideo;
     const year = parseYearOfBirth(form.yearOfBirth, new Date());
-    if (!video && !file) return; // already checked on the earlier steps
+    if (!video && !file && !tappingVideo) return; // already checked on the earlier steps
     if (file && (form.sex === "" || year === null)) return;
     if (file && eddyProfile === "fast" && confirmFast && !confirming) {
       setConfirming(true); // ask once; pressing the button again goes ahead
@@ -306,6 +392,7 @@ export function Assessment({
     setLabel(trimmed || null);
     let gaitId: string | null = null;
     let mriId: string | null = null;
+    let tappingId: string | null = null;
     try {
       if (video) {
         setScreen({ view: "uploading", fraction: 0, part: "gait" });
@@ -313,6 +400,15 @@ export function Assessment({
           await uploadGaitVideo(
             { file: video, onePersonConfirmed: form.onePerson, ...(trimmed ? { subjectLabel: trimmed } : {}) },
             (fraction) => setScreen({ view: "uploading", fraction, part: "gait" }),
+          )
+        ).id;
+      }
+      if (tappingVideo) {
+        setScreen({ view: "uploading", fraction: 0, part: "tapping" });
+        tappingId = (
+          await uploadTappingVideo(
+            { file: tappingVideo, ...(trimmed ? { subjectLabel: trimmed } : {}) },
+            (fraction) => setScreen({ view: "uploading", fraction, part: "tapping" }),
           )
         ).id;
       }
@@ -333,10 +429,12 @@ export function Assessment({
       }
     } catch (e) {
       const message = errorText(e, "The upload failed.");
-      if (gaitId || mriId) {
+      if (gaitId || mriId || tappingId) {
         // One part is already running: carry on with it and say what was not sent.
-        enter(gaitId, mriId);
-        setError(`The MRI scan was not sent: ${message} The gait part is running and stays in Home.`);
+        enter(gaitId, mriId, tappingId);
+        setError(
+          `The MRI scan was not sent: ${message} The ${gaitId ? "gait" : "finger-tapping"} part is running and stays in Home.`,
+        );
       } else {
         setError(message);
         setSendFailed(true);
@@ -344,7 +442,7 @@ export function Assessment({
       }
       return;
     }
-    enter(gaitId, mriId);
+    enter(gaitId, mriId, tappingId);
   }
 
   const stage = stageOf(screen.view);
@@ -354,7 +452,7 @@ export function Assessment({
       <PageHeader
         title={label ? `Assessment ${label}` : "New assessment"}
         subtitle={
-          screen.view === "uploading" && screen.part === "gait" ? "Sending the video." : STAGE_HINT[screen.view]
+          screen.view === "uploading" && screen.part ? "Sending the video." : STAGE_HINT[screen.view]
         }
         actions={
           <ol className="asm__stages" aria-label="Progress">
@@ -411,7 +509,11 @@ export function Assessment({
         <section className="card">
           <p className="eyebrow">Sending</p>
           <h2 className="card__title">
-            {screen.part === "gait" ? "Uploading the walking video" : "Uploading the MRI scan"}
+            {screen.part === "gait"
+              ? "Uploading the walking video"
+              : screen.part === "tapping"
+                ? "Uploading the finger-tapping video"
+                : "Uploading the MRI scan"}
           </h2>
           <div className="mri__meter" aria-label="Upload progress">
             <div className="mri__meter-fill" style={{ width: `${screen.fraction * 100}%` }} />
@@ -446,6 +548,12 @@ export function Assessment({
           onError={(message) => setError(message)}
           onOpenMri={(id, result) => setScreen({ view: "result", id, result })}
           onOpenGait={(outcome) => setScreen({ view: "gait-result", outcome })}
+          onTappingDone={(status) =>
+            setParts((p) =>
+              p && p.tapping ? { ...p, tapping: { ...p.tapping, outcome: tappingOutcomeFor(status) } } : p,
+            )
+          }
+          onOpenTapping={(outcome) => setScreen({ view: "tapping-result", outcome })}
           onHome={onHome}
         />
       )}
@@ -466,6 +574,39 @@ export function Assessment({
         </div>
       )}
 
+      {screen.view === "tapping-analysis" && (
+        <div className="asm__stack">
+          <PartsStrip mri="none" tapping="running" />
+          <div className="mri__layout">
+            <TappingProgress
+              id={screen.id}
+              onFinished={tappingFinished}
+              onError={(message) => setError(message)}
+            />
+            <aside className="mri__rail">
+              <TappingWhatIsHappening />
+            </aside>
+          </div>
+        </div>
+      )}
+
+      {screen.view === "tapping-result" && (
+        <TappingResultPage
+          outcome={screen.outcome}
+          mriState={mriStripState(parts?.mri ?? null)}
+          gaitState={gaitStripState(parts?.gait ?? null)}
+          onAnotherVideo={() => anotherTapping(false)}
+          onTryAgain={() => anotherTapping(true)}
+          onHome={onHome}
+          {...(partCount(parts) > 1 ? { onBackToParts: () => go({ view: "parts" }) } : {})}
+          onNewAssessment={() => {
+            setLabel(null);
+            setForm(EMPTY_FORM);
+            go({ view: "patient" });
+          }}
+        />
+      )}
+
       {screen.view === "gait-result" && (
         <GaitResultPage
           outcome={screen.outcome}
@@ -474,7 +615,8 @@ export function Assessment({
           onTryAgain={() => anotherVideo(true)}
           onHome={onHome}
           mriState={mriStripState(parts?.mri ?? null)}
-          {...(parts?.mri && parts.gait ? { onBackToParts: () => go({ view: "parts" }) } : {})}
+          tappingState={tappingStripOf(parts?.tapping ?? null)}
+          {...(partCount(parts) > 1 ? { onBackToParts: () => go({ view: "parts" }) } : {})}
           onNewAssessment={() => {
             setLabel(null);
             setForm(EMPTY_FORM);
@@ -488,11 +630,14 @@ export function Assessment({
           <PartsStrip
             mri={screen.result.status}
             gait={gaitStripState(parts?.gait ?? null)}
+            tapping={tappingStripOf(parts?.tapping ?? null)}
           />
           <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
           <MriResultView result={screen.result} />
           <section className="asm__others" aria-label="Parts that were not provided">
-            {PARTS.filter((p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait)).map((p) => (
+            {PARTS.filter(
+              (p) => p.key !== "mri" && !(p.key === "gait" && parts?.gait) && !(p.key === "tapping" && parts?.tapping),
+            ).map((p) => (
               <div key={p.key} className="asm__other">
                 <div className="asm__other-head">
                   <span className="asm__other-title">{p.label}</span>
@@ -506,7 +651,7 @@ export function Assessment({
             ))}
           </section>
           <div className="asm__result-actions">
-            {parts?.mri && parts.gait ? (
+            {partCount(parts) > 1 ? (
               <button type="button" className="btn btn--outline" onClick={() => go({ view: "parts" })}>
                 ← Back to parts
               </button>
@@ -540,6 +685,10 @@ function mriStripState(m: PartsState["mri"]): MriState | "none" {
   return m.result ? m.result.status : "running";
 }
 
+function tappingStripOf(t: PartsState["tapping"]): MriState | "none" {
+  return t ? tappingStripState(t.outcome) : "none";
+}
+
 function gaitStripState(g: PartsState["gait"]): MriState | "none" {
   if (!g) return "none";
   if (!g.outcome) return "running";
@@ -547,7 +696,7 @@ function gaitStripState(g: PartsState["gait"]): MriState | "none" {
   return g.outcome.result.available ? "scored" : "abstained";
 }
 
-/** MRI and gait together: each part runs on its own and opens as its own result. */
+/** Two or three parts together: each runs on its own and opens as its own result. */
 function PartsScreen({
   parts,
   onMriDone,
@@ -555,6 +704,8 @@ function PartsScreen({
   onError,
   onOpenMri,
   onOpenGait,
+  onTappingDone,
+  onOpenTapping,
   onHome,
 }: {
   parts: PartsState;
@@ -563,17 +714,20 @@ function PartsScreen({
   onError: (message: string) => void;
   onOpenMri: (id: string, result: MriResult) => void;
   onOpenGait: (outcome: GaitOutcome) => void;
+  onTappingDone: (status: TappingRunStatus) => void;
+  onOpenTapping: (outcome: TappingOutcome) => void;
   onHome: () => void;
 }) {
-  const { mri, gait } = parts;
-  const bothDone = (!mri || mri.result) && (!gait || gait.outcome);
+  const { mri, gait, tapping } = parts;
+  const allDone = (!mri || mri.result) && (!gait || gait.outcome) && (!tapping || tapping.outcome);
+  const threeParts = partCount(parts) > 2;
   return (
     <div className="asm__stack">
-      <PartsStrip mri={mriStripState(mri)} gait={gaitStripState(gait)} />
+      <PartsStrip mri={mriStripState(mri)} gait={gaitStripState(gait)} tapping={tappingStripOf(tapping)} />
       <p className="note asm__lead">
-        {bothDone
-          ? "Both parts are ready. Open each result on its own."
-          : "Two parts are being analysed. Each is processed on its own, and you can open one as soon as it is ready."}
+        {allDone
+          ? `${threeParts ? "All parts are" : "Both parts are"} ready. Open each result on its own.`
+          : `${threeParts ? "Three" : "Two"} parts are being analysed. Each is processed on its own, and you can open one as soon as it is ready.`}
       </p>
 
       {mri &&
@@ -627,6 +781,34 @@ function PartsScreen({
           </div>
         ))}
 
+      {tapping &&
+        (tapping.outcome ? (
+          <section className="card" aria-label="Finger-tapping part">
+            <p className="eyebrow">Finger-tapping part</p>
+            <h2 className="card__title">
+              {tapping.outcome.kind === "scored"
+                ? "The finger-tapping result is ready"
+                : "The finger-tapping video could not be scored"}
+            </h2>
+            <div>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => tapping.outcome && onOpenTapping(tapping.outcome)}
+              >
+                Open the finger-tapping result
+              </button>
+            </div>
+          </section>
+        ) : (
+          <div className="mri__layout">
+            <TappingProgress id={tapping.id} onFinished={onTappingDone} onError={onError} />
+            <aside className="mri__rail">
+              <TappingWhatIsHappening />
+            </aside>
+          </div>
+        ))}
+
       <div>
         <button type="button" className="btn btn--outline" onClick={onHome}>
           ← Home
@@ -641,11 +823,19 @@ function PartsScreen({
 type MriState = "running" | "scored" | "abstained" | "failed" | "queued";
 
 /** Where each of the four parts stands, in one row. A part that was not chosen shows "Not added". */
-function PartsStrip({ mri, gait = "none" }: { mri: MriState | "none"; gait?: MriState | "none" }) {
+function PartsStrip({
+  mri,
+  gait = "none",
+  tapping = "none",
+}: {
+  mri: MriState | "none";
+  gait?: MriState | "none";
+  tapping?: MriState | "none";
+}) {
   return (
     <ul className="asm__strip" aria-label="Parts of this assessment">
       {PARTS.map((p) => {
-        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : "none";
+        const state = p.key === "mri" ? mri : p.key === "gait" ? gait : p.key === "tapping" ? tapping : "none";
         const none = state === "none";
         return (
           <li key={p.key} className={`asm__strip-item${none ? " asm__strip-item--none" : ""}`}>
@@ -670,9 +860,12 @@ function GaitResultPage({
   onBackToParts,
   onNewAssessment,
   mriState,
+  tappingState,
 }: {
   /** Where the MRI part stands when it was sent with this video; "none" when it was not. */
   mriState: MriState | "none";
+  /** Where the finger-tapping part stands in this assessment; "none" when it was not added. */
+  tappingState: MriState | "none";
   outcome: GaitOutcome;
   videoSeconds: number | null;
   onAnotherVideo: () => void;
@@ -686,7 +879,7 @@ function GaitResultPage({
     outcome.kind === "failed" ? "failed" : outcome.result.available ? "scored" : "abstained";
   return (
     <div className="asm__stack">
-      <PartsStrip mri={mriState} gait={state} />
+      <PartsStrip mri={mriState} gait={state} tapping={tappingState} />
       <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
       {outcome.kind === "record" ? (
         <GaitResultView
@@ -714,7 +907,93 @@ function GaitResultPage({
         </section>
       )}
       <section className="asm__others" aria-label="Parts that were not provided">
-        {PARTS.filter((p) => p.key !== "gait" && !(p.key === "mri" && mriState !== "none")).map((p) => (
+        {PARTS.filter(
+          (p) =>
+            p.key !== "gait" &&
+            !(p.key === "mri" && mriState !== "none") &&
+            !(p.key === "tapping" && tappingState !== "none"),
+        ).map((p) => (
+          <div key={p.key} className="asm__other">
+            <div className="asm__other-head">
+              <span className="asm__other-title">{p.label}</span>
+              <span className="mr__chip mr__chip--none">Not provided</span>
+            </div>
+            <p className="asm__dash">—</p>
+            <p className="note">
+              {p.available ? "Not added to this assessment" : PART_NOT_BUILT}. Nothing is counted as
+              zero; this part has no result.
+            </p>
+          </div>
+        ))}
+      </section>
+      <div className="asm__buttons">
+        {onBackToParts ? (
+          <button type="button" className="btn btn--outline" onClick={onBackToParts}>
+            ← Back to parts
+          </button>
+        ) : (
+          <button type="button" className="btn btn--outline" onClick={onHome}>
+            ← Home
+          </button>
+        )}
+        <button type="button" className="btn btn--outline" onClick={onNewAssessment}>
+          Start a new assessment
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A finger-tapping result, as its own screen: the result (or the failure), the other parts as not provided. */
+function TappingResultPage({
+  outcome,
+  mriState,
+  gaitState,
+  onAnotherVideo,
+  onTryAgain,
+  onHome,
+  onBackToParts,
+  onNewAssessment,
+}: {
+  outcome: TappingOutcome;
+  mriState: MriState | "none";
+  gaitState: MriState | "none";
+  onAnotherVideo: () => void;
+  onTryAgain: () => void;
+  onHome: () => void;
+  /** Set when other parts were analysed with it: the way back to the parts screen. */
+  onBackToParts?: () => void;
+  onNewAssessment: () => void;
+}) {
+  return (
+    <div className="asm__stack">
+      <PartsStrip mri={mriState} gait={gaitState} tapping={tappingStripState(outcome)} />
+      <p className="note asm__lead">{NO_COMBINED_RESULT}</p>
+      {outcome.kind === "scored" ? (
+        <TappingResultView result={outcome.result} />
+      ) : (
+        <section className="card" aria-label="The analysis did not finish">
+          <h2 className="card__title">The finger-tapping video could not be scored</h2>
+          <p className="mri__error" role="alert">
+            {outcome.message} No score was produced. It is not counted as zero and not read as normal.
+          </p>
+          <div className="asm__buttons">
+            <button type="button" className="btn btn--primary" onClick={onTryAgain}>
+              Try again
+            </button>
+            <button type="button" className="btn btn--outline" onClick={onAnotherVideo}>
+              Choose another video
+            </button>
+          </div>
+        </section>
+      )}
+      <section className="asm__others" aria-label="Parts that were not provided">
+        {PARTS.filter(
+          (p) =>
+            p.key !== "tapping" &&
+            !(p.key === "mri" && mriState !== "none") &&
+            !(p.key === "gait" && gaitState !== "none"),
+        ).map((p) => (
           <div key={p.key} className="asm__other">
             <div className="asm__other-head">
               <span className="asm__other-title">{p.label}</span>
@@ -942,7 +1221,7 @@ function PatientStep({
   );
 }
 
-/** Step 2: which parts to analyse. MRI and gait can be uploaded in this build. */
+/** Step 2: which parts to analyse. MRI, gait and tapping are sent to the backend. */
 function ModalitiesStep({
   form,
   eddyProfile,
@@ -1050,6 +1329,25 @@ function ModalitiesStep({
             onConfirmed={(onePerson) => onChange({ ...form, onePerson })}
           />
         </div>
+
+        <div className="asm__part asm__part--tapping">
+          <div className="asm__part-head">
+            <h3 className="asm__part-title">Finger tapping</h3>
+            <span className="mr__chip mr__chip--on">{form.tappingVideo ? CHIP_CHOSEN : CHIP_AVAILABLE}</span>
+          </div>
+          <p className="note">{PARTS[1]?.provides}. Takes under a minute.</p>
+          <TappingPicker
+            video={form.tappingVideo}
+            seconds={form.tappingSeconds}
+            videoRefText={form.tappingRef}
+            onVideo={(tappingVideo, tappingSeconds, tappingRef) =>
+              onChange({ ...form, tappingVideo, tappingSeconds, tappingRef })
+            }
+          />
+          <button type="button" className="asm__link" onClick={onOpenTapping}>
+            Open the finger-tapping demo →
+          </button>
+        </div>
       </div>
 
       <div className="asm__others-row">
@@ -1058,19 +1356,12 @@ function ModalitiesStep({
             <div key={p.key} className="asm__part asm__part--none asm__part--small">
               <div className="asm__part-head">
                 <h3 className="asm__part-title">{p.label}</h3>
-                <span className="mr__chip mr__chip--none">
-                  {p.key === "tapping" ? "Research demo" : PART_NOT_BUILT}
-                </span>
+                <span className="mr__chip mr__chip--none">{PART_NOT_BUILT}</span>
               </div>
               <p className="note">{p.provides}.</p>
               {p.key === "voice" && (
                 <button type="button" className="asm__link" onClick={onOpenVoice}>
                   Open an existing voice result file →
-                </button>
-              )}
-              {p.key === "tapping" && (
-                <button type="button" className="asm__link" onClick={onOpenTapping}>
-                  Open the finger-tapping demo →
                 </button>
               )}
             </div>
@@ -1115,11 +1406,19 @@ function ReviewStep({
         <h2 className="card__title">
           Review
           <InfoTip label={form.video ? "Where the video goes" : "Where the scan goes"}>
-            {NO_COMBINED_RESULT} {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
-            <span className="mono">{API_BASE_URL}</span>
-            {form.video
-              ? " only when you press Start analysis. The file is deleted there when the analysis ends; the result is kept, and a copy with the skeleton drawn on it when the walk can be read."
-              : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
+            {NO_COMBINED_RESULT}
+            {(form.file || form.video) && (
+              <>
+                {" "}
+                {form.video ? "The video" : "The scan"} is sent to the PD-XAI backend at{" "}
+                <span className="mono">{API_BASE_URL}</span>
+                {form.video
+                  ? " only when you press Start analysis. The file is deleted there when the analysis ends; the result is kept, and a copy with the skeleton drawn on it when the walk can be read."
+                  : "; the DICOM files are deleted there when the analysis ends, and only the result is kept."}
+              </>
+            )}
+            {form.tappingVideo &&
+              " The finger-tapping video is sent to the same backend and deleted there when the analysis ends; the result is kept."}
           </InfoTip>
         </h2>
       </div>
@@ -1175,7 +1474,15 @@ function ReviewStep({
           </div>
         )}
         <div>
-          <dt>Tapping, voice</dt>
+          <dt>Finger tapping</dt>
+          <dd className="mono">
+            {form.tappingVideo
+              ? tappingVideoSummary(form.tappingVideo.size, form.tappingSeconds, form.tappingRef)
+              : "Not added"}
+          </dd>
+        </div>
+        <div>
+          <dt>Voice</dt>
           <dd>{PART_NOT_BUILT}</dd>
         </div>
       </dl>

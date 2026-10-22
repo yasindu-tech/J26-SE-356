@@ -15,7 +15,7 @@ import {
   IPC_TAPPING_STOP,
   type TappingBounds,
   type TappingStatus,
-} from "../shared/ipc";
+} from "../shared/tappingIpc";
 import {
   HOST,
   TappingController,

@@ -181,17 +181,22 @@ def ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
+def value_text(r: Contribution) -> str:
+    unit = PLAIN[r["feature"]][1]
+    return f"{r['value']:.2f} {unit}" if np.isfinite(r["value"]) else "not available"
+
+
+def percentile_text(r: Contribution) -> str:
+    if not np.isfinite(r["percentile"]):
+        return "percentile not available"
+    return f"{ordinal(int(round(r['percentile'])))} percentile of the research clips"
+
+
 def wording(rows: list[Contribution]) -> list[str]:
     """One sentence per feature from fixed templates: a contribution to the score, no cause."""
     out = []
     for r in rows:
-        name, unit = PLAIN[r["feature"]]
-        value = f"{r['value']:.2f} {unit}" if np.isfinite(r["value"]) else "not available"
-        pct = (
-            f"{ordinal(int(round(r['percentile'])))} percentile of the research clips"
-            if np.isfinite(r["percentile"]) else "percentile not available"
-        )  # fmt: skip
-        head = f"{name} ({value}, {pct})"
+        head = f"{PLAIN[r['feature']][0]} ({value_text(r)}, {percentile_text(r)})"
         if abs(r["shap"]) < NEGLIGIBLE:
             text = f"{head} had almost no effect on the score ({r['shap']:+.2f} log-odds)"
         else:

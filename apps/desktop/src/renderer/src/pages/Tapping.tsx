@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TappingStatus } from "../../../shared/ipc";
+import type { TappingStatus } from "../../../shared/tappingIpc";
 import { PageHeader } from "../components/PageHeader";
+import { tappingBridge } from "../tapping/tappingBridge";
 import "./Tapping.css";
 
 // Finger-tapping research demo (FT-61). Streamlit runs on this computer as a child of the
@@ -15,15 +16,15 @@ export function Tapping({ onBack }: { onBack: () => void }) {
 
   const start = useCallback(() => {
     setStatus({ state: "starting" });
-    void window.electronAPI.tapping.start().then(setStatus);
+    void tappingBridge().tapping.start().then(setStatus);
   }, []);
 
   useEffect(() => {
-    const unsubscribe = window.electronAPI.tapping.onStatus(setStatus);
+    const unsubscribe = tappingBridge().tapping.onStatus(setStatus);
     start();
     return () => {
       unsubscribe();
-      void window.electronAPI.tapping.stop();
+      void tappingBridge().tapping.stop();
     };
   }, [start]);
 
@@ -34,7 +35,7 @@ export function Tapping({ onBack }: { onBack: () => void }) {
     if (!element) return;
     const send = (): void => {
       const rect = element.getBoundingClientRect();
-      window.electronAPI.tapping.setBounds({
+      tappingBridge().tapping.setBounds({
         x: rect.x,
         y: rect.y,
         width: rect.width,
@@ -69,7 +70,7 @@ export function Tapping({ onBack }: { onBack: () => void }) {
               type="button"
               className="btn btn--outline"
               disabled={!ready}
-              onClick={() => void window.electronAPI.tapping.openExternal()}
+              onClick={() => void tappingBridge().tapping.openExternal()}
             >
               Open in browser
             </button>
