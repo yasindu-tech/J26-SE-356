@@ -53,6 +53,9 @@ class MriScore(BaseModel):
     calibrated: bool
     n_training: int
     meaning: str
+    # How many of the fold copies scored this person above 0 (absent in older results).
+    n_copies: int | None = None
+    copies_above_zero: int | None = None
 
 
 class MriFeatureVector(BaseModel):

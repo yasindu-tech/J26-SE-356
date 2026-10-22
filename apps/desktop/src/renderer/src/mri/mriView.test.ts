@@ -255,6 +255,7 @@ describe("what is missing", () => {
       }),
     ).toEqual([]);
     expect(modelSetLabel("t1dti")).toBe("T1 + DTI");
+    expect(modelSetLabel("paired")).toBe("T1 + DTI");
   });
 });
 

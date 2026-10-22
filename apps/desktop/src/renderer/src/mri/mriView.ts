@@ -235,6 +235,7 @@ export const MODEL_SET_LABELS: Record<string, string> = {
   t1: "T1 only",
   dti: "DTI only",
   t1dti: "T1 + DTI",
+  paired: "T1 + DTI", // the bundle's name for the T1 + DTI set (mri_bundle.py)
 };
 
 export function modelSetLabel(set: string | null): string {

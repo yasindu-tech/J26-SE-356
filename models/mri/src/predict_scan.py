@@ -378,6 +378,8 @@ def score_person(
         "value": value,
         "interval": [float(low), float(high)],
         "n_copies": len(copies),
+        # How many copies put this person on the PD side of the boundary (log-odds > 0).
+        "copies_above_zero": int(sum(c > 0 for c in copies)),
         "contrib": contrib,
         "base": base,
         "outside": outside,
@@ -593,6 +595,8 @@ def predict_scan(
             "value": parts["value"],
             "interval_95": parts["interval"],
             "interval_method": f"spread over {parts['n_copies']} fold copies of the pipeline",
+            "n_copies": parts["n_copies"],
+            "copies_above_zero": parts["copies_above_zero"],
             "calibrated": False,
             "n_training": chosen.card["training_people"]["total"],
             "meaning": chosen.card["score_meaning"],

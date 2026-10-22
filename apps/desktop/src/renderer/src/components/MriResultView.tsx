@@ -13,8 +13,10 @@ import {
   PART_CAPTIONS,
   PART_STATE_LABELS,
   PART_TITLES,
+  STRENGTH_LABELS,
   driverText,
   eddyMinutes,
+  partProblems,
   partState,
   plainReading,
   safeImage,
@@ -48,12 +50,25 @@ export function MriResultView({ result }: { result: MriResult }) {
 
 function ReadingCard({ result }: { result: MriResult }) {
   if (!result.score) return null;
-  const reading = plainReading(result.score);
+  const reading = plainReading(result.score, result.model_card?.track_record);
   return (
     <section className="card mr__reading-card" aria-label="Reading">
       <p className="eyebrow">MRI · {modelSetLabel(result.model_set)} model · research prototype</p>
-      <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
+      <div className="mr__reading-row">
+        <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
+        {reading.strength && (
+          <span className={`mr__strength mr__strength--${reading.strength}`}>
+            {STRENGTH_LABELS[reading.strength]}
+          </span>
+        )}
+      </div>
       <p className="mr__reading-detail">{reading.detail}</p>
+      {(reading.agreement || reading.trackRecord) && (
+        <ul className="mr__facts">
+          {reading.agreement && <li>{reading.agreement}</li>}
+          {reading.trackRecord && <li>{reading.trackRecord}</li>}
+        </ul>
+      )}
     </section>
   );
 }
@@ -114,6 +129,12 @@ function ScanImages({ result }: { result: MriResult }) {
               </div>
             )}
             {image && <figcaption className="note">{PART_CAPTIONS[part]}</figcaption>}
+            {state !== "used" &&
+              partProblems(result, part).map((p) => (
+                <p key={p} className="mr__why">
+                  {p}
+                </p>
+              ))}
             {state === "used" && scanner && <p className="mr__meta">{scanner}</p>}
           </figure>
         );
@@ -233,6 +254,9 @@ function ScoreDetails({ result }: { result: MriResult }) {
           ["Raw score (log-odds)", formatSigned(s.value)],
           ["95% interval", `${formatSigned(s.interval_95[0])} to ${formatSigned(s.interval_95[1])}`],
           ["Interval method", s.interval_method],
+          ...(s.n_copies != null && s.copies_above_zero != null
+            ? [["Copies on the Parkinson's side", `${s.copies_above_zero} of ${s.n_copies}`] as [string, ReactNode]]
+            : []),
           ["Calibrated probability", s.calibrated ? "yes" : "no (raw score only)"],
         ]}
       />
@@ -310,6 +334,7 @@ function ScanDetails({ result }: { result: MriResult }) {
 
 function ExplanationDetails({ result }: { result: MriResult }) {
   const ex = result.explanation;
+  const checks = result.model_card?.explanation_checks ?? null;
   if (!ex) return null;
   return (
     <Details title="Explanation" hint={ex.method}>
@@ -320,6 +345,27 @@ function ExplanationDetails({ result }: { result: MriResult }) {
           ...ex.top_drivers.map((d): [string, ReactNode] => [d.label, formatSigned(d.contribution, 3)]),
         ]}
       />
+      {checks && (
+        <>
+          <p className="mr__sub">How the explanation was checked ({checks.people ?? "—"} people, unseen by each model)</p>
+          <Rows
+            rows={[
+              [
+                "Deletion test (faithfulness)",
+                `${checks.deletion_passed ? "Pass" : "Fail"}: removing the top 5 moved the score ${formatSigned(checks.deletion_mean_top_minus_random, 2)} more than 5 random (95% CI ${formatSigned(checks.deletion_ci_95[0], 2)} to ${formatSigned(checks.deletion_ci_95[1], 2)})`,
+              ],
+              [
+                "Stability across model copies",
+                `Spearman ${checks.stability_mean_spearman.toFixed(2)} (95% CI ${checks.stability_ci_95[0].toFixed(2)}–${checks.stability_ci_95[1].toFixed(2)}), target 0.70: ${checks.stability_meets_target ? "met" : "not met"}`,
+              ],
+              [
+                "Top-5 overlap between copies",
+                `${Math.round(checks.top5_overlap * 100)}%${checks.top5_overlap_by_chance != null ? ` (chance ${Math.round(checks.top5_overlap_by_chance * 100)}%)` : ""}`,
+              ],
+            ]}
+          />
+        </>
+      )}
       <p className="note">
         Contributions are in log-odds and add up from the base value to the score. {ex.caveat}
       </p>
