@@ -12,6 +12,9 @@
 # MRI and gait analyses do not run inside this container yet (FSL, ANTs, dcm2niix,
 # SynthStrip and the model packages are not in the image). For those, run the backend
 # natively against this database; see services/backend/README.md, "Run with Docker".
+# Voice analyses do run here: the image has the voice code and packages, and the trained
+# voice model is mounted read-only from models/voice/artifacts/ (train it once with
+# python models/voice/src/audio_model.py).
 
 name: pdxai
 
@@ -53,6 +56,10 @@ services:
     # Development sign-in accounts, created on each start if missing (never changed after).
     secrets:
       - dev_accounts
+    # The trained voice model is gitignored and built from dataset recordings, so it is never
+    # copied into the image: the container only reads it from this laptop.
+    volumes:
+      - ./models/voice/artifacts:/repo/models/voice/artifacts:ro
     # Used by "docker compose watch": a saved edit is copied into the running container.
     # Code: copied, and uvicorn reloads. Migrations: copied, then the container restarts so
     # they are applied. Packages or the image itself: the image is rebuilt.
@@ -67,8 +74,15 @@ services:
         - action: sync+restart
           path: ./services/backend/app/alembic
           target: /repo/services/backend/app/alembic
+        - action: sync
+          path: ./models/voice/src
+          target: /repo/models/voice/src
+          ignore:
+            - "**/__pycache__/"
         - action: rebuild
           path: ./services/backend/requirements.txt
+        - action: rebuild
+          path: ./models/voice/requirements.txt
         - action: rebuild
           path: ./services/backend/Dockerfile
         - action: rebuild
