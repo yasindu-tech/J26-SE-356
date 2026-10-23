@@ -33,7 +33,8 @@ from app.models.clinician import Clinician
 from app.models.gait_analysis import GaitAnalysis
 from app.schemas.gait import GAIT_VIDEO_TYPES, GaitAnalysisStatus
 from app.schemas.mri import FINAL_STATUSES
-from app.workers.gait_runner import GaitJob, GaitRunner
+from app.workers.gait_runner import GaitJob, GaitRunner, failed_result
+from app.workers.stoppable import STOPPED_MESSAGE, request_stop
 
 CHUNK = 1024 * 1024
 NOT_A_VIDEO = f"The upload must be a video file ({', '.join(GAIT_VIDEO_TYPES)})"
@@ -192,6 +193,21 @@ def get_status(
 ) -> GaitAnalysisStatus:
     row = _own(db, clinician, analysis_id)
     refresh_from_disk(db, row, settings)
+    return _status(row, settings)
+
+
+def stop_analysis(
+    db: Session, clinician: Clinician, analysis_id: uuid.UUID, settings: Settings
+) -> GaitAnalysisStatus:
+    """Stop a queued or running analysis: recorded as failed at once; the worker ends the
+    script and deletes what it left. An analysis that has already ended is returned as it is."""
+    row = _own(db, clinician, analysis_id)
+    refresh_from_disk(db, row, settings)
+    if row.status not in FINAL_STATUSES:
+        request_stop(_folder(settings, row.id))
+        row.result_json = json.dumps({**failed_result(STOPPED_MESSAGE), "status": "failed"})
+        _audit(db, clinician, "gait_stop", row.id)
+        _finish(db, row, "failed", STOPPED_MESSAGE)
     return _status(row, settings)
 
 

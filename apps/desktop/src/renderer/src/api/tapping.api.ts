@@ -74,3 +74,9 @@ export function getTappingResult(id: string): Promise<unknown> {
 export function listTappingAnalyses(limit = 20): Promise<TappingAnalysisList> {
   return apiFetch<TappingAnalysisList>(`${BASE}?limit=${limit}`);
 }
+
+/** Stops a queued or running finger-tapping analysis. The backend records it as failed ("stopped by the
+ *  clinician") at once and ends the work within about a second. An ended analysis is unchanged. */
+export function stopTappingAnalysis(id: string): Promise<TappingAnalysisStatus> {
+  return apiFetch<TappingAnalysisStatus>(`${BASE}/${encodeURIComponent(id)}/stop`, { method: "POST" });
+}

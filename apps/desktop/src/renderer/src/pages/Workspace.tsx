@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppShell, type NavItem } from "../components/AppShell";
 import { Assessment } from "./Assessment";
+import type { OpenAssessment } from "./homeRows";
 import { Home } from "./Home";
 import { SettingsPage } from "./Settings";
 import { Tapping } from "./Tapping";
@@ -11,7 +12,7 @@ import { VoiceResults } from "./VoiceResults";
 // approved design. Voice is not in the navigation: it is reached from the Voice part on the
 // setup screen, because its result is read from a file rather than processed here.
 
-type Screen = "home" | "assessment" | "voice" | "tapping" | "settings";
+type Screen = "home" | "all" | "assessment" | "voice" | "tapping" | "settings";
 type NavKey = "home" | "assessment" | "settings";
 
 const ICON = {
@@ -60,18 +61,15 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
   const [screen, setScreen] = useState<Screen>(() =>
     settings.general.startPage === "assessment" ? "assessment" : "home",
   );
-  // `openId`: an analysis Home asked to open. `session` restarts the workflow at Setup.
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [openGaitId, setOpenGaitId] = useState<string | null>(null);
-  const [openTappingId, setOpenTappingId] = useState<string | null>(null);
+  // `opened`: an assessment (one part or all of them) Home asked to open. `session` restarts
+  // the workflow at Setup.
+  const [opened, setOpened] = useState<OpenAssessment | null>(null);
   const [session, setSession] = useState(0);
   // True once an assessment screen exists, so a visit to Settings can return to it unchanged.
   const [live, setLive] = useState(false);
 
   function startAssessment(): void {
-    setOpenId(null);
-    setOpenGaitId(null);
-    setOpenTappingId(null);
+    setOpened(null);
     setSession((n) => n + 1);
     setLive(true);
     setScreen("assessment");
@@ -84,9 +82,7 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
 
   function navigate(key: NavKey): void {
     if (key === "home") {
-      setOpenId(null);
-      setOpenGaitId(null);
-      setOpenTappingId(null);
+      setOpened(null);
       setScreen("home");
     } else if (key === "settings") {
       setScreen(key);
@@ -97,8 +93,15 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
     }
   }
 
+  function openAssessment(next: OpenAssessment): void {
+    setOpened(next);
+    setSession((n) => n + 1);
+    setLive(true);
+    setScreen("assessment");
+  }
+
   const active: NavKey =
-    screen === "home"
+    screen === "home" || screen === "all"
       ? "home"
       : screen === "settings"
         ? screen
@@ -112,35 +115,15 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
       clinician={clinician}
       onSignOut={onSignOut}
     >
-      {screen === "home" && (
+      {(screen === "home" || screen === "all") && (
         <Home
+          key={screen}
+          mode={screen === "all" ? "all" : "home"}
           clinician={clinician}
           onNewAssessment={startAssessment}
-          onOpenAnalysis={(id) => {
-            setOpenId(id);
-            setOpenGaitId(null);
-            setOpenTappingId(null);
-            setSession((n) => n + 1);
-            setLive(true);
-            setScreen("assessment");
-          }}
-          onOpenGait={(id) => {
-            setOpenId(null);
-            setOpenGaitId(id);
-            setOpenTappingId(null);
-            setSession((n) => n + 1);
-            setLive(true);
-            setScreen("assessment");
-          }}
-          onOpenTapping={(id) => {
-            setOpenId(null);
-            setOpenGaitId(null);
-            setOpenTappingId(id);
-            setSession((n) => n + 1);
-            setLive(true);
-            setScreen("assessment");
-          }}
-          onSeeAll={startAssessment}
+          onOpenAssessment={openAssessment}
+          onSeeAll={() => setScreen("all")}
+          onBackHome={() => setScreen("home")}
         />
       )}
       {/* Stays mounted while the voice file or Settings is open, so the setup form is not lost. */}
@@ -149,16 +132,12 @@ export function Workspace({ clinician, onSignOut }: { clinician: string; onSignO
         <div hidden={screen !== "assessment"}>
           <Assessment
             key={session}
-            openId={openId}
-            openGaitId={openGaitId}
-            openTappingId={openTappingId}
+            open={opened}
             clinician={clinician}
             eddyProfile={settings.mri.eddyProfile}
             confirmFast={settings.mri.confirmFast}
             onHome={() => {
-              setOpenId(null);
-              setOpenGaitId(null);
-              setOpenTappingId(null);
+              setOpened(null);
               setScreen("home");
             }}
             onOpenVoice={() => setScreen("voice")}

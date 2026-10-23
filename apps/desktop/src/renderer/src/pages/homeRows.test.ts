@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUP_WINDOW_MS, groupAssessments } from "./homeRows";
+import { GROUP_WINDOW_MS, groupAssessments, onePart, oneVoice, openAllParts } from "./homeRows";
 
 const parse = (iso: string) => Date.parse(iso);
 const base = { eddy_profile: "full", steps: [], done: [], current_step: null, note: null } as const;
@@ -7,6 +7,16 @@ const base = { eddy_profile: "full", steps: [], done: [], current_step: null, no
 function mri(id: string, label: string | null, at: string, status = "running") {
   return { ...base, id, subject_label: label, created_at: at, status } as never;
 }
+function voiceRun(id: number, label: string | null, at: string) {
+  return {
+    id,
+    label,
+    at: Date.parse(at),
+    status: "scored" as const,
+    outcome: { kind: "failed" as const, message: "not needed here" },
+  };
+}
+
 function other(id: string, label: string | null, at: string, status = "scored") {
   return { id, subject_label: label, created_at: at, status } as never;
 }
@@ -17,7 +27,7 @@ describe("groupAssessments", () => {
       [mri("m1", "P-1", "2026-10-22T10:00:00Z")],
       [other("g1", "P-1", "2026-10-22T10:01:00Z")],
       [other("t1", "P-1", "2026-10-22T10:02:00Z", "running")],
-      [{ id: 1, label: "P-1", at: Date.parse("2026-10-22T10:03:00Z"), status: "scored" }],
+      [voiceRun(1, "P-1", "2026-10-22T10:03:00Z")],
       parse,
     );
     expect(rows).toHaveLength(1);
@@ -78,5 +88,32 @@ describe("groupAssessments", () => {
       parse,
     );
     expect(rows.map((r) => r.label)).toEqual(["P-2", "P-1"]);
+  });
+});
+
+describe("opening an assessment", () => {
+  it("opens every part of the row that has a server record", () => {
+    const [row] = groupAssessments(
+      [mri("m1", "P-1", "2026-10-22T10:00:00Z")],
+      [other("g1", "P-1", "2026-10-22T10:01:00Z")],
+      [],
+      [voiceRun(1, "P-1", "2026-10-22T10:02:00Z")],
+      parse,
+    );
+    expect(row && openAllParts(row)).toEqual({ label: "P-1", mri: "m1", gait: "g1", tapping: null, voice: 1 });
+  });
+
+  it("opens only the one part from a status cell", () => {
+    expect(onePart("P-2", "tapping", "t9")).toEqual({
+      label: "P-2",
+      mri: null,
+      gait: null,
+      tapping: "t9",
+      voice: null,
+    });
+  });
+
+  it("opens one voice run from the voice cell", () => {
+    expect(oneVoice("P-3", 4)).toEqual({ label: "P-3", mri: null, gait: null, tapping: null, voice: 4 });
   });
 });

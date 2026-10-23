@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { OpenAssessment } from "./homeRows";
 import { ApiError } from "../api/client";
 import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
 import { GaitPicker } from "../components/GaitPicker";
@@ -33,7 +34,7 @@ import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import { voiceFileProblem, voiceFileSummary } from "../voice/voiceFile";
-import { recordVoiceRun } from "../voice/voiceHistory";
+import { findVoiceRun, recordVoiceRun, type VoiceOutcome } from "../voice/voiceHistory";
 import { parseVoiceResults, type VoiceResult } from "../voice/voiceResult";
 import {
   EDDY_PROFILE_LABELS,
@@ -75,8 +76,6 @@ type Screen =
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
 type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
 
-/** How a voice analysis ended: a result (scored or not), or a failure with no result. */
-type VoiceOutcome = { kind: "result"; result: VoiceResult } | { kind: "failed"; message: string };
 
 /** The parts of one assessment that were started, and how each ended once it has. */
 interface PartsState {
@@ -250,11 +249,10 @@ function modalitiesProblem(form: Form): string | null {
   return null;
 }
 
-/** `openId`: open an existing analysis (Home links to one) instead of starting at step 1. */
+/** `open`: an existing assessment (Home links to one) instead of starting at step 1. One part
+ *  opens on its own screen; two or more open together on the parts screen. */
 export function Assessment({
-  openId = null,
-  openGaitId = null,
-  openTappingId = null,
+  open = null,
   eddyProfile,
   confirmFast,
   clinician,
@@ -263,11 +261,7 @@ export function Assessment({
   onOpenTapping,
   onOpenSettings,
 }: {
-  openId?: string | null;
-  /** A gait analysis Home asked to open. */
-  openGaitId?: string | null;
-  /** A tapping analysis Home asked to open. */
-  openTappingId?: string | null;
+  open?: OpenAssessment | null;
   clinician: string;
   /** From Settings: the DTI motion correction new analyses use. */
   eddyProfile: EddyProfile;
@@ -286,46 +280,68 @@ export function Assessment({
   const [parts, setParts] = useState<PartsState | null>(null);
 
   useEffect(() => {
-    if (!openGaitId) return;
-    getGaitRun(openGaitId)
-      .then((run) => {
-        if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: { id: openGaitId, outcome: null }, voice: null, tapping: null });
-          setScreen({ view: "gait-analysis", id: openGaitId });
-        } else {
-          setScreen({ view: "gait-result", outcome: outcomeOf(run) });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openGaitId]);
-
-  useEffect(() => {
-    if (!openTappingId) return;
-    getTappingRun(openTappingId)
-      .then((run) => {
-        if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: null, voice: null, tapping: { id: openTappingId, outcome: null } });
-          setScreen({ view: "tapping-analysis", id: openTappingId });
-        } else {
-          setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(run) });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openTappingId]);
-
-  useEffect(() => {
-    if (!openId) return;
-    getMriStatus(openId)
-      .then(async (item) => {
-        setLabel(item.subject_label);
-        if (isFinal(item.status)) {
-          setScreen({ view: "result", id: item.id, result: await getMriResult(item.id) });
-        } else {
-          setScreen({ view: "analysis", id: item.id });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openId]);
+    if (!open) return;
+    if (open.label) setLabel(open.label);
+    // Voice comes from this session's memory (the backend keeps no voice result).
+    const voice = open.voice !== null ? (findVoiceRun(open.voice)?.outcome ?? null) : null;
+    const count = [open.mri, open.gait, open.tapping, voice].filter(Boolean).length;
+    if (count > 1) {
+      // Each part's card polls its own status and turns into "Open the … result" once ended.
+      setParts({
+        mri: open.mri ? { id: open.mri, result: null } : null,
+        gait: open.gait ? { id: open.gait, outcome: null } : null,
+        voice,
+        tapping: open.tapping ? { id: open.tapping, outcome: null } : null,
+      });
+      setScreen({ view: "parts" });
+      return;
+    }
+    if (voice) {
+      setScreen({ view: "voice-result", outcome: voice });
+      return;
+    }
+    if (open.voice !== null && !open.mri && !open.gait && !open.tapping) {
+      setError("That voice result is no longer in memory: voice results are kept only until the app closes.");
+      return;
+    }
+    const gaitId = open.gait;
+    const tappingId = open.tapping;
+    const mriId = open.mri;
+    if (gaitId) {
+      getGaitRun(gaitId)
+        .then((run) => {
+          if (run.state === "queued" || run.state === "running") {
+            setParts({ mri: null, gait: { id: gaitId, outcome: null }, voice: null, tapping: null });
+            setScreen({ view: "gait-analysis", id: gaitId });
+          } else {
+            setScreen({ view: "gait-result", outcome: outcomeOf(run) });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    } else if (tappingId) {
+      getTappingRun(tappingId)
+        .then((run) => {
+          if (run.state === "queued" || run.state === "running") {
+            setParts({ mri: null, gait: null, voice: null, tapping: { id: tappingId, outcome: null } });
+            setScreen({ view: "tapping-analysis", id: tappingId });
+          } else {
+            setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(run) });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    } else if (mriId) {
+      getMriStatus(mriId)
+        .then(async (item) => {
+          setLabel(item.subject_label);
+          if (isFinal(item.status)) {
+            setScreen({ view: "result", id: item.id, result: await getMriResult(item.id) });
+          } else {
+            setScreen({ view: "analysis", id: item.id });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    }
+  }, [open]);
 
   function go(next: Screen): void {
     setError(null);
@@ -386,10 +402,7 @@ export function Assessment({
   async function analyseVoice(recording: File): Promise<VoiceOutcome> {
     const outcome = await runVoice(recording);
     // The backend keeps no voice result, so Home learns of this run from here (this session only).
-    recordVoiceRun(
-      form.label.trim() || null,
-      outcome.kind === "failed" ? "failed" : outcome.result.kind === "scored" ? "scored" : "abstained",
-    );
+    recordVoiceRun(form.label.trim() || null, outcome);
     return outcome;
   }
 

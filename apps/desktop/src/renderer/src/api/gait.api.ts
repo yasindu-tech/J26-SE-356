@@ -86,3 +86,9 @@ export async function getGaitOverlay(id: string): Promise<Blob> {
 export function listGaitAnalyses(limit = 20): Promise<GaitAnalysisList> {
   return apiFetch<GaitAnalysisList>(`${BASE}?limit=${limit}`);
 }
+
+/** Stops a queued or running gait analysis. The backend records it as failed ("stopped by the
+ *  clinician") at once and ends the work within about a second. An ended analysis is unchanged. */
+export function stopGaitAnalysis(id: string): Promise<GaitAnalysisStatus> {
+  return apiFetch<GaitAnalysisStatus>(`${BASE}/${encodeURIComponent(id)}/stop`, { method: "POST" });
+}

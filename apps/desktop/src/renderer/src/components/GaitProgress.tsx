@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { stopGaitAnalysis } from "../api/gait.api";
+import { StopAnalysis } from "./StopAnalysis";
 import { ApiError } from "../api/client";
 import { getGaitRun } from "../gait/gaitRun";
 import type { GaitRunStatus } from "../gait/gaitTypes";
@@ -120,6 +122,7 @@ export function GaitProgress({
           Leaving this screen does not stop the analysis. It continues in the background and stays in{" "}
           <strong>Home</strong>.
         </p>
+        <StopAnalysis part="gait" onStop={() => stopGaitAnalysis(id)} />
       </section>
     </div>
   );

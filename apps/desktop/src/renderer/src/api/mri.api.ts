@@ -82,3 +82,9 @@ export function getMriResult(id: string): Promise<MriResult> {
 export function listMriAnalyses(limit = 20): Promise<MriAnalysisList> {
   return apiFetch<MriAnalysisList>(`${BASE}?limit=${limit}`);
 }
+
+/** Stops a queued or running MRI analysis. The backend records it as failed ("stopped by the
+ *  clinician") at once and ends the work within about a second. An ended analysis is unchanged. */
+export function stopMriAnalysis(id: string): Promise<MriAnalysisStatus> {
+  return apiFetch<MriAnalysisStatus>(`${BASE}/${encodeURIComponent(id)}/stop`, { method: "POST" });
+}

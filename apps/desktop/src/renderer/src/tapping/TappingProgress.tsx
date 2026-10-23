@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { stopTappingAnalysis } from "../api/tapping.api";
+import { StopAnalysis } from "../components/StopAnalysis";
 import { ApiError } from "../api/client";
 import "../components/GaitProgress.css";
 import { formatElapsed } from "../mri/mriView";
@@ -123,6 +125,7 @@ export function TappingProgress({
           Leaving this screen does not stop the analysis. It continues in the background and stays in{" "}
           <strong>Home</strong>.
         </p>
+        <StopAnalysis part="finger-tapping" onStop={() => stopTappingAnalysis(id)} />
       </section>
     </div>
   );

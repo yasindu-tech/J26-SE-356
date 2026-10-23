@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.config import REPO_ROOT, Settings
+from app.workers.stoppable import Stopped, clean_up_if_stopped, run_stoppable
 
 SCHEMA_VERSION = "gait-result/1"
 CANNOT_START = 2  # predict_video.py's exit code when the model bundle or pose model is unusable
@@ -110,10 +111,12 @@ class SubprocessGaitRunner:
         deadline = time.monotonic() + self.settings.gait_timeout_minutes * 60
         try:
             job.started_file.write_text(json.dumps({"t": time.time()}))
-            done = self._run(self.command(job), deadline)
+            done = self._run(self.command(job), deadline, job.folder)
             if done.returncode == CANNOT_START:
                 error = "the gait analysis could not start: the model files are missing or unusable"
             self._draw_overlay(job, deadline)
+        except Stopped:
+            pass  # the request side has recorded it; the folder is removed below
         except subprocess.TimeoutExpired:
             error = "the gait analysis timed out"
         except OSError:
@@ -121,6 +124,8 @@ class SubprocessGaitRunner:
         finally:
             job.video.unlink(missing_ok=True)  # the uploaded video itself is never kept
             job.trace_file.unlink(missing_ok=True)
+        if clean_up_if_stopped(job.folder):
+            return
         if job.predict_file.exists():
             job.predict_file.replace(job.result_file)
         else:
@@ -128,13 +133,12 @@ class SubprocessGaitRunner:
             job.result_file.write_text(json.dumps(failed_result(error)))
 
     @staticmethod
-    def _run(cmd: list[str], deadline: float) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(
+    def _run(cmd: list[str], deadline: float, folder: Path) -> subprocess.CompletedProcess[bytes]:
+        return run_stoppable(  # tool output is not logged
             cmd,
             cwd=REPO_ROOT,
-            capture_output=True,  # tool output is not logged
-            timeout=max(1.0, deadline - time.monotonic()),
-            check=False,
+            timeout_s=max(1.0, deadline - time.monotonic()),
+            folder=folder,
         )
 
     def _draw_overlay(self, job: GaitJob, deadline: float) -> None:
@@ -142,7 +146,7 @@ class SubprocessGaitRunner:
         if not job.trace_file.exists():
             return
         try:
-            made = self._run(self.overlay_command(job), deadline).returncode == 0
+            made = self._run(self.overlay_command(job), deadline, job.folder).returncode == 0
         except (subprocess.TimeoutExpired, OSError):
             made = False
         if not made:

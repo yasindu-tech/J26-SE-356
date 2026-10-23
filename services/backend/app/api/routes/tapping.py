@@ -99,6 +99,22 @@ def get_status(
     return tapping_service.get_status(db, clinician, analysis_id, settings)
 
 
+@router.post(
+    "/analyses/{analysis_id}/stop",
+    response_model=TappingAnalysisStatus,
+    status_code=status.HTTP_200_OK,
+    summary="Stop a queued or running tapping analysis (it is recorded as failed: stopped)",
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def stop_analysis(
+    analysis_id: uuid.UUID,
+    clinician: Clinician = Depends(get_current_clinician),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> TappingAnalysisStatus:
+    return tapping_service.stop_analysis(db, clinician, analysis_id, settings)
+
+
 @router.get(
     "/analyses/{analysis_id}/result",
     response_model=TappingResult,
