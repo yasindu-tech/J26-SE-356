@@ -34,7 +34,7 @@ import type { GaitResult, GaitRunStatus } from "../gait/gaitTypes";
 import { asSentence, gaitStateText, videoProblem, videoSummary } from "../gait/gaitView";
 import type { EddyProfile, MriResult } from "../mri/mriTypes";
 import { voiceFileProblem, voiceFileSummary } from "../voice/voiceFile";
-import { recordVoiceRun } from "../voice/voiceHistory";
+import { findVoiceRun, recordVoiceRun, type VoiceOutcome } from "../voice/voiceHistory";
 import { parseVoiceResults, type VoiceResult } from "../voice/voiceResult";
 import {
   EDDY_PROFILE_LABELS,
@@ -76,8 +76,6 @@ type Screen =
 /** How a gait analysis ended: a record (scored or not), or a failure with no record. */
 type GaitOutcome = { kind: "record"; id: string; result: GaitResult } | { kind: "failed"; message: string };
 
-/** How a voice analysis ended: a result (scored or not), or a failure with no result. */
-type VoiceOutcome = { kind: "result"; result: VoiceResult } | { kind: "failed"; message: string };
 
 /** The parts of one assessment that were started, and how each ended once it has. */
 interface PartsState {
@@ -284,16 +282,26 @@ export function Assessment({
   useEffect(() => {
     if (!open) return;
     if (open.label) setLabel(open.label);
-    const count = [open.mri, open.gait, open.tapping].filter(Boolean).length;
+    // Voice comes from this session's memory (the backend keeps no voice result).
+    const voice = open.voice !== null ? (findVoiceRun(open.voice)?.outcome ?? null) : null;
+    const count = [open.mri, open.gait, open.tapping, voice].filter(Boolean).length;
     if (count > 1) {
       // Each part's card polls its own status and turns into "Open the … result" once ended.
       setParts({
         mri: open.mri ? { id: open.mri, result: null } : null,
         gait: open.gait ? { id: open.gait, outcome: null } : null,
-        voice: null, // the backend keeps no voice result, so it cannot be reopened
+        voice,
         tapping: open.tapping ? { id: open.tapping, outcome: null } : null,
       });
       setScreen({ view: "parts" });
+      return;
+    }
+    if (voice) {
+      setScreen({ view: "voice-result", outcome: voice });
+      return;
+    }
+    if (open.voice !== null && !open.mri && !open.gait && !open.tapping) {
+      setError("That voice result is no longer in memory: voice results are kept only until the app closes.");
       return;
     }
     const gaitId = open.gait;
@@ -394,10 +402,7 @@ export function Assessment({
   async function analyseVoice(recording: File): Promise<VoiceOutcome> {
     const outcome = await runVoice(recording);
     // The backend keeps no voice result, so Home learns of this run from here (this session only).
-    recordVoiceRun(
-      form.label.trim() || null,
-      outcome.kind === "failed" ? "failed" : outcome.result.kind === "scored" ? "scored" : "abstained",
-    );
+    recordVoiceRun(form.label.trim() || null, outcome);
     return outcome;
   }
 

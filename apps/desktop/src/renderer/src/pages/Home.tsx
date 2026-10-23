@@ -8,7 +8,7 @@ import type { GaitAnalysisStatus } from "../gait/gaitTypes";
 import type { AnalysisStatus, MriAnalysisStatus } from "../mri/mriTypes";
 import type { TappingAnalysisStatus } from "../tapping/tappingTypes";
 import { useVoiceRuns } from "../voice/voiceHistory";
-import { groupAssessments, onePart, openAllParts, type OpenAssessment } from "./homeRows";
+import { groupAssessments, onePart, oneVoice, openAllParts, type OpenAssessment } from "./homeRows";
 import {
   STEP_LABELS,
   greeting,
@@ -269,12 +269,16 @@ export function Home({
                       <PartCell part={row.tapping} onOpen={(id) => onOpenTapping(id, row.label)} />
                       <td>
                         {row.voice ? (
-                          <span
-                            className={`mri__tag mri__tag--${statusLabel(row.voice.status).tone}`}
-                            title="Voice results are not stored; this is from this session"
+                          <button
+                            type="button"
+                            className="home__cell"
+                            title="Open this voice result (kept until the app closes; the server stores none)"
+                            onClick={() => row.voice && onOpenAssessment(oneVoice(row.label, row.voice.id))}
                           >
-                            {statusLabel(row.voice.status).text}
-                          </span>
+                            <span className={`mri__tag mri__tag--${statusLabel(row.voice.status).tone}`}>
+                              {statusLabel(row.voice.status).text}
+                            </span>
+                          </button>
                         ) : (
                           <span className="home__none" title="Not added to this analysis">—</span>
                         )}
@@ -285,7 +289,7 @@ export function Home({
                         fast={row.mri?.eddy_profile === "fast"}
                       />
                       <td>
-                        {row.mri || row.gait || row.tapping ? (
+                        {row.mri || row.gait || row.tapping || row.voice ? (
                           <button
                             type="button"
                             className="home__link"

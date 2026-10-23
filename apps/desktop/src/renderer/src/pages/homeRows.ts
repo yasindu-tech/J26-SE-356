@@ -92,26 +92,39 @@ export function groupAssessments(
   return rows.sort((a, b) => b.startedAt - a.startedAt);
 }
 
-/** The analyses of one assessment to open (any of them may be null). Voice has no server
- *  record, so it cannot be reopened. */
+/** The analyses of one assessment to open (any of them may be null). Voice is the id of a run
+ *  kept in this session's memory: the backend stores no voice result. */
 export interface OpenAssessment {
   label: string | null;
   mri: string | null;
   gait: string | null;
   tapping: string | null;
+  voice: number | null;
 }
 
-/** What "Open" on a row opens: every part of that assessment that has a server record. */
+/** What "Open" on a row opens: every part of that assessment. */
 export function openAllParts(row: AssessmentRow): OpenAssessment {
   return {
     label: row.label,
     mri: row.mri?.id ?? null,
     gait: row.gait?.id ?? null,
     tapping: row.tapping?.id ?? null,
+    voice: row.voice?.id ?? null,
   };
 }
 
+const NOTHING = { mri: null, gait: null, tapping: null, voice: null } as const;
+
 /** What a single status cell opens: that one part. */
-export function onePart(label: string | null, part: "mri" | "gait" | "tapping", id: string): OpenAssessment {
-  return { label, mri: null, gait: null, tapping: null, [part]: id };
+export function onePart(
+  label: string | null,
+  part: "mri" | "gait" | "tapping",
+  id: string,
+): OpenAssessment {
+  return { label, ...NOTHING, [part]: id };
+}
+
+/** The voice cell opens that one voice run (from this session's memory). */
+export function oneVoice(label: string | null, runId: number): OpenAssessment {
+  return { label, ...NOTHING, voice: runId };
 }
