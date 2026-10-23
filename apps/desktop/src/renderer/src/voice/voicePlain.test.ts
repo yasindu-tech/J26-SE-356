@@ -152,6 +152,13 @@ describe("reliabilityLine and qualitySummary", () => {
     );
   });
 
+  it("explains the small training set in words, never with the count", () => {
+    for (const r of [scored(), scored({ ciLower: 0.2, ciUpper: 0.98 })]) {
+      expect(reliabilityLine(r)).toContain("small group of people");
+      expect(reliabilityLine(r)).not.toContain("61");
+    }
+  });
+
   it("warns on every score that other voice problems can raise it", () => {
     expect(reliabilityLine(scored())).toContain(OTHER_CONDITIONS_LINE);
     expect(reliabilityLine(scored({ ciLower: 0.2, ciUpper: 0.98 }))).toContain(

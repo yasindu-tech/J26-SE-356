@@ -165,7 +165,7 @@ export function VoiceResultCard({ result }: { result: VoiceResult }) {
           <ul className="voice-card__caveats">
             <li>{result.note}</li>
             <li>
-              Trained on {result.nTraining} people {trainingSource(result.pipelineVersion)}: people
+              Trained on a  group of people {trainingSource(result.pipelineVersion)}: people
               already known to have Parkinson&rsquo;s versus healthy controls, not an early-stage
               screening population.
             </li>

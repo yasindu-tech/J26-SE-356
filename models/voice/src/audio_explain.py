@@ -143,8 +143,8 @@ def uncertainty_reasons(
     incomparable_used: list[str] | None = None,
 ) -> list[str]:
     reasons = [
-        f"The model was trained on only {n_training} people ({', '.join(datasets)}), "
-        "so every estimate is uncertain."
+        # The training size stays in the model card; the card explains it in words only.
+        "The model was trained on a  group of people, so every estimate is uncertain."
     ]
     if incomparable_used:
         reasons.append(

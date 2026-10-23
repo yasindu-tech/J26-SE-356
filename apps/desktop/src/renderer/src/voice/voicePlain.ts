@@ -54,7 +54,8 @@ export const OTHER_CONDITIONS_LINE =
   "A cold, sore throat, asthma or another voice, throat or breathing problem can also raise the score.";
 
 export function reliabilityLine(result: VoiceResult): string {
-  const trained = `The model was trained on only ${result.nTraining} people, so treat this result with caution.`;
+  const trained =
+    "The model was trained on a  group of people, so treat this result with caution.";
   if (result.kind === "abstained") return trained;
   const width = result.ciUpper - result.ciLower;
   const range =

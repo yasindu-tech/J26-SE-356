@@ -68,10 +68,11 @@ def _reasons(fmt: str, vowel_s: float, ci: tuple[float, float], unusual: list[st
     return audio_explain.uncertainty_reasons(result, info, unusual, 60, ["figshare"])
 
 
-def test_uncertainty_always_names_the_training_size_and_other_voice_conditions() -> None:
+def test_uncertainty_always_explains_the_small_training_set_and_other_conditions() -> None:
     reasons = _reasons("wav", 3.0, (0.4, 0.5), [])
     assert len(reasons) == 2
-    assert "60 people" in reasons[0]
+    assert " group of people" in reasons[0]
+    assert "60" not in reasons[0]  # the training count is never shown on the card
     assert "cold" in reasons[1] and "asthma" in reasons[1]
     assert not BANNED.search(reasons[1])
 
