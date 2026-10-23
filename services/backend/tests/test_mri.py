@@ -228,6 +228,52 @@ def test_upload_that_is_not_a_zip_is_refused(
     assert runner.jobs == []
 
 
+def _zip_of(files: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, body in files.items():
+            z.writestr(name, body)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"notes/readme.txt": b"hello", "photo.jpg": b"\xff\xd8" + b"\x00" * 300},
+        {"empty/": b""},
+        {"scan/IM0001": b"\x00" * 200},  # no .dcm name and no DICM preamble
+    ],
+)
+def test_zip_without_dicom_files_is_refused_before_anything_runs(
+    client: TestClient, seeded_clinician: Clinician, mri_env, files
+) -> None:
+    _, runner = mri_env
+    r = upload(client, auth(client), data=_zip_of(files))
+    assert r.status_code == 400 and r.json()["error"]["code"] == "INVALID_UPLOAD"
+    assert "no DICOM files" in r.json()["error"]["message"]
+    assert runner.jobs == []
+
+
+def test_dicom_file_without_a_dcm_name_is_accepted_by_its_preamble(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    _, runner = mri_env
+    body = b"\x00" * 128 + b"DICM" + b"\x00" * 50
+    r = upload(client, auth(client), data=_zip_of({"study/series1/IM0001": body}))
+    assert r.status_code == 202
+    assert len(runner.jobs) == 1
+
+
+def test_macos_junk_in_the_zip_does_not_count_as_dicom(
+    client: TestClient, seeded_clinician: Clinician, mri_env
+) -> None:
+    _, runner = mri_env
+    data = _zip_of({"__MACOSX/study/._IM0001.dcm": b"\x00" * 200, ".DS_Store": b"\x00" * 200})
+    r = upload(client, auth(client), data=data)
+    assert r.status_code == 400
+    assert runner.jobs == []
+
+
 def test_upload_over_the_limit_is_refused(
     client: TestClient, seeded_clinician: Clinician, mri_env
 ) -> None:
