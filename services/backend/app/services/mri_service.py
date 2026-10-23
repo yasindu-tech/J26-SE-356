@@ -23,6 +23,7 @@ from app.core.errors import (
     InvalidUploadError,
     MriAnalysisNotFoundError,
     MriResultNotReadyError,
+    NoDicomInUploadError,
     UploadTooLargeError,
 )
 from app.core.time import utc_now
@@ -34,6 +35,10 @@ from app.workers.mri_runner import MriJob, MriRunner
 
 STEPS = ["convert", "t1", "dti", "features", "score", "explain"]  # predict_scan.STEPS
 CHUNK = 1024 * 1024
+DICOM_MAGIC_OFFSET = 128  # a DICOM file starts with a 128-byte preamble, then "DICM"
+DICOM_MAGIC = b"DICM"
+DICOM_SCAN_LIMIT = 500  # files looked at before giving up; one hit is enough
+IGNORED_NAMES = ("__MACOSX/", ".DS_Store", "Thumbs.db")
 
 
 def _folder(settings: Settings, analysis_id: uuid.UUID) -> Path:
@@ -59,6 +64,36 @@ def save_upload(src: BinaryIO, dest: Path, max_bytes: int) -> None:
     if size == 0 or not zipfile.is_zipfile(dest):
         dest.unlink(missing_ok=True)
         raise InvalidUploadError
+    if not looks_like_dicom_zip(dest):
+        dest.unlink(missing_ok=True)
+        raise NoDicomInUploadError
+
+
+def looks_like_dicom_zip(path: Path) -> bool:
+    """True when the zip holds at least one file that is a DICOM file.
+
+    A file counts if bytes 128-131 read "DICM" (the DICOM preamble), or if its name ends in
+    ".dcm" (some writers omit the preamble; dcm2niix decides later). Only the first 132 bytes
+    of each file are read, and at most DICOM_SCAN_LIMIT files, so a large zip is not unpacked.
+    This is a cheap guard against a wrong file, not a check that the series are usable or
+    that they belong to one person: the analysis still decides that.
+    """
+    with zipfile.ZipFile(path) as z:
+        scanned = 0
+        for info in z.infolist():
+            name = info.filename
+            if info.is_dir() or any(part in name for part in IGNORED_NAMES):
+                continue
+            if name.lower().endswith(".dcm"):
+                return True
+            with z.open(info) as f:
+                head = f.read(DICOM_MAGIC_OFFSET + len(DICOM_MAGIC))
+            if head[DICOM_MAGIC_OFFSET:] == DICOM_MAGIC:
+                return True
+            scanned += 1
+            if scanned >= DICOM_SCAN_LIMIT:
+                return False
+    return False
 
 
 def create_analysis(

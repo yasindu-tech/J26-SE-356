@@ -91,6 +91,12 @@ class InvalidUploadError(AppError):
     status_code, code, message = 400, "INVALID_UPLOAD", "The upload must be a zip of DICOM files"
 
 
+class NoDicomInUploadError(InvalidUploadError):
+    """A real zip, but nothing in it looks like a DICOM file."""
+
+    message = "The zip has no DICOM files in it. Upload one person's DICOM folder as a zip"
+
+
 class UploadTooLargeError(AppError):
     status_code, code, message = 413, "UPLOAD_TOO_LARGE", "The upload is larger than allowed"
 
