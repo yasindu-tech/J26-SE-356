@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.config import REPO_ROOT, Settings
+from app.workers.stoppable import Stopped, clean_up_if_stopped, run_stoppable
 
 SCHEMA_VERSION = "tapping-result/1"
 MAX_RESULT_BYTES = 20 * 1024 * 1024
@@ -89,18 +90,21 @@ class SubprocessTappingRunner:
         result: dict | None = None
         try:
             job.started_file.write_text(json.dumps({"t": time.time()}))
-            done = subprocess.run(
+            done = run_stoppable(  # the program's output is not logged
                 self.command(job),
                 cwd=REPO_ROOT,
-                capture_output=True,  # the program's output is not logged
-                timeout=self.settings.tapping_timeout_minutes * 60,
-                check=False,
+                timeout_s=self.settings.tapping_timeout_minutes * 60,
+                folder=job.folder,
             )
             result = valid_result(done.stdout.decode("utf-8", errors="replace"))
+        except Stopped:
+            pass  # the request side has recorded it; the folder is removed below
         except subprocess.TimeoutExpired:
             reason = "The analysis took too long and was stopped."
         except OSError:
             reason = "The analysis could not start."
         finally:
             job.video.unlink(missing_ok=True)  # the uploaded video itself is never kept
+        if clean_up_if_stopped(job.folder):
+            return
         job.result_file.write_text(json.dumps(result or failed_result(reason, job.target)))

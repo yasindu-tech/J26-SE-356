@@ -10,12 +10,12 @@ from app.core.database import get_db
 from app.models.clinician import Clinician
 from app.schemas.errors import ErrorResponse
 from app.schemas.mri import (
+    SUBJECT_LABEL_PATTERN,
     EddyProfile,
     MriAnalysisCreated,
     MriAnalysisList,
     MriAnalysisStatus,
     MriResult,
-    SUBJECT_LABEL_PATTERN,
 )
 from app.services import mri_service
 from app.workers.mri_runner import MriRunner
@@ -105,6 +105,22 @@ def get_status(
     settings: Settings = Depends(get_settings),
 ) -> MriAnalysisStatus:
     return mri_service.get_status(db, clinician, analysis_id, settings)
+
+
+@router.post(
+    "/analyses/{analysis_id}/stop",
+    response_model=MriAnalysisStatus,
+    status_code=status.HTTP_200_OK,
+    summary="Stop a queued or running mri analysis (it is recorded as failed: stopped)",
+    responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
+)
+def stop_analysis(
+    analysis_id: uuid.UUID,
+    clinician: Clinician = Depends(get_current_clinician),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> MriAnalysisStatus:
+    return mri_service.stop_analysis(db, clinician, analysis_id, settings)
 
 
 @router.get(

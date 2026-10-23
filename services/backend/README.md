@@ -110,6 +110,7 @@ sex (multipart form), and answers `202` with an analysis ID. The analysis runs
 |---|---|
 | `GET /api/v1/mri/analyses` | your analyses, newest first |
 | `GET /api/v1/mri/analyses/{id}` | status and progress: steps, done, current step, note |
+| `POST /api/v1/mri/analyses/{id}/stop` | stop a queued or running analysis: recorded as `failed` ("Stopped by the clinician…") at once; the worker ends the script and everything it started within about a second and deletes what it left. An ended analysis is returned unchanged |
 | `GET /api/v1/mri/analyses/{id}/result` | the `MriResult`: feature vector (raw and harmonised), raw score in log-odds with 95% interval, explanation, model card. `409` until finished |
 
 The upload form also takes an optional `eddy_profile` field: `full` (default) or `fast`. It
@@ -148,6 +149,7 @@ worker (`app/workers/gait_runner.py`); it takes about a minute.
 |---|---|
 | `GET /api/v1/gait/analyses` | your analyses, newest first |
 | `GET /api/v1/gait/analyses/{id}` | status (`scored`, `abstained` with the reason, `failed`) and elapsed time |
+| `POST /api/v1/gait/analyses/{id}/stop` | stop a queued or running analysis: recorded as `failed` ("Stopped by the clinician…") at once; the worker ends the script and everything it started within about a second and deletes what it left. An ended analysis is returned unchanged |
 | `GET /api/v1/gait/analyses/{id}/result` | the `GaitResult` (`gait-result/1`). `409` until finished |
 | `GET /api/v1/gait/analyses/{id}/overlay` | `video/mp4`: the walk with the skeleton and heel strikes drawn on it. `404` if none |
 
@@ -169,6 +171,7 @@ field `file`), an optional `target` (`ge2`, the primary study target, or `ge1`) 
 |---|---|
 | `GET /api/v1/tapping/analyses` | your analyses, newest first |
 | `GET /api/v1/tapping/analyses/{id}` | status (`scored`, `abstained` with the reason, `failed`) and elapsed time |
+| `POST /api/v1/tapping/analyses/{id}/stop` | stop a queued or running analysis: recorded as `failed` ("Stopped by the clinician…") at once; the worker ends the script and everything it started within about a second and deletes what it left. An ended analysis is returned unchanged |
 | `GET /api/v1/tapping/analyses/{id}/result` | the `TappingResult` (`tapping-result/1`): score, contributions, curves, one-page PDF (base64). `409` until finished |
 
 - The video is saved under its analysis ID (its own name is never kept) in

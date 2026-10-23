@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.config import REPO_ROOT, Settings
+from app.workers.stoppable import Stopped, clean_up_if_stopped, run_stoppable
 
 
 @dataclass(frozen=True)
@@ -77,13 +78,14 @@ class SubprocessRunner:
 
     def run(self, job: MriJob) -> None:
         try:
-            subprocess.run(
+            run_stoppable(  # tool output can contain file names: kept in memory, not logged
                 self.command(job),
                 cwd=REPO_ROOT,
-                capture_output=True,  # tool output can contain file names: not logged
-                timeout=self.settings.mri_timeout_hours * 3600,
-                check=False,
+                timeout_s=self.settings.mri_timeout_hours * 3600,
+                folder=job.folder,
             )
+        except Stopped:
+            pass  # the request side has recorded it; the folder is removed below
         except (OSError, subprocess.TimeoutExpired) as exc:
             reason = (
                 "timed out" if isinstance(exc, subprocess.TimeoutExpired) else "could not start"
@@ -104,6 +106,8 @@ class SubprocessRunner:
             # converted or processed image are removed as soon as the analysis ends.
             job.upload.unlink(missing_ok=True)
             shutil.rmtree(job.folder / "work", ignore_errors=True)
+        if clean_up_if_stopped(job.folder):
+            return
         if not job.result_file.exists():
             job.result_file.write_text(
                 json.dumps(

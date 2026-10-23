@@ -30,7 +30,8 @@ from app.models.clinician import Clinician
 from app.models.tapping_analysis import TappingAnalysis
 from app.schemas.mri import FINAL_STATUSES
 from app.schemas.tapping import TAPPING_VIDEO_TYPES, TappingAnalysisStatus
-from app.workers.tapping_runner import TappingJob, TappingRunner
+from app.workers.stoppable import STOPPED_MESSAGE, request_stop
+from app.workers.tapping_runner import TappingJob, TappingRunner, failed_result
 
 CHUNK = 1024 * 1024
 NOT_A_VIDEO = f"The upload must be a video file ({', '.join(TAPPING_VIDEO_TYPES)})"
@@ -181,6 +182,21 @@ def get_status(
 ) -> TappingAnalysisStatus:
     row = _own(db, clinician, analysis_id)
     refresh_from_disk(db, row, settings)
+    return _status(row)
+
+
+def stop_analysis(
+    db: Session, clinician: Clinician, analysis_id: uuid.UUID, settings: Settings
+) -> TappingAnalysisStatus:
+    """Stop a queued or running analysis: recorded as failed at once; the worker ends the
+    program and deletes what it left. An analysis that has already ended is returned as it is."""
+    row = _own(db, clinician, analysis_id)
+    refresh_from_disk(db, row, settings)
+    if row.status not in FINAL_STATUSES:
+        request_stop(_folder(settings, row.id))
+        row.result_json = json.dumps(failed_result(STOPPED_MESSAGE, row.target))
+        _audit(db, clinician, "tapping_stop", row.id)
+        _finish(db, row, "failed", STOPPED_MESSAGE)
     return _status(row)
 
 

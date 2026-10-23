@@ -32,6 +32,7 @@ from app.models.clinician import Clinician
 from app.models.mri_analysis import MriAnalysis
 from app.schemas.mri import FINAL_STATUSES, MriAnalysisStatus
 from app.workers.mri_runner import MriJob, MriRunner
+from app.workers.stoppable import STOPPED_MESSAGE, request_stop
 
 STEPS = ["convert", "t1", "dti", "features", "score", "explain"]  # predict_scan.STEPS
 CHUNK = 1024 * 1024
@@ -204,6 +205,30 @@ def get_status(
 ) -> MriAnalysisStatus:
     row = _own(db, clinician, analysis_id)
     return _status(row, refresh_from_disk(db, row, settings))
+
+
+def stop_analysis(
+    db: Session, clinician: Clinician, analysis_id: uuid.UUID, settings: Settings
+) -> MriAnalysisStatus:
+    """Stop a queued or running analysis. It is recorded as failed ("stopped by the clinician")
+    at once; the worker ends the script within about a second and deletes what it left. An
+    analysis that has already ended is returned as it is."""
+    row = _own(db, clinician, analysis_id)
+    refresh_from_disk(db, row, settings)
+    if row.status not in FINAL_STATUSES:
+        request_stop(_folder(settings, row.id))
+        row.status, row.error, row.finished_at = "failed", STOPPED_MESSAGE, utc_now()
+        row.result_json = json.dumps(
+            {
+                "modality": "mri",
+                "schema_version": "mri-result/1",
+                "status": "failed",
+                "error": STOPPED_MESSAGE,
+            }
+        )
+        _audit(db, clinician, "mri_stop", row.id)
+        db.commit()
+    return _status(row, None)
 
 
 def list_analyses(
