@@ -13,7 +13,6 @@ import {
   PART_CAPTIONS,
   PART_STATE_LABELS,
   PART_TITLES,
-  STRENGTH_LABELS,
   driverText,
   eddyMinutes,
   partProblems,
@@ -56,17 +55,10 @@ function ReadingCard({ result }: { result: MriResult }) {
       <p className="eyebrow">MRI · {modelSetLabel(result.model_set)} model · research prototype</p>
       <div className="mr__reading-row">
         <h2 className={`mr__reading-head mr__reading-head--${reading.lean}`}>{reading.headline}</h2>
-        {reading.strength && (
-          <span className={`mr__strength mr__strength--${reading.strength}`}>
-            {STRENGTH_LABELS[reading.strength]}
-          </span>
-        )}
       </div>
-      <p className="mr__reading-detail">{reading.detail}</p>
-      {(reading.agreement || reading.trackRecord) && (
+      {reading.trackRecord && (
         <ul className="mr__facts">
-          {reading.agreement && <li>{reading.agreement}</li>}
-          {reading.trackRecord && <li>{reading.trackRecord}</li>}
+          <li>{reading.trackRecord}</li>
         </ul>
       )}
     </section>
