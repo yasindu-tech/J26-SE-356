@@ -26,6 +26,11 @@ data/**/*
 *.h5
 models/**/artifacts/
 models/**/checkpoints/
+# Trained bundles and the zips they travel in (scripts/export_models.py): derived from DUA
+# data, shared only on the team drive. data/models/ is also covered by data/**/* above.
+data/models/
+*.zip
+pdxai_models_*/
 mlruns/
 wandb/
 

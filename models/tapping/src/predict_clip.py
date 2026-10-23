@@ -2,6 +2,8 @@
 `python predict_clip.py --video <path> --target ge2` runs the SAME functions as the Streamlit
 demo (upload_pipeline, scoring, tap_curve, summary_pdf) and writes one "tapping-result/1" object
 to stdout. Progress goes to stderr as "STAGE n/N label". No file name, path or label is written.
+The models come from the installed bundle (data/models/tapping/CURRENT, tapping_bundle.py) when
+there is one, every file hash-checked; otherwise from data/processed on the training laptop.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import json
 import re
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +31,7 @@ import resources as res  # noqa: E402
 import scoring as sc  # noqa: E402
 import summary_pdf as pdf  # noqa: E402
 import tap_curve as tc  # noqa: E402
+import tapping_bundle as tb  # noqa: E402
 import texts as tx  # noqa: E402
 import upload_pipeline as up  # noqa: E402
 
@@ -46,9 +50,44 @@ STAGES = (
 )
 GENERIC = "The analysis could not be completed for this video."
 MODELS_MISSING = "The research models for the score are not available on this computer."
+MODELS_CHANGED = "The research models on this computer failed their integrity check."
 PATHLIKE = re.compile(r"[/\\]|\.(?:mp4|mov|m4v|task|csv|txt|json|parquet)\b", re.I)
 
 Progress = Callable[[int, str], None]
+
+
+@dataclass(frozen=True)
+class Models:
+    """What scoring one clip needs, from the bundle or from data/processed."""
+
+    model: Any
+    folds: list[Any]
+    context: Callable[[dict[str, float]], dict[str, Any]]
+    auroc: dict[str, float]
+    model_sha8: str
+    folds_sha8: str
+    input_sha8: list[str]
+
+
+def bundle_models(bundle: tb.TappingBundle, target: str) -> Models:
+    return Models(
+        model=bundle.model(target), folds=bundle.folds(target),
+        context=lambda f: tb.context(f, bundle.reference), auroc=bundle.auroc(target),
+        model_sha8=bundle.model_sha8(target), folds_sha8=bundle.folds_sha8(target),
+        input_sha8=[bundle.folds_sha8(target), bundle.features_sha8(target)],
+    )  # fmt: skip
+
+
+def processed_models(target: str) -> Models:
+    reference = sc.load_reference()
+    folds_sha8 = res.fold_sha8(target)
+    features = da.cvs.file_sha256(da.processed_root() / "features.csv")[: da.cvs.HASH_LEN]
+    return Models(
+        model=res.load_demo_model(target), folds=res.load_fold_models(target),
+        context=lambda f: sc.context(f, reference), auroc=sc.cv_auroc(target),
+        model_sha8=res.model_sha8(target), folds_sha8=folds_sha8,
+        input_sha8=[x for x in (folds_sha8, features) if x],
+    )  # fmt: skip
 
 
 def num(value: Any) -> float | None:
@@ -73,6 +112,8 @@ def thin(n: int, limit: int = MAX_POINTS) -> np.ndarray:
 
 def safe_reason(err: Exception) -> str:
     """The message of a known error when it is plain English without a path; else a fixed text."""
+    if isinstance(err, tb.BundleError):
+        return MODELS_CHANGED if tb.installed(tb.bundle_root()) else MODELS_MISSING
     if isinstance(err, up.UploadError | sc.ScoreError):
         text = str(err)
     elif isinstance(err, da.DemoDataError):
@@ -107,8 +148,8 @@ def quality_part(r: up.UploadResult, notes: list[str]) -> dict[str, Any]:
 
 
 def build_result(
-    data: bytes, suffix: str, target: str, factory: Any, model: Any, folds: list[Any],
-    reference: Any, model_sha8: str, folds_sha8: str, today: str, progress: Progress,
+    data: bytes, suffix: str, target: str, factory: Any, models: Models, today: str,
+    progress: Progress,
 ) -> dict[str, Any]:  # fmt: skip
     """The result object of one video; raises the demo's own errors, which `run` turns into a
     failed result."""
@@ -117,12 +158,12 @@ def build_result(
     r = analysis.result
     progress(3, STAGES[2])
     features = sc.upload_features(r)
-    result = sc.score(features, model, folds)
+    result = sc.score(features, models.model, models.folds)
     progress(4, STAGES[3])
-    explained = sc.explain(features, model)
-    rows = sc.contributions(features, explained["shap"], sc.context(features, reference))
+    explained = sc.explain(features, models.model)
+    rows = sc.contributions(features, explained["shap"], models.context(features))
     sentences = sc.wording(rows)
-    auroc = sc.cv_auroc(target)
+    auroc = models.auroc
     progress(5, STAGES[4])
     curve = tc.curve_for_upload(r)
     title = f"Contributions to the model score (clip {r.upload_ref})"
@@ -148,9 +189,7 @@ def build_result(
         signal_png=up.figure_png(up.signal_figure(r, compact=True)),
         curve_png=up.figure_png(tc.curve_figure(curve, r.upload_ref, True)),
         curve_count=tc.count_sentence(curve), curve_slope=tc.slope_sentence(curve),
-        model_sha8=model_sha8,
-        input_sha8=[x for x in (folds_sha8, da.cvs.file_sha256(da.processed_root() / "features.csv")
-                                [: da.cvs.HASH_LEN]) if x],
+        model_sha8=models.model_sha8, input_sha8=models.input_sha8,
     )  # fmt: skip
     pdf_bytes = pdf.build_pdf(summary)
     s = thin(len(r.t))
@@ -179,7 +218,7 @@ def build_result(
                    "peak_t": nums(r.peak_t[p]), "peak_v": nums(r.peak_v[p])},
         "preview_frames": [{"t": num(t), "jpeg_base64": jpeg_b64(f)}
                            for t, f in zip(r.preview_times, analysis.frames, strict=True)],
-        "model": {"demo_model_sha8": model_sha8, "folds_sha8": folds_sha8},
+        "model": {"demo_model_sha8": models.model_sha8, "folds_sha8": models.folds_sha8},
         "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
     }  # fmt: skip
 
@@ -196,13 +235,15 @@ def run(video: Path, target: str, progress: Progress, today: str | None = None) 
             raise up.UploadError("Use an mp4, mov or m4v video.")
         if len(data) > up.MAX_BYTES:
             raise up.UploadError(f"The video is larger than {up.MAX_BYTES // (1024 * 1024)} MB.")
-        factory = res.make_landmarker()
-        model = res.load_demo_model(target)
-        folds = res.load_fold_models(target)
-        reference = sc.load_reference()
+        root = tb.bundle_root()
+        if tb.installed(root):  # a broken bundle fails here; it never falls back to data/
+            bundle = tb.load(root)
+            factory, models = res.make_landmarker(bundle.landmarker), bundle_models(bundle, target)
+        else:
+            factory, models = res.make_landmarker(), processed_models(target)
         return build_result(
-            data, suffix, target, factory, model, folds, reference, res.model_sha8(target),
-            res.fold_sha8(target), today or datetime.date.today().isoformat(), progress,
+            data, suffix, target, factory, models, today or datetime.date.today().isoformat(),
+            progress,
         )  # fmt: skip
     except OSError:
         return failure("The video could not be read.", target, ref)
