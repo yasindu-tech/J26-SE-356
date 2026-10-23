@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/client";
-import { getMriResult, getMriStatus } from "../api/mri.api";
+import { getMriResult, getMriStatus, stopMriAnalysis } from "../api/mri.api";
 import { MRI_POLL_INTERVAL_MS } from "../constants/config";
 import type { MriAnalysisStatus, MriResult } from "../mri/mriTypes";
 import { MRI_STEPS } from "../mri/mriTypes";
@@ -14,6 +14,7 @@ import {
   stepState,
 } from "../mri/mriView";
 import { InfoTip } from "./InfoTip";
+import { StopAnalysis } from "./StopAnalysis";
 import "../pages/MriAnalysis.css";
 
 // The MRI part's progress view: step bar and what the analysis service last reported.
@@ -122,7 +123,7 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
               elapsed{started ? ` · started ${formatClock(started)}` : ""}
               <InfoTip label="Can I leave this screen?">
                 Leaving this screen does not stop the analysis. It continues in the background and
-                stays in Home.
+                stays in Home. To end it, use &ldquo;Stop this analysis&rdquo; below.
               </InfoTip>
             </span>
           </div>
@@ -161,6 +162,7 @@ export function ProgressPanel({ id, onFinished, onError }: ProgressPanelProps) {
               : `Last update from the analysis service ${sinceContact} s ago`}
           </span>
         </div>
+        <StopAnalysis part="MRI" onStop={() => stopMriAnalysis(id)} />
       </section>
     </div>
   );

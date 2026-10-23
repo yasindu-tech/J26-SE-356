@@ -1,0 +1,45 @@
+/* Stop control under a running part. Colours from the shared tokens; red only for the
+   destructive confirm button, as an action, never for a screening result. */
+
+.stop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-neutral-100);
+}
+
+.stop__btn {
+  color: var(--color-neutral-600);
+}
+
+.stop--confirm {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: 10px;
+  background: var(--color-neutral-50);
+}
+
+.stop__question {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-neutral-900);
+}
+
+.stop__actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.stop__yes {
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+}
+
+.stop__error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-danger);
+}

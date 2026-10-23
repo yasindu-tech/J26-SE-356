@@ -140,3 +140,13 @@
 .home__cell:focus-visible .mri__tag {
   text-decoration: underline;
 }
+
+.home__actions {
+  display: inline-flex;
+  gap: var(--spacing-sm);
+}
+
+/* All assessments: the table alone, full width. */
+.home__layout--all {
+  grid-template-columns: minmax(0, 1fr);
+}

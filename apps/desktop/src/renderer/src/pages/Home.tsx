@@ -8,7 +8,7 @@ import type { GaitAnalysisStatus } from "../gait/gaitTypes";
 import type { AnalysisStatus, MriAnalysisStatus } from "../mri/mriTypes";
 import type { TappingAnalysisStatus } from "../tapping/tappingTypes";
 import { useVoiceRuns } from "../voice/voiceHistory";
-import { groupAssessments } from "./homeRows";
+import { groupAssessments, onePart, openAllParts, type OpenAssessment } from "./homeRows";
 import {
   STEP_LABELS,
   greeting,
@@ -31,19 +31,26 @@ const REFRESH_MS = 5000;
 
 export function Home({
   clinician,
+  mode = "home",
   onNewAssessment,
-  onOpenAnalysis,
-  onOpenGait,
-  onOpenTapping,
+  onOpenAssessment,
   onSeeAll,
+  onBackHome,
 }: {
   clinician: string;
+  /** "home": the start page with the latest rows. "all": every assessment, nothing else. */
+  mode?: "home" | "all";
   onNewAssessment: () => void;
-  onOpenAnalysis: (id: string) => void;
-  onOpenGait: (id: string) => void;
-  onOpenTapping: (id: string) => void;
+  onOpenAssessment: (open: OpenAssessment) => void;
   onSeeAll: () => void;
+  onBackHome: () => void;
 }) {
+  const all = mode === "all";
+  const onOpenGait = (id: string, label: string | null) => onOpenAssessment(onePart(label, "gait", id));
+  const onOpenTapping = (id: string, label: string | null) =>
+    onOpenAssessment(onePart(label, "tapping", id));
+  const onOpenAnalysis = (id: string, label: string | null) =>
+    onOpenAssessment(onePart(label, "mri", id));
   const [items, setItems] = useState<MriAnalysisStatus[] | null>(null);
   const [gaitItems, setGaitItems] = useState<GaitAnalysisStatus[] | null>(null);
   const [tappingItems, setTappingItems] = useState<TappingAnalysisStatus[] | null>(null);
@@ -129,17 +136,28 @@ export function Home({
   return (
     <div className="home">
       <PageHeader
-        title={`${greeting(now)}, ${clinician}`}
-        subtitle={now.toLocaleDateString(undefined, {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })}
+        title={all ? "All assessments" : `${greeting(now)}, ${clinician}`}
+        subtitle={
+          all
+            ? "Every assessment you have started, newest first. Open a row to see all its parts."
+            : now.toLocaleDateString(undefined, {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })
+        }
         actions={
-          <button type="button" className="btn btn--primary" onClick={onNewAssessment}>
-            + New assessment
-          </button>
+          <span className="home__actions">
+            {all && (
+              <button type="button" className="btn btn--outline" onClick={onBackHome}>
+                ← Home
+              </button>
+            )}
+            <button type="button" className="btn btn--primary" onClick={onNewAssessment}>
+              + New assessment
+            </button>
+          </span>
         }
       />
 
@@ -159,9 +177,9 @@ export function Home({
         </p>
       )}
 
-      <div className="home__layout">
+      <div className={`home__layout${all ? " home__layout--all" : ""}`}>
         <div className="home__main">
-          {summary && summary.inProgress > 0 && (
+          {!all && summary && summary.inProgress > 0 && (
             <section className="card home__progress" aria-label="In progress">
               <p className="eyebrow">In progress</p>
               {gaitRunning.map((item) => (
@@ -174,7 +192,7 @@ export function Home({
                       {item.status === "queued" ? "Waiting for its turn" : "Reading the walk"} · usually about a minute or two
                     </p>
                   </div>
-                  <button type="button" className="btn btn--outline" onClick={() => onOpenGait(item.id)}>
+                  <button type="button" className="btn btn--outline" onClick={() => onOpenGait(item.id, item.subject_label)}>
                     Open →
                   </button>
                 </div>
@@ -189,7 +207,7 @@ export function Home({
                       {item.status === "queued" ? "Waiting for its turn" : "Reading the recording"} · usually under a minute
                     </p>
                   </div>
-                  <button type="button" className="btn btn--outline" onClick={() => onOpenTapping(item.id)}>
+                  <button type="button" className="btn btn--outline" onClick={() => onOpenTapping(item.id, item.subject_label)}>
                     Open →
                   </button>
                 </div>
@@ -206,7 +224,7 @@ export function Home({
                       {item.note ? ` · ${item.note}` : ""}
                     </p>
                   </div>
-                  <button type="button" className="btn btn--outline" onClick={() => onOpenAnalysis(item.id)}>
+                  <button type="button" className="btn btn--outline" onClick={() => onOpenAnalysis(item.id, item.subject_label)}>
                     Open →
                   </button>
                 </div>
@@ -214,12 +232,16 @@ export function Home({
             </section>
           )}
 
-          <section className="card" aria-label="Recent assessments">
+          <section className="card" aria-label={all ? "All assessments" : "Recent assessments"}>
             <div className="home__head">
-              <h2 className="card__title">Recent assessments</h2>
-              <button type="button" className="home__link" onClick={onSeeAll}>
-                All assessments
-              </button>
+              <h2 className="card__title">
+                {all ? `${rows.length} assessment${rows.length === 1 ? "" : "s"}` : "Recent assessments"}
+              </h2>
+              {!all && (
+                <button type="button" className="home__link" onClick={onSeeAll}>
+                  All assessments
+                </button>
+              )}
             </div>
             {items === null && !failed && <p className="note">Loading…</p>}
             {items !== null && rows.length === 0 && (
@@ -235,15 +257,16 @@ export function Home({
                     <th>Tapping</th>
                     <th>Voice</th>
                     <th>MRI</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.slice(0, RECENT_COUNT).map((row) => (
+                  {(all ? rows : rows.slice(0, RECENT_COUNT)).map((row) => (
                     <tr key={row.key}>
                       <td className="mono">{row.label ?? "No ID"}</td>
                       <td className="mono">{new Date(row.startedAt).toLocaleString()}</td>
-                      <PartCell part={row.gait} onOpen={onOpenGait} />
-                      <PartCell part={row.tapping} onOpen={onOpenTapping} />
+                      <PartCell part={row.gait} onOpen={(id) => onOpenGait(id, row.label)} />
+                      <PartCell part={row.tapping} onOpen={(id) => onOpenTapping(id, row.label)} />
                       <td>
                         {row.voice ? (
                           <span
@@ -256,7 +279,26 @@ export function Home({
                           <span className="home__none" title="Not added to this analysis">—</span>
                         )}
                       </td>
-                      <PartCell part={row.mri} onOpen={onOpenAnalysis} fast={row.mri?.eddy_profile === "fast"} />
+                      <PartCell
+                        part={row.mri}
+                        onOpen={(id) => onOpenAnalysis(id, row.label)}
+                        fast={row.mri?.eddy_profile === "fast"}
+                      />
+                      <td>
+                        {row.mri || row.gait || row.tapping ? (
+                          <button
+                            type="button"
+                            className="home__link"
+                            onClick={() => onOpenAssessment(openAllParts(row))}
+                          >
+                            Open →
+                          </button>
+                        ) : (
+                          <span className="home__none" title="Voice results are not stored, so they cannot be reopened">
+                            —
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -265,42 +307,44 @@ export function Home({
           </section>
         </div>
 
-        <aside className="home__rail">
-          <section className="card">
-            <p className="eyebrow">
-              Your assessments
-              <InfoTip label="About these counts">
-                {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
-                Each counts one analysis: an MRI scan, a walking video, a finger-tapping video or a voice recording. A
-                “not scored” result means the model declined to score it (for example, an unseen
-                scanner model or a video it could not read); it is not a normal result. Voice results
-                are not stored, so only voice recordings from this session are counted.
-              </InfoTip>
-            </p>
-            {summary ? (
-              <>
-                <p className="home__big">{summary.counted}</p>
-                <ul className="home__counts">
-                  <li><span>Scored</span><span className="mono">{summary.scored}</span></li>
-                  <li><span>Not scored</span><span className="mono">{summary.notScored}</span></li>
-                  <li><span>In progress</span><span className="mono">{summary.inProgress}</span></li>
-                  <li><span>Failed</span><span className="mono">{summary.failed}</span></li>
-                </ul>
-              </>
-            ) : (
-              <p className="note">{failed ? "Unavailable." : "Loading…"}</p>
-            )}
-          </section>
+        {!all && (
+          <aside className="home__rail">
+            <section className="card">
+              <p className="eyebrow">
+                Your assessments
+                <InfoTip label="About these counts">
+                  {summary ? (summary.counted >= 100 ? "Counted over your 100 most recent." : "All of them.") : ""}{" "}
+                  Each counts one analysis: an MRI scan, a walking video, a finger-tapping video or a voice recording. A
+                  “not scored” result means the model declined to score it (for example, an unseen
+                  scanner model or a video it could not read); it is not a normal result. Voice results
+                  are not stored, so only voice recordings from this session are counted.
+                </InfoTip>
+              </p>
+              {summary ? (
+                <>
+                  <p className="home__big">{summary.counted}</p>
+                  <ul className="home__counts">
+                    <li><span>Scored</span><span className="mono">{summary.scored}</span></li>
+                    <li><span>Not scored</span><span className="mono">{summary.notScored}</span></li>
+                    <li><span>In progress</span><span className="mono">{summary.inProgress}</span></li>
+                    <li><span>Failed</span><span className="mono">{summary.failed}</span></li>
+                  </ul>
+                </>
+              ) : (
+                <p className="note">{failed ? "Unavailable." : "Loading…"}</p>
+              )}
+            </section>
 
-          <section className="card">
-            <p className="eyebrow">About this tool</p>
-            <p className="home__text">
-              A screening and triage aid for prioritising specialist review. It does not diagnose, and a
-              lower score is never a clearance. Each part you upload is processed and shown on its own;
-              nothing is combined into one result.
-            </p>
-          </section>
-        </aside>
+            <section className="card">
+              <p className="eyebrow">About this tool</p>
+              <p className="home__text">
+                A screening and triage aid for prioritising specialist review. It does not diagnose, and a
+                lower score is never a clearance. Each part you upload is processed and shown on its own;
+                nothing is combined into one result.
+              </p>
+            </section>
+          </aside>
+        )}
       </div>
     </div>
   );

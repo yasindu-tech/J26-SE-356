@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { OpenAssessment } from "./homeRows";
 import { ApiError } from "../api/client";
 import { getMriResult, getMriStatus, uploadMriStudy } from "../api/mri.api";
 import { GaitPicker } from "../components/GaitPicker";
@@ -250,11 +251,10 @@ function modalitiesProblem(form: Form): string | null {
   return null;
 }
 
-/** `openId`: open an existing analysis (Home links to one) instead of starting at step 1. */
+/** `open`: an existing assessment (Home links to one) instead of starting at step 1. One part
+ *  opens on its own screen; two or more open together on the parts screen. */
 export function Assessment({
-  openId = null,
-  openGaitId = null,
-  openTappingId = null,
+  open = null,
   eddyProfile,
   confirmFast,
   clinician,
@@ -263,11 +263,7 @@ export function Assessment({
   onOpenTapping,
   onOpenSettings,
 }: {
-  openId?: string | null;
-  /** A gait analysis Home asked to open. */
-  openGaitId?: string | null;
-  /** A tapping analysis Home asked to open. */
-  openTappingId?: string | null;
+  open?: OpenAssessment | null;
   clinician: string;
   /** From Settings: the DTI motion correction new analyses use. */
   eddyProfile: EddyProfile;
@@ -286,46 +282,58 @@ export function Assessment({
   const [parts, setParts] = useState<PartsState | null>(null);
 
   useEffect(() => {
-    if (!openGaitId) return;
-    getGaitRun(openGaitId)
-      .then((run) => {
-        if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: { id: openGaitId, outcome: null }, voice: null, tapping: null });
-          setScreen({ view: "gait-analysis", id: openGaitId });
-        } else {
-          setScreen({ view: "gait-result", outcome: outcomeOf(run) });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openGaitId]);
-
-  useEffect(() => {
-    if (!openTappingId) return;
-    getTappingRun(openTappingId)
-      .then((run) => {
-        if (run.state === "queued" || run.state === "running") {
-          setParts({ mri: null, gait: null, voice: null, tapping: { id: openTappingId, outcome: null } });
-          setScreen({ view: "tapping-analysis", id: openTappingId });
-        } else {
-          setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(run) });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openTappingId]);
-
-  useEffect(() => {
-    if (!openId) return;
-    getMriStatus(openId)
-      .then(async (item) => {
-        setLabel(item.subject_label);
-        if (isFinal(item.status)) {
-          setScreen({ view: "result", id: item.id, result: await getMriResult(item.id) });
-        } else {
-          setScreen({ view: "analysis", id: item.id });
-        }
-      })
-      .catch((e) => setError(errorText(e, "Could not open that analysis.")));
-  }, [openId]);
+    if (!open) return;
+    if (open.label) setLabel(open.label);
+    const count = [open.mri, open.gait, open.tapping].filter(Boolean).length;
+    if (count > 1) {
+      // Each part's card polls its own status and turns into "Open the … result" once ended.
+      setParts({
+        mri: open.mri ? { id: open.mri, result: null } : null,
+        gait: open.gait ? { id: open.gait, outcome: null } : null,
+        voice: null, // the backend keeps no voice result, so it cannot be reopened
+        tapping: open.tapping ? { id: open.tapping, outcome: null } : null,
+      });
+      setScreen({ view: "parts" });
+      return;
+    }
+    const gaitId = open.gait;
+    const tappingId = open.tapping;
+    const mriId = open.mri;
+    if (gaitId) {
+      getGaitRun(gaitId)
+        .then((run) => {
+          if (run.state === "queued" || run.state === "running") {
+            setParts({ mri: null, gait: { id: gaitId, outcome: null }, voice: null, tapping: null });
+            setScreen({ view: "gait-analysis", id: gaitId });
+          } else {
+            setScreen({ view: "gait-result", outcome: outcomeOf(run) });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    } else if (tappingId) {
+      getTappingRun(tappingId)
+        .then((run) => {
+          if (run.state === "queued" || run.state === "running") {
+            setParts({ mri: null, gait: null, voice: null, tapping: { id: tappingId, outcome: null } });
+            setScreen({ view: "tapping-analysis", id: tappingId });
+          } else {
+            setScreen({ view: "tapping-result", outcome: tappingOutcomeFor(run) });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    } else if (mriId) {
+      getMriStatus(mriId)
+        .then(async (item) => {
+          setLabel(item.subject_label);
+          if (isFinal(item.status)) {
+            setScreen({ view: "result", id: item.id, result: await getMriResult(item.id) });
+          } else {
+            setScreen({ view: "analysis", id: item.id });
+          }
+        })
+        .catch((e) => setError(errorText(e, "Could not open that analysis.")));
+    }
+  }, [open]);
 
   function go(next: Screen): void {
     setError(null);
